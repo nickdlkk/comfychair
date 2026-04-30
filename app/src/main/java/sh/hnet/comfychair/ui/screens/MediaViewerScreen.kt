@@ -460,11 +460,14 @@ private fun MediaViewerFloatingToolbar(
                 }
 
                 // Use as source image button — pick from gallery history
-                IconButton(onClick = onUseAsSource) {
-                    Icon(
-                        Icons.Default.Collections,
-                        contentDescription = stringResource(R.string.button_use_as_source)
-                    )
+                // Only shown when viewing a source image slot from ImageToImageScreen
+                if (replaceSlot != null) {
+                    IconButton(onClick = onUseAsSource) {
+                        Icon(
+                            Icons.Default.Collections,
+                            contentDescription = stringResource(R.string.button_use_as_source)
+                        )
+                    }
                 }
 
                 // Share button
