@@ -1011,7 +1011,7 @@ class ImageToVideoViewModel : BaseGenerationViewModel<ImageToVideoUiState, Image
             data class UploadResult(val filename: String?, val failureType: ConnectionFailure)
             val uploadResult: UploadResult = withContext(Dispatchers.IO) {
                 kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(imageBytes, UuidUtils.generateUniqueUploadFilename("itv_source")) { success, filename, _, failureType ->
+                    client.uploadImage(imageBytes, UuidUtils.generateUploadFilenameFromBytes("itv_source", imageBytes)) { success, filename, _, failureType ->
                         continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
                     }
                 }
