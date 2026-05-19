@@ -637,6 +637,12 @@ class ImageToVideoViewModel : BaseGenerationViewModel<ImageToVideoUiState, Image
         savePreferences()
     }
 
+    // Model refresh (delegated to ConnectionManager.modelCache)
+    fun fetchModels() {
+        // Models are loaded automatically via ConnectionManager.modelCache
+        // which is observed in the init block.
+    }
+
     // Single-model callbacks
     fun onCheckpointChange(checkpoint: String) {
         _uiState.value = _uiState.value.copy(selectedCheckpoint = checkpoint)
