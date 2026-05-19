@@ -105,6 +105,9 @@ data class UnifiedCallbacks(
     // === ITI-Specific: Editing Mode Checkpoint ===
     val onEditingCheckpointChange: ((String) -> Unit)? = null,
 
+    // === Model Refresh ===
+    val onRefreshModels: (() -> Unit)? = null,
+
     // === ITI-Specific: Editing Mode Dual-Model Patterns ===
     val onEditingHighnoiseUnetChange: ((String) -> Unit)? = null,
     val onEditingLownoiseUnetChange: ((String) -> Unit)? = null,

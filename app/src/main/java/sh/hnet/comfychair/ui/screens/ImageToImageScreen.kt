@@ -943,7 +943,9 @@ fun ImageToImageScreen(
                     onAddEditingLownoiseLora = imageToImageViewModel::onAddEditingLownoiseLora,
                     onRemoveEditingLownoiseLora = imageToImageViewModel::onRemoveEditingLownoiseLora,
                     onEditingLownoiseLoraNameChange = imageToImageViewModel::onEditingLownoiseLoraNameChange,
-                    onEditingLownoiseLoraStrengthChange = imageToImageViewModel::onEditingLownoiseLoraStrengthChange
+                    onEditingLownoiseLoraStrengthChange = imageToImageViewModel::onEditingLownoiseLoraStrengthChange,
+                    // Model refresh
+                    onRefreshModels = imageToImageViewModel::fetchModels
                 )
             }
             val bottomSheetConfig = remember(uiState, callbacks) {

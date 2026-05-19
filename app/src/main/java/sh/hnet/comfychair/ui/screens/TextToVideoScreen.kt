@@ -501,7 +501,9 @@ fun TextToVideoScreen(
                     onAddLownoiseLora = textToVideoViewModel::onAddLownoiseLora,
                     onRemoveLownoiseLora = textToVideoViewModel::onRemoveLownoiseLora,
                     onLownoiseLoraNameChange = textToVideoViewModel::onLownoiseLoraChainNameChange,
-                    onLownoiseLoraStrengthChange = textToVideoViewModel::onLownoiseLoraChainStrengthChange
+                    onLownoiseLoraStrengthChange = textToVideoViewModel::onLownoiseLoraChainStrengthChange,
+                    // Model refresh
+                    onRefreshModels = textToVideoViewModel::fetchModels
                 )
             }
             val bottomSheetConfig = remember(uiState, callbacks) {

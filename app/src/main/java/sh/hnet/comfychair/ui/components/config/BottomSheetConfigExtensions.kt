@@ -418,6 +418,7 @@ private fun buildEditingModeModelConfig(
             options = state.availableCheckpoints,
             filteredOptions = state.filteredCheckpoints,
             onValueChange = callbacks.onEditingCheckpointChange ?: noOpString,
+            onRefresh = callbacks.onRefreshModels,
             isVisible = true
         ) else null,
         unet = if (caps.hasUnetName) ModelField(

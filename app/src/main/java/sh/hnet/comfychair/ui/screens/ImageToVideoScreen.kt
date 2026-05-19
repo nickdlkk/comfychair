@@ -598,7 +598,9 @@ fun ImageToVideoScreen(
                     onAddLownoiseLora = imageToVideoViewModel::onAddLownoiseLora,
                     onRemoveLownoiseLora = imageToVideoViewModel::onRemoveLownoiseLora,
                     onLownoiseLoraNameChange = imageToVideoViewModel::onLownoiseLoraChainNameChange,
-                    onLownoiseLoraStrengthChange = imageToVideoViewModel::onLownoiseLoraChainStrengthChange
+                    onLownoiseLoraStrengthChange = imageToVideoViewModel::onLownoiseLoraChainStrengthChange,
+                    // Model refresh
+                    onRefreshModels = imageToVideoViewModel::fetchModels
                 )
             }
             val bottomSheetConfig = remember(uiState, callbacks) {

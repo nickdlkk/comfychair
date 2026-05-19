@@ -460,7 +460,8 @@ fun TextToImageScreen(
                     onAddLora = textToImageViewModel::onAddLora,
                     onRemoveLora = textToImageViewModel::onRemoveLora,
                     onLoraNameChange = textToImageViewModel::onLoraNameChange,
-                    onLoraStrengthChange = textToImageViewModel::onLoraStrengthChange
+                    onLoraStrengthChange = textToImageViewModel::onLoraStrengthChange,
+                    onRefreshModels = textToImageViewModel::fetchModels
                 )
             }
             val bottomSheetConfig = remember(uiState, callbacks) {
