@@ -91,7 +91,8 @@ data class ModelField(
     val filteredOptions: List<String>? = null,
     val onValueChange: (String) -> Unit,
     val isVisible: Boolean = true,
-    val onRefresh: (() -> Unit)? = null  // Optional refresh callback (used by checkpoint)
+    val onRefresh: (() -> Unit)? = null,  // Optional refresh callback (used by checkpoint)
+    val isRefreshing: Boolean = false       // Loading state for refresh animation
 )
 
 /**

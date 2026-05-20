@@ -7,6 +7,8 @@ import android.net.Uri
 import androidx.lifecycle.viewModelScope
 import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -180,7 +182,10 @@ data class ImageToVideoUiState(
 
     // Upload/fetch state
     val isUploading: Boolean = false,
-    val isFetching: Boolean = false
+    val isFetching: Boolean = false,
+
+    // Model refresh loading state
+    override val isRefreshingModels: Boolean = false,
 ) : CommonGenerationState
 
 /**
@@ -639,8 +644,15 @@ class ImageToVideoViewModel : BaseGenerationViewModel<ImageToVideoUiState, Image
 
     // Model refresh (delegated to ConnectionManager.modelCache)
     fun fetchModels() {
-        // Models are loaded automatically via ConnectionManager.modelCache
-        // which is observed in the init block.
+        if (_uiState.value.isRefreshingModels) return
+        _uiState.update { it.copy(isRefreshingModels = true) }
+        viewModelScope.launch {
+            ConnectionManager.refreshServerData()
+            ConnectionManager.modelCache
+                .filter { !it.isLoading }
+                .first()
+            _uiState.update { it.copy(isRefreshingModels = false) }
+        }
     }
 
     // Single-model callbacks

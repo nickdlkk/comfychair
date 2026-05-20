@@ -1,6 +1,7 @@
 package sh.hnet.comfychair.ui.components.config
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -225,18 +227,31 @@ private fun RenderModelField(field: ModelField) {
             onValueChange = field.onValueChange,
             modifier = Modifier.weight(1f)
         )
-        // Refresh button for checkpoint (and other model types with onRefresh)
-        field.onRefresh?.let { onRefresh ->
+        // Refresh button / loading indicator for checkpoint
+        field.onRefresh?.let {
             Spacer(modifier = Modifier.width(4.dp))
-            IconButton(
-                onClick = onRefresh,
-                modifier = Modifier.size(40.dp)
+            Box(
+                modifier = Modifier.size(40.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Refresh,
-                    contentDescription = stringResource(R.string.button_refresh_models),
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                if (field.isRefreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    IconButton(
+                        onClick = it,
+                        enabled = !field.isRefreshing
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = stringResource(R.string.button_refresh_models),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
         }
     }

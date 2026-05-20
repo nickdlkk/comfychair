@@ -9,6 +9,8 @@ import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -69,6 +71,9 @@ data class TextToImageUiState(
     // Prompts
     val positivePrompt: String = "",
     val negativePrompt: String = "",
+
+    // Model refresh loading state
+    override val isRefreshingModels: Boolean = false,
 
     // Model selections - visibility driven by capabilities (hasCheckpointName, hasUnetName, etc.)
     override val selectedCheckpoint: String = "",
@@ -335,8 +340,15 @@ class TextToImageViewModel : BaseGenerationViewModel<TextToImageUiState, TextToI
      */
     @Suppress("unused")
     fun fetchModels() {
-        // Models are now loaded automatically via ConnectionManager.modelCache
-        // which is observed in the init block above.
+        if (_uiState.value.isRefreshingModels) return
+        _uiState.update { it.copy(isRefreshingModels = true) }
+        viewModelScope.launch {
+            ConnectionManager.refreshServerData()
+            ConnectionManager.modelCache
+                .filter { !it.isLoading }
+                .first()
+            _uiState.update { it.copy(isRefreshingModels = false) }
+        }
     }
 
     // State management

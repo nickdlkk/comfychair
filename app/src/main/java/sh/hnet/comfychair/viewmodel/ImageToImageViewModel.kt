@@ -12,6 +12,8 @@ import android.net.Uri
 import androidx.lifecycle.viewModelScope
 import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -118,6 +120,9 @@ data class ImageToImageUiState(
 
     // Workflow capabilities (unified flags derived from placeholders)
     override val capabilities: WorkflowCapabilities = WorkflowCapabilities(),
+
+    // Model refresh loading state
+    override val isRefreshingModels: Boolean = false,
 
     // Available models (from server)
     override val availableCheckpoints: List<String> = emptyList(),
@@ -1005,8 +1010,15 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
      */
     @Suppress("unused")
     fun fetchModels() {
-        // Models are now loaded automatically via ConnectionManager.modelCache
-        // which is observed in the init block above.
+        if (_uiState.value.isRefreshingModels) return
+        _uiState.update { it.copy(isRefreshingModels = true) }
+        viewModelScope.launch {
+            ConnectionManager.refreshServerData()
+            ConnectionManager.modelCache
+                .filter { !it.isLoading }
+                .first()
+            _uiState.update { it.copy(isRefreshingModels = false) }
+        }
     }
 
     // View mode
