@@ -194,6 +194,7 @@
     <!-- Generation button states -->
     <string name="button_add_to_queue">添加到队列 (%d)</string>
     <string name="button_uploading">上传中…</string>
+    <string name="button_uploading_progress">上传中… %1$s</string>
     <string name="button_uploading_queue">上传中… (%d)</string>
     <string name="button_fetching">获取中…</string>
     <string name="button_fetching_queue">获取中… (%d)</string>
@@ -357,6 +358,7 @@
     <string name="content_description_reference_image_1">参考图像 1</string>
     <string name="content_description_reference_image_2">参考图像 2</string>
     <string name="content_description_source_image">源图像</string>
+    <string name="content_description_image_info">图像信息</string>
     <string name="content_description_decrease">减少值</string>
     <string name="content_description_increase">增加值</string>
 
@@ -468,12 +470,18 @@
     <string name="label_debug_logging_enable">启用日志记录</string>
     <string name="desc_debug_logging_enable">日志仅保存在内存中</string>
     <string name="button_debug_logging_view">查看日志</string>
+    <string name="label_log_upload_url">日志上传服务器地址</string>
+    <string name="button_log_upload">上传日志包</string>
+    <string name="button_log_uploading">正在上传日志包…</string>
     <string name="title_debug_log">调试日志</string>
     <string name="msg_debug_log_empty">无日志条目</string>
     <string name="debug_log_save">Save</string>
     <string name="debug_log_follow">跟随</string>
     <string name="msg_debug_log_saved">日志保存成功</string>
     <string name="error_debug_log_save">保存日志失败</string>
+    <string name="msg_log_upload_success">日志包上传成功</string>
+    <string name="error_log_upload_failed">上传日志包失败</string>
+    <string name="error_log_upload_url_empty">请输入日志上传服务器地址</string>
 
     <!-- Missing translations -->
     <string name="button_view_workflow">查看工作流</string>

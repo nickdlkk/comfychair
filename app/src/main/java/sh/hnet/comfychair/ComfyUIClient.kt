@@ -19,6 +19,7 @@ import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.util.Obfuscator
 import sh.hnet.comfychair.util.ProgressTrackingRequestBody
 import sh.hnet.comfychair.util.ProgressTrackingResponseBody
+import java.io.File
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -107,6 +108,15 @@ class ComfyUIClient(
      * @return "http", "https", or null if not yet determined
      */
     fun getWorkingProtocol(): String? = workingProtocol
+
+    private fun saveDebugArtifact(filename: String, content: String) {
+        val ctx = context ?: return
+        runCatching {
+            File(ctx.cacheDir, filename).writeText(content, Charsets.UTF_8)
+        }.onFailure { e ->
+            DebugLogger.w(TAG, "Failed to save debug artifact $filename: ${e.message}")
+        }
+    }
 
     /**
      * Update the credentials used for authentication.
@@ -404,6 +414,9 @@ class ComfyUIClient(
      * Returns the complete node type information including inputs/outputs.
      * Used for resolving slot types for edge coloring in workflow editor.
      *
+     * Uses transferClient (no read timeout, stall detection) because /object_info
+     * returns ~5MB and routinely takes 10–15s on WiFi, exceeding httpClient's 10s readTimeout.
+     *
      * @param callback Called with the result:
      *                 - objectInfo: The full JSON object, or null on error
      */
@@ -420,7 +433,7 @@ class ComfyUIClient(
             .get()
             .build()
 
-        httpClient.newCall(request).enqueue(object : okhttp3.Callback {
+        transferClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
                 DebugLogger.w(TAG, "Failed to fetch object_info: ${e.message}")
                 callback(null)
@@ -809,7 +822,9 @@ class ComfyUIClient(
         }
 
         // Log full prompt JSON for debugging bypass/workflow issues
-        DebugLogger.d(TAG, "=== PROMPT JSON SUBMITTED ===\n${promptRequest.toString(2)}")
+        val promptRequestPretty = promptRequest.toString(2)
+        DebugLogger.d(TAG, "=== PROMPT JSON SUBMITTED ===\n$promptRequestPretty")
+        saveDebugArtifact("last_submitted_prompt.json", promptRequestPretty)
 
         val requestBody = promptRequest.toString()
             .toRequestBody("application/json".toMediaType())
@@ -1417,6 +1432,7 @@ class ComfyUIClient(
      * @param filename The desired filename for the uploaded image
      * @param subfolder The subfolder to upload to (default empty = root input folder)
      * @param overwrite Whether to overwrite existing file (default true)
+     * @param onProgress Optional callback invoked with (bytesWritten, totalBytes) during upload
      * @param callback Called with the result:
      *                 - success: true if uploaded successfully
      *                 - filename: The actual filename saved on the server
@@ -1428,6 +1444,7 @@ class ComfyUIClient(
         filename: String,
         subfolder: String = "",
         overwrite: Boolean = true,
+        onProgress: ((bytesWritten: Long, totalBytes: Long) -> Unit)? = null,
         callback: (success: Boolean, filename: String?, errorMessage: String?, failureType: ConnectionFailure) -> Unit
     ) {
         DebugLogger.i(TAG, "Uploading image: ${Obfuscator.filename(filename)} (${imageData.size} bytes)")
@@ -1452,7 +1469,7 @@ class ComfyUIClient(
             .build()
 
         // Wrap with progress tracking for stall detection
-        val progressBody = ProgressTrackingRequestBody(requestBody)
+        val progressBody = ProgressTrackingRequestBody(requestBody, onProgress)
 
         val request = Request.Builder()
             .url(url)

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.filled.AddPhotoAlternate
@@ -177,6 +179,9 @@ fun ImageToImageScreen(
     var currentPickerSlot by remember { mutableStateOf(1) }
     val galleryPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val galleryImages: List<GalleryItem> by GalleryRepository.getInstance().galleryItems.collectAsState()
+
+    // Image info overlay state (which slot's info is shown, null = hidden)
+    var imageInfoSlot by remember { mutableStateOf<Int?>(null) }
 
     // Image picker launcher for source image (system file picker - supports Downloads, file managers, gallery)
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -543,11 +548,78 @@ fun ImageToImageScreen(
                     if (sourceImage != null) {
                         if (uiState.mode == ImageToImageMode.INPAINTING && sourceSlot == 1) {
                             // Inpainting: source image 1 shows mask overlay
-                            MaskPreview(
-                                sourceImage = sourceImage,
-                                maskPaths = uiState.maskPaths,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                MaskPreview(
+                                    sourceImage = sourceImage,
+                                    maskPaths = uiState.maskPaths,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                // Image info (i) button for inpainting slot 1
+                                IconButton(
+                                    onClick = {
+                                        imageInfoSlot = if (imageInfoSlot == sourceSlot) null else sourceSlot
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Info,
+                                        contentDescription = stringResource(R.string.content_description_image_info),
+                                        tint = Color.White.copy(alpha = 0.85f)
+                                    )
+                                }
+                                // Image info overlay
+                                if (imageInfoSlot == sourceSlot) {
+                                    val fileSize = uiState.sourceImageSize
+                                    val fileSizeText = fileSize?.let {
+                                        if (it >= 1024 * 1024) {
+                                            String.format("%.1f MB", it / (1024.0 * 1024.0))
+                                        } else {
+                                            String.format("%.1f KB", it / 1024.0)
+                                        }
+                                    } ?: "Unknown"
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 52.dp, end = 8.dp)
+                                            .background(
+                                                Color.Black.copy(alpha = 0.65f),
+                                                shape = RoundedCornerShape(8.dp)
+                                            )
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "${sourceImage.width} × ${sourceImage.height}",
+                                                color = Color.White,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Text(
+                                                text = fileSizeText,
+                                                color = Color.White.copy(alpha = 0.8f),
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            TextButton(
+                                                onClick = { imageToImageViewModel.compressSourceImage(sourceSlot) },
+                                                enabled = sourceSlot !in uiState.compressedSlots,
+                                                modifier = Modifier.height(28.dp),
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (sourceSlot in uiState.compressedSlots) "Compressed ✓" else "Compress",
+                                                    color = if (sourceSlot in uiState.compressedSlots)
+                                                        Color.Green.copy(alpha = 0.9f)
+                                                    else
+                                                        Color.White.copy(alpha = 0.85f),
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         } else {
                             Box(modifier = Modifier.fillMaxSize()) {
                                 Image(
@@ -596,6 +668,82 @@ fun ImageToImageScreen(
                                             .clickable { imageToImageViewModel.toggleBypassSourceImage(sourceSlot) },
                                         tint = Color.White.copy(alpha = 0.85f)
                                     )
+                                }
+
+                                // Image info (i) button — shown for all source image slots
+                                IconButton(
+                                    onClick = {
+                                        imageInfoSlot = if (imageInfoSlot == sourceSlot) null else sourceSlot
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(
+                                            top = if (sourceSlot >= 2 && uiState.bypassedSourceSlots.contains(sourceSlot)) 48.dp else 8.dp,
+                                            end = 8.dp
+                                        )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Info,
+                                        contentDescription = stringResource(R.string.content_description_image_info),
+                                        tint = Color.White.copy(alpha = 0.85f)
+                                    )
+                                }
+
+                                // Image info overlay — semi-transparent box showing dimensions and file size
+                                if (imageInfoSlot == sourceSlot) {
+                                    val fileSize = when (sourceSlot) {
+                                        1 -> uiState.sourceImageSize
+                                        2 -> uiState.sourceImage2Size
+                                        3 -> uiState.sourceImage3Size
+                                        4 -> uiState.sourceImage4Size
+                                        else -> null
+                                    }
+                                    val fileSizeText = fileSize?.let {
+                                        if (it >= 1024 * 1024) {
+                                            String.format("%.1f MB", it / (1024.0 * 1024.0))
+                                        } else {
+                                            String.format("%.1f KB", it / 1024.0)
+                                        }
+                                    } ?: "Unknown"
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 52.dp, end = 8.dp)
+                                            .background(
+                                                Color.Black.copy(alpha = 0.65f),
+                                                shape = RoundedCornerShape(8.dp)
+                                            )
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "${sourceImage.width} × ${sourceImage.height}",
+                                                color = Color.White,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Text(
+                                                text = fileSizeText,
+                                                color = Color.White.copy(alpha = 0.8f),
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            TextButton(
+                                                onClick = { imageToImageViewModel.compressSourceImage(sourceSlot) },
+                                                enabled = sourceSlot !in uiState.compressedSlots,
+                                                modifier = Modifier.height(28.dp),
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (sourceSlot in uiState.compressedSlots) "Compressed ✓" else "Compress",
+                                                    color = if (sourceSlot in uiState.compressedSlots)
+                                                        Color.Green.copy(alpha = 0.9f)
+                                                    else
+                                                        Color.White.copy(alpha = 0.85f),
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -695,6 +843,9 @@ fun ImageToImageScreen(
                 isUploading = uiState.isUploading,
                 isFetching = uiState.isFetching,
                 isConnecting = isConnecting,
+                uploadTotalBytes = uiState.uploadTotalBytes,
+                uploadProgressBytes = uiState.uploadProgressBytes,
+                uploadLabel = uiState.uploadLabel,
                 onGenerate = {
                     scope.launch {
                         // In inpainting mode, require mask

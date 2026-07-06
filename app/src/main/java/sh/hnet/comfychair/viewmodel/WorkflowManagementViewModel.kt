@@ -468,10 +468,19 @@ class WorkflowManagementViewModel : ViewModel() {
                     }
                 }
 
+                val prioritizedCandidates = if (fieldKey == "image") {
+                    candidates.sortedWith(
+                        compareByDescending<FieldCandidate> { it.classType == "LoadImage" }
+                            .thenBy { it.nodeId.toIntOrNull() ?: Int.MAX_VALUE }
+                    )
+                } else {
+                    candidates
+                }
+
                 FieldMappingState(
                     field = FieldDisplayRegistry.createRequiredField(context, fieldKey, isRequired),
-                    candidates = candidates,
-                    selectedCandidateIndex = if (candidates.isNotEmpty()) 0 else -1
+                    candidates = prioritizedCandidates,
+                    selectedCandidateIndex = if (prioritizedCandidates.isNotEmpty()) 0 else -1
                 )
             }
         }

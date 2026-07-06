@@ -212,6 +212,7 @@
     <!-- Generation button states -->
     <string name="button_add_to_queue">Add to queue (%d)</string>
     <string name="button_uploading">Uploading…</string>
+    <string name="button_uploading_progress">Uploading… %1$s</string>
     <string name="button_uploading_queue">Uploading… (%d)</string>
     <string name="button_connecting_queue">Connecting… (%d)</string>
     <string name="button_fetching">Fetching…</string>
@@ -478,6 +479,7 @@
     <string name="content_description_reference_image_1">Reference image 1</string>
     <string name="content_description_reference_image_2">Reference image 2</string>
     <string name="content_description_source_image">Source image</string>
+    <string name="content_description_image_info">Image info</string>
     <string name="content_description_decrease">Decrease value</string>
     <string name="content_description_increase">Increase value</string>
     <string name="content_description_show_help">Show help</string>
@@ -609,12 +611,18 @@
     <string name="label_debug_logging_enable">Enable logging</string>
     <string name="desc_debug_logging_enable">Logs are kept in memory only</string>
     <string name="button_debug_logging_view">View logs</string>
+    <string name="label_log_upload_url">Log upload server URL</string>
+    <string name="button_log_upload">Upload log bundle</string>
+    <string name="button_log_uploading">Uploading log bundle…</string>
     <string name="title_debug_log">Debug log</string>
     <string name="msg_debug_log_empty">No log entries</string>
     <string name="debug_log_save">Save</string>
     <string name="debug_log_follow">Follow</string>
     <string name="msg_debug_log_saved">Log saved successfully</string>
     <string name="error_debug_log_save">Failed to save log</string>
+    <string name="msg_log_upload_success">Log bundle uploaded successfully</string>
+    <string name="error_log_upload_failed">Failed to upload log bundle</string>
+    <string name="error_log_upload_url_empty">Please enter the log upload server URL</string>
 
     <!-- Prompt Presets strings -->
     <string name="button_prompt_presets">Prompt presets</string>

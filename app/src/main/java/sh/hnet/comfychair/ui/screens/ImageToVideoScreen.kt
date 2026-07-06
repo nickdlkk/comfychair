@@ -444,6 +444,8 @@ fun ImageToVideoScreen(
                 isUploading = uiState.isUploading,
                 isFetching = uiState.isFetching,
                 isConnecting = isConnecting,
+                uploadTotalBytes = uiState.uploadTotalBytes,
+                uploadProgressBytes = uiState.uploadProgressBytes,
                 onGenerate = {
                     scope.launch {
                         val workflowJson = imageToVideoViewModel.prepareWorkflow()

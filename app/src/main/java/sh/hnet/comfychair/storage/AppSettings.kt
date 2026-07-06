@@ -16,6 +16,7 @@ object AppSettings {
     private const val KEY_SHOW_BUILT_IN_WORKFLOWS = "show_built_in_workflows"
     private const val KEY_OFFLINE_MODE = "offline_mode"
     private const val KEY_EDGE_ROUTER = "edge_router"
+    private const val KEY_LOG_UPLOAD_URL = "log_upload_url"
     private const val DEFAULT_EDGE_ROUTER = "hermite"
 
     /**
@@ -175,6 +176,24 @@ object AppSettings {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_EDGE_ROUTER, routerId)
+            .apply()
+    }
+
+    /**
+     * Get the configured log upload server URL.
+     */
+    fun getLogUploadUrl(context: Context): String {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_LOG_UPLOAD_URL, "") ?: ""
+    }
+
+    /**
+     * Set the log upload server URL.
+     */
+    fun setLogUploadUrl(context: Context, url: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LOG_UPLOAD_URL, url)
             .apply()
     }
 }

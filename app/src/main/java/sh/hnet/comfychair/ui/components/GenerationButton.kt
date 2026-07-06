@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.util.Locale
 import sh.hnet.comfychair.R
 
 /**
@@ -67,6 +68,9 @@ fun GenerationButton(
     isUploading: Boolean = false,
     isFetching: Boolean = false,
     isConnecting: Boolean = false,
+    uploadTotalBytes: Long? = null,
+    uploadProgressBytes: Long? = null,
+    uploadLabel: String? = null,
     onGenerate: () -> Unit,
     onCancelCurrent: () -> Unit,
     onAddToFrontOfQueue: () -> Unit = {},
@@ -85,7 +89,21 @@ fun GenerationButton(
         isConnecting && queueSize > 0 -> stringResource(R.string.button_connecting_queue, queueSize)
         isConnecting -> stringResource(R.string.button_connecting)
         isUploading && queueSize > 0 -> stringResource(R.string.button_uploading_queue, queueSize)
-        isUploading -> stringResource(R.string.button_uploading)
+        isUploading -> {
+            if (uploadTotalBytes != null && uploadProgressBytes != null) {
+                val progressText = if (uploadTotalBytes >= 1024 * 1024) {
+                    String.format(Locale.US, "%.1f / %.1f MB", uploadProgressBytes / (1024.0 * 1024.0), uploadTotalBytes / (1024.0 * 1024.0))
+                } else {
+                    String.format(Locale.US, "%d / %d KB", uploadProgressBytes / 1024, uploadTotalBytes / 1024)
+                }
+                stringResource(
+                    R.string.button_uploading_progress,
+                    if (uploadLabel.isNullOrBlank()) progressText else "$uploadLabel · $progressText"
+                )
+            } else {
+                stringResource(R.string.button_uploading)
+            }
+        }
         isFetching && queueSize > 0 -> stringResource(R.string.button_fetching_queue, queueSize)
         isFetching -> stringResource(R.string.button_fetching)
         queueSize > 0 -> stringResource(R.string.button_add_to_queue, queueSize)
