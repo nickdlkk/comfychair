@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.DoNotDisturb
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.Info
@@ -346,6 +347,7 @@ fun MediaViewerScreen(
                     }
                     onClose(null)
                 },
+                onSaveToMaterialLibrary = { viewModel.saveCurrentItemToMaterialLibrary() },
             )
         }
 
@@ -396,6 +398,7 @@ private fun MediaViewerFloatingToolbar(
     onReplace: () -> Unit = {},
     onBypassToggle: (slot: Int) -> Unit = {},
     onUseAsSource: () -> Unit = {},
+    onSaveToMaterialLibrary: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val toolbarColors = FloatingToolbarColors(
@@ -468,6 +471,14 @@ private fun MediaViewerFloatingToolbar(
                             contentDescription = stringResource(R.string.button_use_as_source)
                         )
                     }
+                }
+
+                // Save to material library button
+                IconButton(onClick = onSaveToMaterialLibrary) {
+                    Icon(
+                        Icons.Default.LibraryAdd,
+                        contentDescription = stringResource(R.string.button_save_to_material_library)
+                    )
                 }
 
                 // Share button

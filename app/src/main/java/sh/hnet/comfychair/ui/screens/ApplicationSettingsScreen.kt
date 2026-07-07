@@ -42,10 +42,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import sh.hnet.comfychair.R
+import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.ui.components.LanguageDropdown
 import sh.hnet.comfychair.ui.components.LanguageOption
 import sh.hnet.comfychair.ui.components.LogViewerDialog
 import sh.hnet.comfychair.ui.components.SettingsScreenScaffold
+import sh.hnet.comfychair.ui.components.shared.rememberLastPickedDocumentUri
+import sh.hnet.comfychair.ui.components.shared.rememberOpenDocumentWithInitialUri
 import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.viewmodel.SettingsEvent
 import sh.hnet.comfychair.viewmodel.SettingsViewModel
@@ -92,9 +95,19 @@ fun ApplicationSettingsScreen(
 
     // File picker for restoring backup
     val backupRestoreLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
+        rememberOpenDocumentWithInitialUri(rememberLastPickedDocumentUri(context))
     ) { uri ->
-        uri?.let { viewModel.startRestore(it) }
+        uri?.let {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+            }
+            AppSettings.setLastDocumentPickerUri(context, it.toString())
+            viewModel.startRestore(it)
+        }
     }
 
     // File picker for saving debug logs
@@ -608,7 +621,7 @@ fun ApplicationSettingsScreen(
 
                 Button(
                     onClick = {
-                        backupRestoreLauncher.launch("application/json")
+                        backupRestoreLauncher.launch(arrayOf("application/json"))
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(

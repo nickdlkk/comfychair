@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
@@ -33,6 +34,7 @@ import sh.hnet.comfychair.R
 fun AppMenuDropdown(
     onNavigate: () -> Unit,
     onLogout: () -> Unit,
+    onMaterials: (() -> Unit)? = null,
     navigateLabel: String = stringResource(R.string.action_settings),
     navigateIcon: ImageVector = Icons.Default.Settings
 ) {
@@ -46,6 +48,18 @@ fun AppMenuDropdown(
             expanded = showMenu,
             onDismissRequest = { showMenu = false }
         ) {
+            onMaterials?.let { materialsHandler ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.menu_materials)) },
+                    onClick = {
+                        showMenu = false
+                        materialsHandler()
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.Image, contentDescription = null)
+                    }
+                )
+            }
             DropdownMenuItem(
                 text = { Text(navigateLabel) },
                 onClick = {
@@ -76,11 +90,13 @@ fun AppMenuDropdown(
 @Composable
 fun AppMenuDropdown(
     onSettings: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onMaterials: (() -> Unit)? = null
 ) {
     AppMenuDropdown(
         onNavigate = onSettings,
         onLogout = onLogout,
+        onMaterials = onMaterials,
         navigateLabel = stringResource(R.string.action_settings),
         navigateIcon = Icons.Default.Settings
     )

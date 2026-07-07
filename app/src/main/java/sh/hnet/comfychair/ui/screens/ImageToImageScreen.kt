@@ -101,8 +101,13 @@ import sh.hnet.comfychair.ui.components.shared.PromptPresetDropdown
 import sh.hnet.comfychair.ui.theme.Dimensions
 import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.repository.GalleryRepository
+import sh.hnet.comfychair.ui.components.shared.rememberLastPickedImageUri
+import sh.hnet.comfychair.ui.components.shared.rememberOpenDocumentWithInitialUri
 import sh.hnet.comfychair.ui.components.GalleryPickerBottomSheet
+import sh.hnet.comfychair.ui.components.MaterialLibraryPickerBottomSheet
+import sh.hnet.comfychair.materials.MaterialLibrary
 import sh.hnet.comfychair.viewmodel.GalleryItem
+import sh.hnet.comfychair.viewmodel.MaterialLibraryViewModel
 import sh.hnet.comfychair.ui.components.GenerationButton
 import sh.hnet.comfychair.ui.components.GenerationProgressBar
 import sh.hnet.comfychair.ui.components.config.ConfigBottomSheetContent
@@ -124,7 +129,8 @@ fun ImageToImageScreen(
     generationViewModel: GenerationViewModel,
     imageToImageViewModel: ImageToImageViewModel,
     onNavigateToSettings: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    materialLibraryViewModel: MaterialLibraryViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -176,21 +182,25 @@ fun ImageToImageScreen(
 
     // Gallery picker state
     var showGalleryPicker by remember { mutableStateOf(false) }
+    var showMaterialPicker by remember { mutableStateOf(false) }
     var currentPickerSlot by remember { mutableStateOf(1) }
     val galleryPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val materialPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val galleryImages: List<GalleryItem> by GalleryRepository.getInstance().galleryItems.collectAsState()
+    val materialUiState by materialLibraryViewModel.uiState.collectAsState()
 
     // Image info overlay state (which slot's info is shown, null = hidden)
     var imageInfoSlot by remember { mutableStateOf<Int?>(null) }
 
     // Image picker launcher for source image (system file picker - supports Downloads, file managers, gallery)
     val imagePickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
+        rememberOpenDocumentWithInitialUri(rememberLastPickedImageUri(context))
     ) { uri ->
         uri?.let {
             // Take persistable permission so we can read the file later
             val takeFlags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(it, takeFlags)
+            AppSettings.setLastImagePickerUri(context, it.toString())
             imageToImageViewModel.onSourceImageChange(context, it)
             imageToImageViewModel.onViewModeChange(ImageToImageViewMode.SOURCE)
         }
@@ -198,31 +208,34 @@ fun ImageToImageScreen(
 
     // Additional source image pickers (slots 2, 3, 4)
     val imagePickerLauncher2 = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
+        rememberOpenDocumentWithInitialUri(rememberLastPickedImageUri(context))
     ) { uri ->
         uri?.let {
             val takeFlags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(it, takeFlags)
+            AppSettings.setLastImagePickerUri(context, it.toString())
             imageToImageViewModel.onAdditionalSourceImageChange(context, 2, it)
         }
     }
 
     val imagePickerLauncher3 = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
+        rememberOpenDocumentWithInitialUri(rememberLastPickedImageUri(context))
     ) { uri ->
         uri?.let {
             val takeFlags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(it, takeFlags)
+            AppSettings.setLastImagePickerUri(context, it.toString())
             imageToImageViewModel.onAdditionalSourceImageChange(context, 3, it)
         }
     }
 
     val imagePickerLauncher4 = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
+        rememberOpenDocumentWithInitialUri(rememberLastPickedImageUri(context))
     ) { uri ->
         uri?.let {
             val takeFlags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(it, takeFlags)
+            AppSettings.setLastImagePickerUri(context, it.toString())
             imageToImageViewModel.onAdditionalSourceImageChange(context, 4, it)
         }
     }
@@ -408,6 +421,13 @@ fun ImageToImageScreen(
                     }
                 ) {
                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = stringResource(R.string.button_upload_source_image))
+                }
+                IconButton(onClick = {
+                    currentPickerSlot = currentSourceSlot
+                    materialLibraryViewModel.load(context)
+                    showMaterialPicker = true
+                }) {
+                    Icon(Icons.Default.Collections, contentDescription = stringResource(R.string.button_pick_from_materials))
                 }
                 // Edit mask button (only in inpainting mode when source image exists)
                 if (uiState.sourceImage != null && uiState.mode == ImageToImageMode.INPAINTING) {
@@ -976,6 +996,27 @@ fun ImageToImageScreen(
             },
             onDismiss = { showGalleryPicker = false },
             sheetState = galleryPickerSheetState
+        )
+    }
+
+    if (showMaterialPicker) {
+        MaterialLibraryPickerBottomSheet(
+            items = materialUiState.items,
+            viewModel = materialLibraryViewModel,
+            isImporting = materialUiState.isImporting,
+            isSelectionMode = materialUiState.isSelectionMode,
+            selectedIds = materialUiState.selectedIds,
+            onSelect = { item ->
+                scope.launch {
+                    val bitmap = MaterialLibrary.loadBitmap(context, item)
+                    if (bitmap != null) {
+                        imageToImageViewModel.onSourceImageFromGallery(context, currentPickerSlot, bitmap)
+                    }
+                }
+                showMaterialPicker = false
+            },
+            onDismiss = { showMaterialPicker = false },
+            sheetState = materialPickerSheetState
         )
     }
 

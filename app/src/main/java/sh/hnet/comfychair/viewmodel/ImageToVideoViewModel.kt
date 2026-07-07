@@ -605,6 +605,13 @@ class ImageToVideoViewModel : BaseGenerationViewModel<ImageToVideoUiState, Image
         }
     }
 
+    fun onSourceImageFromBitmap(context: Context, bitmap: Bitmap) {
+        viewModelScope.launch(Dispatchers.IO) {
+            MediaStateHolder.putBitmap(MediaStateHolder.MediaKey.ItvSource, bitmap, context)
+            _uiState.value = _uiState.value.copy(sourceImage = bitmap)
+        }
+    }
+
     fun onWorkflowChange(workflow: String) {
         val state = _uiState.value
 

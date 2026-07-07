@@ -14,6 +14,7 @@ import sh.hnet.comfychair.navigation.MainRoute
 import sh.hnet.comfychair.ui.components.MainNavigationBar
 import sh.hnet.comfychair.ui.screens.TextToImageScreen
 import sh.hnet.comfychair.ui.screens.ImageToImageScreen
+import sh.hnet.comfychair.ui.screens.MaterialLibraryScreen
 import sh.hnet.comfychair.ui.screens.TextToVideoScreen
 import sh.hnet.comfychair.ui.screens.ImageToVideoScreen
 import sh.hnet.comfychair.viewmodel.GenerationViewModel
@@ -21,6 +22,7 @@ import sh.hnet.comfychair.viewmodel.TextToImageViewModel
 import sh.hnet.comfychair.viewmodel.ImageToImageViewModel
 import sh.hnet.comfychair.viewmodel.TextToVideoViewModel
 import sh.hnet.comfychair.viewmodel.ImageToVideoViewModel
+import sh.hnet.comfychair.viewmodel.MaterialLibraryViewModel
 
 /**
  * Main navigation host that contains all the generation screens.
@@ -31,6 +33,7 @@ fun MainNavHost(
     generationViewModel: GenerationViewModel,
     imageToImageViewModel: ImageToImageViewModel,
     imageToVideoViewModel: ImageToVideoViewModel,
+    materialLibraryViewModel: MaterialLibraryViewModel,
     onNavigateToSettings: () -> Unit,
     onNavigateToGallery: () -> Unit,
     onLogout: () -> Unit,
@@ -67,7 +70,8 @@ fun MainNavHost(
                     generationViewModel = generationViewModel,
                     imageToImageViewModel = imageToImageViewModel,
                     onNavigateToSettings = onNavigateToSettings,
-                    onLogout = onLogout
+                    onLogout = onLogout,
+                    materialLibraryViewModel = materialLibraryViewModel
                 )
             }
 
@@ -85,6 +89,15 @@ fun MainNavHost(
                 ImageToVideoScreen(
                     generationViewModel = generationViewModel,
                     imageToVideoViewModel = imageToVideoViewModel,
+                    onNavigateToSettings = onNavigateToSettings,
+                    onLogout = onLogout,
+                    materialLibraryViewModel = materialLibraryViewModel
+                )
+            }
+
+            composable(MainRoute.Materials.route) {
+                MaterialLibraryScreen(
+                    viewModel = materialLibraryViewModel,
                     onNavigateToSettings = onNavigateToSettings,
                     onLogout = onLogout
                 )

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
@@ -62,6 +63,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import sh.hnet.comfychair.MediaViewerActivity
 import sh.hnet.comfychair.R
+import sh.hnet.comfychair.materials.MaterialItem
 import sh.hnet.comfychair.ui.components.AppMenuDropdown
 import sh.hnet.comfychair.ui.components.shared.NoOverscrollContainer
 import sh.hnet.comfychair.cache.ActiveView
@@ -256,6 +258,9 @@ fun GalleryScreen(
                     }
                     IconButton(onClick = { galleryViewModel.shareSelected(context) }) {
                         Icon(Icons.Default.Share, contentDescription = stringResource(R.string.button_share))
+                    }
+                    IconButton(onClick = { galleryViewModel.saveSelectedToMaterialLibrary(context) }) {
+                        Icon(Icons.Default.LibraryAdd, contentDescription = stringResource(R.string.button_save_to_material_library))
                     }
                 } else {
                     // Normal mode actions: Select and Menu

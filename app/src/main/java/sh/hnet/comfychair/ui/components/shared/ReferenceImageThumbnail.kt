@@ -5,7 +5,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -33,6 +32,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import sh.hnet.comfychair.R
+import sh.hnet.comfychair.storage.AppSettings
 
 /**
  * A thumbnail component for reference images used in image editing workflows.
@@ -50,11 +50,12 @@ fun ReferenceImageThumbnail(
     val context = LocalContext.current
 
     val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
+        contract = rememberOpenDocumentWithInitialUri(rememberLastPickedImageUri(context))
     ) { uri: Uri? ->
         uri?.let {
             val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(it, takeFlags)
+            AppSettings.setLastImagePickerUri(context, it.toString())
             onImageSelected(it)
         }
     }

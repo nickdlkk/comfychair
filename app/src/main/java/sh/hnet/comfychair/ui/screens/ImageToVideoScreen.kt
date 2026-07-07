@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Collections
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -68,8 +69,12 @@ import sh.hnet.comfychair.model.ScreenType
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.queue.JobRegistry
 import sh.hnet.comfychair.ui.components.AppMenuDropdown
+import sh.hnet.comfychair.ui.components.MaterialLibraryPickerBottomSheet
 import sh.hnet.comfychair.ui.theme.Dimensions
 import sh.hnet.comfychair.storage.AppSettings
+import sh.hnet.comfychair.materials.MaterialLibrary
+import sh.hnet.comfychair.ui.components.shared.rememberLastPickedImageUri
+import sh.hnet.comfychair.ui.components.shared.rememberOpenDocumentWithInitialUri
 import sh.hnet.comfychair.ui.components.GenerationButton
 import sh.hnet.comfychair.ui.components.GenerationProgressBar
 import sh.hnet.comfychair.ui.components.PromptLibraryDialog
@@ -85,6 +90,7 @@ import sh.hnet.comfychair.viewmodel.GenerationViewModel
 import sh.hnet.comfychair.viewmodel.ImageToVideoEvent
 import sh.hnet.comfychair.viewmodel.ImageToVideoViewModel
 import sh.hnet.comfychair.viewmodel.ImageToVideoViewMode
+import sh.hnet.comfychair.viewmodel.MaterialLibraryViewModel
 import sh.hnet.comfychair.viewmodel.PromptPresetEvent
 import sh.hnet.comfychair.viewmodel.PromptPresetViewModel
 
@@ -95,7 +101,8 @@ fun ImageToVideoScreen(
     imageToVideoViewModel: ImageToVideoViewModel,
     onNavigateToSettings: () -> Unit,
     onLogout: () -> Unit,
-    presetViewModel: PromptPresetViewModel = viewModel()
+    presetViewModel: PromptPresetViewModel = viewModel(),
+    materialLibraryViewModel: MaterialLibraryViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -122,17 +129,21 @@ fun ImageToVideoScreen(
 
     // Video URI from ViewModel state
     val videoUri = uiState.currentVideoUri
+    var showMaterialPicker by remember { mutableStateOf(false) }
+    val materialPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val materialUiState by materialLibraryViewModel.uiState.collectAsState()
 
     val configSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Image picker launcher (system file picker - supports Downloads, file managers, gallery)
     val imagePickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
+        rememberOpenDocumentWithInitialUri(rememberLastPickedImageUri(context))
     ) { uri ->
         uri?.let {
             // Take persistable permission so we can read the file later
             val takeFlags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(it, takeFlags)
+            AppSettings.setLastImagePickerUri(context, it.toString())
             imageToVideoViewModel.onSourceImageChange(context, it)
             imageToVideoViewModel.onViewModeChange(ImageToVideoViewMode.SOURCE)
         }
@@ -239,6 +250,12 @@ fun ImageToVideoScreen(
                 // Upload image button
                 IconButton(onClick = { imagePickerLauncher.launch(arrayOf("image/*")) }) {
                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = stringResource(R.string.button_upload_source_image))
+                }
+                IconButton(onClick = {
+                    materialLibraryViewModel.load(context)
+                    showMaterialPicker = true
+                }) {
+                    Icon(Icons.Default.Collections, contentDescription = stringResource(R.string.button_pick_from_materials))
                 }
                 // Save to gallery button (only when video exists)
                 if (videoUri != null && uiState.viewMode == ImageToVideoViewMode.PREVIEW) {
@@ -368,6 +385,27 @@ fun ImageToVideoScreen(
                     }
                 }
             }
+        }
+
+        if (showMaterialPicker) {
+            MaterialLibraryPickerBottomSheet(
+                items = materialUiState.items,
+                viewModel = materialLibraryViewModel,
+                isImporting = materialUiState.isImporting,
+                isSelectionMode = materialUiState.isSelectionMode,
+                selectedIds = materialUiState.selectedIds,
+                onSelect = { item ->
+                    scope.launch {
+                        val bitmap = MaterialLibrary.loadBitmap(context, item)
+                        if (bitmap != null) {
+                            imageToVideoViewModel.onSourceImageFromBitmap(context, bitmap)
+                        }
+                    }
+                    showMaterialPicker = false
+                },
+                onDismiss = { showMaterialPicker = false },
+                sheetState = materialPickerSheetState
+            )
         }
 
         // View mode toggle

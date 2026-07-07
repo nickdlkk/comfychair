@@ -17,6 +17,8 @@ object AppSettings {
     private const val KEY_OFFLINE_MODE = "offline_mode"
     private const val KEY_EDGE_ROUTER = "edge_router"
     private const val KEY_LOG_UPLOAD_URL = "log_upload_url"
+    private const val KEY_LAST_IMAGE_PICKER_URI = "last_image_picker_uri"
+    private const val KEY_LAST_DOCUMENT_PICKER_URI = "last_document_picker_uri"
     private const val DEFAULT_EDGE_ROUTER = "hermite"
 
     /**
@@ -194,6 +196,42 @@ object AppSettings {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_LOG_UPLOAD_URL, url)
+            .apply()
+    }
+
+    /**
+     * Get the last URI used for image picking so the system picker can reopen nearby.
+     */
+    fun getLastImagePickerUri(context: Context): String? {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_LAST_IMAGE_PICKER_URI, null)
+    }
+
+    /**
+     * Persist the last URI used for image picking.
+     */
+    fun setLastImagePickerUri(context: Context, uri: String?) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LAST_IMAGE_PICKER_URI, uri)
+            .apply()
+    }
+
+    /**
+     * Get the last URI used for document picking (JSON restore/import flows).
+     */
+    fun getLastDocumentPickerUri(context: Context): String? {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_LAST_DOCUMENT_PICKER_URI, null)
+    }
+
+    /**
+     * Persist the last URI used for document picking.
+     */
+    fun setLastDocumentPickerUri(context: Context, uri: String?) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_LAST_DOCUMENT_PICKER_URI, uri)
             .apply()
     }
 }
