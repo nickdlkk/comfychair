@@ -50,3 +50,6 @@ CLAUDE.md
 # Local log upload artifacts
 log_uploads/
 log_uploads_public/
+
+# Local tools/uploads
+uploads/

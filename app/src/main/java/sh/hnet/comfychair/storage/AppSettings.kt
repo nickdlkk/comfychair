@@ -19,6 +19,7 @@ object AppSettings {
     private const val KEY_LOG_UPLOAD_URL = "log_upload_url"
     private const val KEY_LAST_IMAGE_PICKER_URI = "last_image_picker_uri"
     private const val KEY_LAST_DOCUMENT_PICKER_URI = "last_document_picker_uri"
+    private const val KEY_BATCH_COUNT = "batch_count"
     private const val DEFAULT_EDGE_ROUTER = "hermite"
 
     /**
@@ -232,6 +233,25 @@ object AppSettings {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_LAST_DOCUMENT_PICKER_URI, uri)
+            .apply()
+    }
+
+    /**
+     * Get the last used batch count for batch generation.
+     * Returns default 1 if never set.
+     */
+    fun getBatchCount(context: Context): Int {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_BATCH_COUNT, 1)
+    }
+
+    /**
+     * Persist the last used batch count.
+     */
+    fun setBatchCount(context: Context, count: Int) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(KEY_BATCH_COUNT, count)
             .apply()
     }
 }

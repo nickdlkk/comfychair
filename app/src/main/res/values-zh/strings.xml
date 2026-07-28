@@ -97,6 +97,12 @@
     <string name="hint_negative_prompt">反向提示词</string>
     <string name="button_generate">生成</string>
 
+    <!-- Batch generation strings -->
+    <string name="label_batch_count">数量</string>
+    <string name="button_confirm_batch">确认生成 (%1$d)</string>
+    <string name="button_generating_progress">%1$d…</string>
+    <string name="menu_batch_generate">批量生成</string>
+
     <!-- Configuration panel strings -->
 
     <!-- Gallery screen strings -->

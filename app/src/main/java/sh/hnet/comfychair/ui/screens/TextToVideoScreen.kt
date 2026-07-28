@@ -236,7 +236,8 @@ fun TextToVideoScreen(
                 // Menu button
                 AppMenuDropdown(
                     onSettings = onNavigateToSettings,
-                    onLogout = onLogout
+                    onLogout = onLogout,
+                    showOfflineToggle = true
                 )
             }
         )

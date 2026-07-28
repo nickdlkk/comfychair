@@ -466,7 +466,8 @@ fun ImageToImageScreen(
                 // Menu button
                 AppMenuDropdown(
                     onSettings = onNavigateToSettings,
-                    onLogout = onLogout
+                    onLogout = onLogout,
+                    showOfflineToggle = true
                 )
             }
         )

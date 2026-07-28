@@ -472,6 +472,10 @@ fun LoginScreen() {
             onRemoveServer = {
                 showDeleteConfirmation = true
             },
+            onOfflineModeToggle = {
+                AppSettings.setOfflineMode(context, !isOfflineMode)
+                isOfflineMode = !isOfflineMode
+            },
             modifier = Modifier.fillMaxWidth()
         )
 
