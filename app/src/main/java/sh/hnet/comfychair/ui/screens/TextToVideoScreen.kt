@@ -236,7 +236,8 @@ fun TextToVideoScreen(
                 // Menu button
                 AppMenuDropdown(
                     onSettings = onNavigateToSettings,
-                    onLogout = onLogout
+                    onLogout = onLogout,
+                    showOfflineToggle = true
                 )
             }
         )
@@ -345,6 +346,7 @@ fun TextToVideoScreen(
                 .padding(bottom = 16.dp)
         ) {
             GenerationButton(
+                batchCount = 1,
                 queueSize = queueState.totalQueueSize,
                 isExecuting = queueState.isExecuting,
                 isEnabled = textToVideoViewModel.hasValidConfiguration() && uiState.positivePrompt.isNotBlank(),
@@ -501,7 +503,9 @@ fun TextToVideoScreen(
                     onAddLownoiseLora = textToVideoViewModel::onAddLownoiseLora,
                     onRemoveLownoiseLora = textToVideoViewModel::onRemoveLownoiseLora,
                     onLownoiseLoraNameChange = textToVideoViewModel::onLownoiseLoraChainNameChange,
-                    onLownoiseLoraStrengthChange = textToVideoViewModel::onLownoiseLoraChainStrengthChange
+                    onLownoiseLoraStrengthChange = textToVideoViewModel::onLownoiseLoraChainStrengthChange,
+                    // Model refresh
+                    onRefreshModels = textToVideoViewModel::fetchModels
                 )
             }
             val bottomSheetConfig = remember(uiState, callbacks) {

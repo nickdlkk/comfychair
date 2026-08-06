@@ -35,6 +35,8 @@ internal fun buildCommonModelConfig(
             options = state.availableCheckpoints,
             filteredOptions = state.filteredCheckpoints,
             onValueChange = callbacks.onCheckpointChange ?: noOpString,
+            onRefresh = callbacks.onRefreshModels,
+            isRefreshing = state.isRefreshingModels,
             isVisible = true
         ) else null,
 

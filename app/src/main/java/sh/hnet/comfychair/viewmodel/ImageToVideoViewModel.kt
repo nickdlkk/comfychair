@@ -7,6 +7,8 @@ import android.net.Uri
 import androidx.lifecycle.viewModelScope
 import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -180,7 +182,12 @@ data class ImageToVideoUiState(
 
     // Upload/fetch state
     val isUploading: Boolean = false,
-    val isFetching: Boolean = false
+    val isFetching: Boolean = false,
+    val uploadTotalBytes: Long? = null,
+    val uploadProgressBytes: Long? = null,
+
+    // Model refresh loading state
+    override val isRefreshingModels: Boolean = false,
 ) : CommonGenerationState
 
 /**
@@ -598,6 +605,13 @@ class ImageToVideoViewModel : BaseGenerationViewModel<ImageToVideoUiState, Image
         }
     }
 
+    fun onSourceImageFromBitmap(context: Context, bitmap: Bitmap) {
+        viewModelScope.launch(Dispatchers.IO) {
+            MediaStateHolder.putBitmap(MediaStateHolder.MediaKey.ItvSource, bitmap, context)
+            _uiState.value = _uiState.value.copy(sourceImage = bitmap)
+        }
+    }
+
     fun onWorkflowChange(workflow: String) {
         val state = _uiState.value
 
@@ -635,6 +649,19 @@ class ImageToVideoViewModel : BaseGenerationViewModel<ImageToVideoUiState, Image
     fun onLownoiseLoraChange(lora: String) {
         _uiState.value = _uiState.value.copy(selectedLownoiseLora = lora)
         savePreferences()
+    }
+
+    // Model refresh (delegated to ConnectionManager.modelCache)
+    fun fetchModels() {
+        if (_uiState.value.isRefreshingModels) return
+        _uiState.update { it.copy(isRefreshingModels = true) }
+        viewModelScope.launch {
+            ConnectionManager.refreshServerData()
+            ConnectionManager.modelCache
+                .filter { !it.isLoading }
+                .first()
+            _uiState.update { it.copy(isRefreshingModels = false) }
+        }
     }
 
     // Single-model callbacks
@@ -1006,12 +1033,19 @@ class ImageToVideoViewModel : BaseGenerationViewModel<ImageToVideoUiState, Image
                 }
                 outputStream.toByteArray()
             }
+            _uiState.update { it.copy(uploadTotalBytes = imageBytes.size.toLong(), uploadProgressBytes = 0L) }
 
             // Upload to ComfyUI
             data class UploadResult(val filename: String?, val failureType: ConnectionFailure)
             val uploadResult: UploadResult = withContext(Dispatchers.IO) {
                 kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(imageBytes, UuidUtils.generateUniqueUploadFilename("itv_source")) { success, filename, _, failureType ->
+                    client.uploadImage(
+                        imageBytes,
+                        UuidUtils.generateUploadFilenameFromBytes("itv_source", imageBytes),
+                        onProgress = { written, _ ->
+                            _uiState.update { it.copy(uploadProgressBytes = written) }
+                        }
+                    ) { success, filename, _, failureType ->
                         continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
                     }
                 }
@@ -1083,7 +1117,7 @@ class ImageToVideoViewModel : BaseGenerationViewModel<ImageToVideoUiState, Image
             }
             workflow
         } finally {
-            _uiState.update { it.copy(isUploading = false) }
+            _uiState.update { it.copy(isUploading = false, uploadTotalBytes = null, uploadProgressBytes = null) }
         }
     }
 

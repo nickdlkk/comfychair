@@ -90,7 +90,9 @@ data class ModelField(
     val options: List<String>,
     val filteredOptions: List<String>? = null,
     val onValueChange: (String) -> Unit,
-    val isVisible: Boolean = true
+    val isVisible: Boolean = true,
+    val onRefresh: (() -> Unit)? = null,  // Optional refresh callback (used by checkpoint)
+    val isRefreshing: Boolean = false       // Loading state for refresh animation
 )
 
 /**

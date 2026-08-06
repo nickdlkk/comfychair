@@ -65,7 +65,10 @@ import androidx.compose.ui.text.font.FontWeight
 import sh.hnet.comfychair.ui.components.WorkflowThumbnail
 import androidx.compose.ui.unit.dp
 import sh.hnet.comfychair.R
+import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.ui.components.SettingsMenuDropdown
+import sh.hnet.comfychair.ui.components.shared.rememberLastPickedDocumentUri
+import sh.hnet.comfychair.ui.components.shared.rememberOpenDocumentWithInitialUri
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.WorkflowManager
 import sh.hnet.comfychair.WorkflowEditorActivity
@@ -88,9 +91,17 @@ fun WorkflowsSettingsScreen(
     // State and effects
     // JSON file picker
     val jsonPickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
+        rememberOpenDocumentWithInitialUri(rememberLastPickedDocumentUri(context))
     ) { uri ->
         uri?.let {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+            }
+            AppSettings.setLastDocumentPickerUri(context, it.toString())
             viewModel.onFileSelected(context, it)
         }
     }
@@ -198,7 +209,7 @@ fun WorkflowsSettingsScreen(
                     Icon(Icons.Default.Add, contentDescription = stringResource(R.string.button_new_workflow))
                 }
                 // Import button
-                IconButton(onClick = { jsonPickerLauncher.launch("application/json") }) {
+                IconButton(onClick = { jsonPickerLauncher.launch(arrayOf("application/json")) }) {
                     Icon(Icons.Default.UploadFile, contentDescription = stringResource(R.string.button_import))
                 }
                 // Menu button

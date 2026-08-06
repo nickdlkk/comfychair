@@ -3,6 +3,8 @@ package sh.hnet.comfychair.ui.screens
 import android.content.ClipData
 import android.graphics.Bitmap
 import android.content.ClipboardManager
+import android.os.Handler
+import android.os.Looper
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.core.animateFloatAsState
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +39,7 @@ import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.filled.AddPhotoAlternate
@@ -82,6 +86,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import sh.hnet.comfychair.MaskEditorActivity
 import sh.hnet.comfychair.MediaViewerActivity
@@ -99,8 +104,13 @@ import sh.hnet.comfychair.ui.components.shared.PromptPresetDropdown
 import sh.hnet.comfychair.ui.theme.Dimensions
 import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.repository.GalleryRepository
+import sh.hnet.comfychair.ui.components.shared.rememberLastPickedImageUri
+import sh.hnet.comfychair.ui.components.shared.rememberOpenDocumentWithInitialUri
 import sh.hnet.comfychair.ui.components.GalleryPickerBottomSheet
+import sh.hnet.comfychair.ui.components.MaterialLibraryPickerBottomSheet
+import sh.hnet.comfychair.materials.MaterialLibrary
 import sh.hnet.comfychair.viewmodel.GalleryItem
+import sh.hnet.comfychair.viewmodel.MaterialLibraryViewModel
 import sh.hnet.comfychair.ui.components.GenerationButton
 import sh.hnet.comfychair.ui.components.GenerationProgressBar
 import sh.hnet.comfychair.ui.components.config.ConfigBottomSheetContent
@@ -122,7 +132,8 @@ fun ImageToImageScreen(
     generationViewModel: GenerationViewModel,
     imageToImageViewModel: ImageToImageViewModel,
     onNavigateToSettings: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    materialLibraryViewModel: MaterialLibraryViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -174,18 +185,25 @@ fun ImageToImageScreen(
 
     // Gallery picker state
     var showGalleryPicker by remember { mutableStateOf(false) }
+    var showMaterialPicker by remember { mutableStateOf(false) }
     var currentPickerSlot by remember { mutableStateOf(1) }
     val galleryPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val materialPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val galleryImages: List<GalleryItem> by GalleryRepository.getInstance().galleryItems.collectAsState()
+    val materialUiState by materialLibraryViewModel.uiState.collectAsState()
+
+    // Image info overlay state (which slot's info is shown, null = hidden)
+    var imageInfoSlot by remember { mutableStateOf<Int?>(null) }
 
     // Image picker launcher for source image (system file picker - supports Downloads, file managers, gallery)
     val imagePickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
+        rememberOpenDocumentWithInitialUri(rememberLastPickedImageUri(context))
     ) { uri ->
         uri?.let {
             // Take persistable permission so we can read the file later
             val takeFlags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(it, takeFlags)
+            AppSettings.setLastImagePickerUri(context, it.toString())
             imageToImageViewModel.onSourceImageChange(context, it)
             imageToImageViewModel.onViewModeChange(ImageToImageViewMode.SOURCE)
         }
@@ -193,31 +211,34 @@ fun ImageToImageScreen(
 
     // Additional source image pickers (slots 2, 3, 4)
     val imagePickerLauncher2 = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
+        rememberOpenDocumentWithInitialUri(rememberLastPickedImageUri(context))
     ) { uri ->
         uri?.let {
             val takeFlags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(it, takeFlags)
+            AppSettings.setLastImagePickerUri(context, it.toString())
             imageToImageViewModel.onAdditionalSourceImageChange(context, 2, it)
         }
     }
 
     val imagePickerLauncher3 = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
+        rememberOpenDocumentWithInitialUri(rememberLastPickedImageUri(context))
     ) { uri ->
         uri?.let {
             val takeFlags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(it, takeFlags)
+            AppSettings.setLastImagePickerUri(context, it.toString())
             imageToImageViewModel.onAdditionalSourceImageChange(context, 3, it)
         }
     }
 
     val imagePickerLauncher4 = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
+        rememberOpenDocumentWithInitialUri(rememberLastPickedImageUri(context))
     ) { uri ->
         uri?.let {
             val takeFlags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(it, takeFlags)
+            AppSettings.setLastImagePickerUri(context, it.toString())
             imageToImageViewModel.onAdditionalSourceImageChange(context, 4, it)
         }
     }
@@ -311,6 +332,7 @@ fun ImageToImageScreen(
     var pendingWorkflowJson by remember { mutableStateOf<String?>(null) }
     var showPlaceholderDialog by remember { mutableStateOf(false) }
     var pendingPlaceholders by remember { mutableStateOf(emptyList<String>()) }
+    var batchCount by remember { mutableStateOf(AppSettings.getBatchCount(context)) }
 
     LaunchedEffect(Unit) {
         imageToImageViewModel.events.collect { event ->
@@ -404,6 +426,13 @@ fun ImageToImageScreen(
                 ) {
                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = stringResource(R.string.button_upload_source_image))
                 }
+                IconButton(onClick = {
+                    currentPickerSlot = currentSourceSlot
+                    materialLibraryViewModel.load(context)
+                    showMaterialPicker = true
+                }) {
+                    Icon(Icons.Default.Collections, contentDescription = stringResource(R.string.button_pick_from_materials))
+                }
                 // Edit mask button (only in inpainting mode when source image exists)
                 if (uiState.sourceImage != null && uiState.mode == ImageToImageMode.INPAINTING) {
                     IconButton(onClick = {
@@ -441,7 +470,8 @@ fun ImageToImageScreen(
                 // Menu button
                 AppMenuDropdown(
                     onSettings = onNavigateToSettings,
-                    onLogout = onLogout
+                    onLogout = onLogout,
+                    showOfflineToggle = true
                 )
             }
         )
@@ -543,11 +573,78 @@ fun ImageToImageScreen(
                     if (sourceImage != null) {
                         if (uiState.mode == ImageToImageMode.INPAINTING && sourceSlot == 1) {
                             // Inpainting: source image 1 shows mask overlay
-                            MaskPreview(
-                                sourceImage = sourceImage,
-                                maskPaths = uiState.maskPaths,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                MaskPreview(
+                                    sourceImage = sourceImage,
+                                    maskPaths = uiState.maskPaths,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                // Image info (i) button for inpainting slot 1
+                                IconButton(
+                                    onClick = {
+                                        imageInfoSlot = if (imageInfoSlot == sourceSlot) null else sourceSlot
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Info,
+                                        contentDescription = stringResource(R.string.content_description_image_info),
+                                        tint = Color.White.copy(alpha = 0.85f)
+                                    )
+                                }
+                                // Image info overlay
+                                if (imageInfoSlot == sourceSlot) {
+                                    val fileSize = uiState.sourceImageSize
+                                    val fileSizeText = fileSize?.let {
+                                        if (it >= 1024 * 1024) {
+                                            String.format("%.1f MB", it / (1024.0 * 1024.0))
+                                        } else {
+                                            String.format("%.1f KB", it / 1024.0)
+                                        }
+                                    } ?: "Unknown"
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 52.dp, end = 8.dp)
+                                            .background(
+                                                Color.Black.copy(alpha = 0.65f),
+                                                shape = RoundedCornerShape(8.dp)
+                                            )
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "${sourceImage.width} × ${sourceImage.height}",
+                                                color = Color.White,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Text(
+                                                text = fileSizeText,
+                                                color = Color.White.copy(alpha = 0.8f),
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            TextButton(
+                                                onClick = { imageToImageViewModel.compressSourceImage(sourceSlot) },
+                                                enabled = sourceSlot !in uiState.compressedSlots,
+                                                modifier = Modifier.height(28.dp),
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (sourceSlot in uiState.compressedSlots) "Compressed ✓" else "Compress",
+                                                    color = if (sourceSlot in uiState.compressedSlots)
+                                                        Color.Green.copy(alpha = 0.9f)
+                                                    else
+                                                        Color.White.copy(alpha = 0.85f),
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         } else {
                             Box(modifier = Modifier.fillMaxSize()) {
                                 Image(
@@ -596,6 +693,82 @@ fun ImageToImageScreen(
                                             .clickable { imageToImageViewModel.toggleBypassSourceImage(sourceSlot) },
                                         tint = Color.White.copy(alpha = 0.85f)
                                     )
+                                }
+
+                                // Image info (i) button — shown for all source image slots
+                                IconButton(
+                                    onClick = {
+                                        imageInfoSlot = if (imageInfoSlot == sourceSlot) null else sourceSlot
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(
+                                            top = if (sourceSlot >= 2 && uiState.bypassedSourceSlots.contains(sourceSlot)) 48.dp else 8.dp,
+                                            end = 8.dp
+                                        )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Info,
+                                        contentDescription = stringResource(R.string.content_description_image_info),
+                                        tint = Color.White.copy(alpha = 0.85f)
+                                    )
+                                }
+
+                                // Image info overlay — semi-transparent box showing dimensions and file size
+                                if (imageInfoSlot == sourceSlot) {
+                                    val fileSize = when (sourceSlot) {
+                                        1 -> uiState.sourceImageSize
+                                        2 -> uiState.sourceImage2Size
+                                        3 -> uiState.sourceImage3Size
+                                        4 -> uiState.sourceImage4Size
+                                        else -> null
+                                    }
+                                    val fileSizeText = fileSize?.let {
+                                        if (it >= 1024 * 1024) {
+                                            String.format("%.1f MB", it / (1024.0 * 1024.0))
+                                        } else {
+                                            String.format("%.1f KB", it / 1024.0)
+                                        }
+                                    } ?: "Unknown"
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 52.dp, end = 8.dp)
+                                            .background(
+                                                Color.Black.copy(alpha = 0.65f),
+                                                shape = RoundedCornerShape(8.dp)
+                                            )
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "${sourceImage.width} × ${sourceImage.height}",
+                                                color = Color.White,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Text(
+                                                text = fileSizeText,
+                                                color = Color.White.copy(alpha = 0.8f),
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            TextButton(
+                                                onClick = { imageToImageViewModel.compressSourceImage(sourceSlot) },
+                                                enabled = sourceSlot !in uiState.compressedSlots,
+                                                modifier = Modifier.height(28.dp),
+                                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (sourceSlot in uiState.compressedSlots) "Compressed ✓" else "Compress",
+                                                    color = if (sourceSlot in uiState.compressedSlots)
+                                                        Color.Green.copy(alpha = 0.9f)
+                                                    else
+                                                        Color.White.copy(alpha = 0.85f),
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -686,6 +859,7 @@ fun ImageToImageScreen(
                 .padding(bottom = 16.dp)
         ) {
             GenerationButton(
+                batchCount = batchCount,
                 queueSize = queueState.totalQueueSize,
                 isExecuting = queueState.isExecuting,
                 isEnabled = imageToImageViewModel.hasValidConfiguration() &&
@@ -695,6 +869,9 @@ fun ImageToImageScreen(
                 isUploading = uiState.isUploading,
                 isFetching = uiState.isFetching,
                 isConnecting = isConnecting,
+                uploadTotalBytes = uiState.uploadTotalBytes,
+                uploadProgressBytes = uiState.uploadProgressBytes,
+                uploadLabel = uiState.uploadLabel,
                 onGenerate = {
                     scope.launch {
                         // In inpainting mode, require mask
@@ -707,32 +884,50 @@ fun ImageToImageScreen(
                             return@launch
                         }
                         val workflowJson = imageToImageViewModel.prepareWorkflow()
-                        // Capture for potential placeholder confirmation dialog
                         pendingWorkflowJson = workflowJson
                         if (workflowJson != null) {
-                            // If UnresolvedPlaceholders was emitted, dialog is now showing.
-                            // User clicks Confirm → startGeneration is called with captured workflowJson.
-                            // If no unresolved placeholders (pendingPlaceholders still empty),
-                            // dialog won't show and we proceed immediately.
                             if (pendingPlaceholders.isEmpty()) {
-                                generationViewModel.startGeneration(
-                                    workflowJson,
-                                    ImageToImageViewModel.OWNER_ID
-                                ) { success, _, errorMessage ->
-                                    if (!success) {
-                                        errorDialogMessage = errorMessage ?: context.getString(R.string.error_generation_failed)
-                                        showErrorDialog = true
+                            if (batchCount > 1) {
+                                AppSettings.setBatchCount(context, batchCount)
+                                var completed = 0
+                                val total = batchCount
+                                scope.launch {
+                                    suspend fun generateNext() {
+                                        if (completed >= total) return
+                                        val json = imageToImageViewModel.prepareWorkflow() ?: return
+                                        generationViewModel.startGeneration(json, ImageToImageViewModel.OWNER_ID) { success, _, errorMessage ->
+                                            completed++
+                                            if (!success && errorMessage != null) {
+                                                errorDialogMessage = errorMessage
+                                                showErrorDialog = true
+                                            }
+                                            if (completed < total) {
+                                                scope.launch { delay(300L); generateNext() }
+                                            }
+                                        }
+                                    }
+                                    generateNext()
+                                }
+                            } else {
+                                    generationViewModel.startGeneration(
+                                        workflowJson,
+                                        ImageToImageViewModel.OWNER_ID
+                                    ) { success, _, errorMessage ->
+                                        if (!success) {
+                                            errorDialogMessage = errorMessage ?: context.getString(R.string.error_generation_failed)
+                                            showErrorDialog = true
+                                        }
                                     }
                                 }
                             }
                         } else {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.error_generation_failed),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            Toast.makeText(context, context.getString(R.string.error_generation_failed), Toast.LENGTH_SHORT).show()
                         }
                     }
+                },
+                onBatchCountChange = { newCount ->
+                    batchCount = newCount
+                    AppSettings.setBatchCount(context, newCount)
                 },
                 onCancelCurrent = { generationViewModel.cancelGeneration { } },
                 onAddToFrontOfQueue = {
@@ -825,6 +1020,27 @@ fun ImageToImageScreen(
             },
             onDismiss = { showGalleryPicker = false },
             sheetState = galleryPickerSheetState
+        )
+    }
+
+    if (showMaterialPicker) {
+        MaterialLibraryPickerBottomSheet(
+            items = materialUiState.items,
+            viewModel = materialLibraryViewModel,
+            isImporting = materialUiState.isImporting,
+            isSelectionMode = materialUiState.isSelectionMode,
+            selectedIds = materialUiState.selectedIds,
+            onSelect = { item ->
+                scope.launch {
+                    val bitmap = MaterialLibrary.loadBitmap(context, item)
+                    if (bitmap != null) {
+                        imageToImageViewModel.onSourceImageFromGallery(context, currentPickerSlot, bitmap)
+                    }
+                }
+                showMaterialPicker = false
+            },
+            onDismiss = { showMaterialPicker = false },
+            sheetState = materialPickerSheetState
         )
     }
 
@@ -943,7 +1159,9 @@ fun ImageToImageScreen(
                     onAddEditingLownoiseLora = imageToImageViewModel::onAddEditingLownoiseLora,
                     onRemoveEditingLownoiseLora = imageToImageViewModel::onRemoveEditingLownoiseLora,
                     onEditingLownoiseLoraNameChange = imageToImageViewModel::onEditingLownoiseLoraNameChange,
-                    onEditingLownoiseLoraStrengthChange = imageToImageViewModel::onEditingLownoiseLoraStrengthChange
+                    onEditingLownoiseLoraStrengthChange = imageToImageViewModel::onEditingLownoiseLoraStrengthChange,
+                    // Model refresh
+                    onRefreshModels = imageToImageViewModel::fetchModels
                 )
             }
             val bottomSheetConfig = remember(uiState, callbacks) {

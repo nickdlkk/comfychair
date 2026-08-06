@@ -25,6 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleButton
@@ -41,10 +42,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import sh.hnet.comfychair.R
+import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.ui.components.LanguageDropdown
 import sh.hnet.comfychair.ui.components.LanguageOption
 import sh.hnet.comfychair.ui.components.LogViewerDialog
 import sh.hnet.comfychair.ui.components.SettingsScreenScaffold
+import sh.hnet.comfychair.ui.components.shared.rememberLastPickedDocumentUri
+import sh.hnet.comfychair.ui.components.shared.rememberOpenDocumentWithInitialUri
 import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.viewmodel.SettingsEvent
 import sh.hnet.comfychair.viewmodel.SettingsViewModel
@@ -71,6 +75,8 @@ fun ApplicationSettingsScreen(
     val isShowBuiltInWorkflows by viewModel.isShowBuiltInWorkflows.collectAsState()
     val isOfflineMode by viewModel.isOfflineMode.collectAsState()
     val edgeRouterId by viewModel.edgeRouterId.collectAsState()
+    val logUploadUrl by viewModel.logUploadUrl.collectAsState()
+    val isUploadingLogs by viewModel.isUploadingLogs.collectAsState()
 
     // State and effects
     // Backup/restore state
@@ -89,9 +95,19 @@ fun ApplicationSettingsScreen(
 
     // File picker for restoring backup
     val backupRestoreLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
+        rememberOpenDocumentWithInitialUri(rememberLastPickedDocumentUri(context))
     ) { uri ->
-        uri?.let { viewModel.startRestore(it) }
+        uri?.let {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+            }
+            AppSettings.setLastDocumentPickerUri(context, it.toString())
+            viewModel.startRestore(it)
+        }
     }
 
     // File picker for saving debug logs
@@ -605,7 +621,7 @@ fun ApplicationSettingsScreen(
 
                 Button(
                     onClick = {
-                        backupRestoreLauncher.launch("application/json")
+                        backupRestoreLauncher.launch(arrayOf("application/json"))
                     },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
@@ -729,6 +745,33 @@ fun ApplicationSettingsScreen(
                     Icon(Icons.Default.BugReport, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(stringResource(R.string.button_debug_logging_view))
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = logUploadUrl,
+                    onValueChange = { viewModel.setLogUploadUrl(context, it) },
+                    label = { Text(stringResource(R.string.label_log_upload_url)) },
+                    placeholder = { Text("http://192.168.1.100:9123/upload") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isDebugLoggingEnabled && !isUploadingLogs
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = { viewModel.uploadLogs(context) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isDebugLoggingEnabled && !isUploadingLogs
+                ) {
+                    Text(
+                        stringResource(
+                            if (isUploadingLogs) R.string.button_log_uploading
+                            else R.string.button_log_upload
+                        )
+                    )
                 }
             }
         }

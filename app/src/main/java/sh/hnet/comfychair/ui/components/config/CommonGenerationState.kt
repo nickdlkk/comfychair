@@ -77,4 +77,7 @@ interface CommonGenerationState {
 
     // LoRA chain (for screens that support it)
     val loraChain: List<LoraSelection>
+
+    // Model refresh loading state
+    val isRefreshingModels: Boolean
 }

@@ -10,6 +10,7 @@ sealed class MainRoute(val route: String) {
     data object TextToVideo : MainRoute("text_to_video")
     data object ImageToVideo : MainRoute("image_to_video")
     data object Gallery : MainRoute("gallery")
+    data object Materials : MainRoute("materials")
 }
 
 /**

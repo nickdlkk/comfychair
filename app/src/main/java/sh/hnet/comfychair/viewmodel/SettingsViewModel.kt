@@ -4,6 +4,12 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -18,6 +24,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONObject
 import sh.hnet.comfychair.ComfyUIClient
 import sh.hnet.comfychair.R
@@ -124,6 +135,12 @@ class SettingsViewModel : ViewModel() {
     private val _edgeRouterId = MutableStateFlow("hermite")
     val edgeRouterId: StateFlow<String> = _edgeRouterId.asStateFlow()
 
+    private val _logUploadUrl = MutableStateFlow("")
+    val logUploadUrl: StateFlow<String> = _logUploadUrl.asStateFlow()
+
+    private val _isUploadingLogs = MutableStateFlow(false)
+    val isUploadingLogs: StateFlow<Boolean> = _isUploadingLogs.asStateFlow()
+
     private val _events = MutableSharedFlow<SettingsEvent>()
     val events: SharedFlow<SettingsEvent> = _events.asSharedFlow()
 
@@ -141,6 +158,7 @@ class SettingsViewModel : ViewModel() {
         _isShowBuiltInWorkflows.value = AppSettings.isShowBuiltInWorkflows(context)
         _isOfflineMode.value = AppSettings.isOfflineMode(context)
         _edgeRouterId.value = AppSettings.getEdgeRouterId(context)
+        _logUploadUrl.value = AppSettings.getLogUploadUrl(context)
 
         // Initialize debug logger with saved state
         DebugLogger.setEnabled(_isDebugLoggingEnabled.value)
@@ -499,6 +517,115 @@ class SettingsViewModel : ViewModel() {
         _edgeRouterId.value = routerId
     }
 
+    fun setLogUploadUrl(context: Context, url: String) {
+        AppSettings.setLogUploadUrl(context, url)
+        _logUploadUrl.value = url
+    }
+
+    fun uploadLogs(context: Context) {
+        val targetUrl = _logUploadUrl.value.trim()
+        if (targetUrl.isBlank()) {
+            viewModelScope.launch { _events.emit(SettingsEvent.ShowToast(R.string.error_log_upload_url_empty)) }
+            return
+        }
+
+        viewModelScope.launch {
+            _isUploadingLogs.value = true
+            try {
+                val zipFile = withContext(Dispatchers.IO) {
+                    createLogBundleZip(context)
+                }
+
+                val success = withContext(Dispatchers.IO) {
+                    uploadLogBundleFile(targetUrl, zipFile)
+                }
+
+                if (success) {
+                    _events.emit(SettingsEvent.ShowToast(R.string.msg_log_upload_success))
+                } else {
+                    _events.emit(SettingsEvent.ShowToast(R.string.error_log_upload_failed))
+                }
+            } catch (e: Exception) {
+                DebugLogger.e(TAG, "Log upload failed: ${e.message}")
+                _events.emit(SettingsEvent.ShowToast(R.string.error_log_upload_failed))
+            } finally {
+                _isUploadingLogs.value = false
+            }
+        }
+    }
+
+    private fun createLogBundleZip(context: Context): File {
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val zipFile = File(context.cacheDir, "comfychair_logs_$timestamp.zip")
+
+        val metadataJson = JSONObject().apply {
+            put("exported_at", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.US).format(Date()))
+            put("package_name", context.packageName)
+            put("debug_logging_enabled", _isDebugLoggingEnabled.value)
+            put("current_server_hostname", ConnectionManager.hostname)
+            put("current_server_port", ConnectionManager.port)
+            put("device_manufacturer", android.os.Build.MANUFACTURER)
+            put("device_model", android.os.Build.MODEL)
+            put("android_release", android.os.Build.VERSION.RELEASE)
+            put("sdk_int", android.os.Build.VERSION.SDK_INT)
+            put("log_entries", DebugLogger.getEntries().size)
+        }.toString(2)
+
+        ZipOutputStream(zipFile.outputStream().buffered()).use { zos ->
+            zos.putNextEntry(ZipEntry("debug_log.txt"))
+            zos.write(DebugLogger.exportToString().toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+
+            zos.putNextEntry(ZipEntry("metadata.json"))
+            zos.write(metadataJson.toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+
+            val debugArtifacts = listOf(
+                "last_submitted_prompt.json",
+                "last_prepared_workflow.json",
+                "selected_workflow_original.json",
+                "workflow_values_snapshot.json",
+                "generation_context.json"
+            )
+            for (artifactName in debugArtifacts) {
+                val artifactFile = File(context.cacheDir, artifactName)
+                if (artifactFile.exists() && artifactFile.isFile) {
+                    zos.putNextEntry(ZipEntry(artifactName))
+                    zos.write(artifactFile.readBytes())
+                    zos.closeEntry()
+                }
+            }
+        }
+
+        DebugLogger.i(TAG, "Created log bundle zip: ${zipFile.name} (${zipFile.length()} bytes)")
+        return zipFile
+    }
+
+    private fun uploadLogBundleFile(targetUrl: String, zipFile: File): Boolean {
+        val client = OkHttpClient.Builder().build()
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "file",
+                zipFile.name,
+                zipFile.asRequestBody("application/zip".toMediaType())
+            )
+            .addFormDataPart("filename", zipFile.name)
+            .addFormDataPart("app", "ComfyChair")
+            .build()
+
+        val request = Request.Builder()
+            .url(targetUrl)
+            .post(requestBody)
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            DebugLogger.i(TAG, "Log upload response: code=${response.code}, body=$body")
+            return response.isSuccessful
+        }
+    }
+
     /**
      * Set whether offline mode should be enabled.
      * Offline mode allows browsing cached data without network connectivity.
@@ -708,6 +835,7 @@ class SettingsViewModel : ViewModel() {
         val newShowBuiltInWorkflows = AppSettings.isShowBuiltInWorkflows(context)
         val newOfflineMode = AppSettings.isOfflineMode(context)
         val newEdgeRouterId = AppSettings.getEdgeRouterId(context)
+        val newLogUploadUrl = AppSettings.getLogUploadUrl(context)
 
         // If debug logging was enabled before restore, keep it enabled
         val finalDebugLogging = if (preserveDebugLogging && !restoredDebugLogging) {
@@ -729,6 +857,7 @@ class SettingsViewModel : ViewModel() {
         _isShowBuiltInWorkflows.value = newShowBuiltInWorkflows
         _isOfflineMode.value = newOfflineMode
         _edgeRouterId.value = newEdgeRouterId
+        _logUploadUrl.value = newLogUploadUrl
 
         // Update DebugLogger state to match
         DebugLogger.setEnabled(finalDebugLogging)

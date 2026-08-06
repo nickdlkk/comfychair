@@ -1,22 +1,29 @@
 package sh.hnet.comfychair.ui.components.config
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -209,12 +216,45 @@ private fun ModelSelectionSection(models: ModelConfig) {
 @Composable
 private fun RenderModelField(field: ModelField) {
     Spacer(modifier = Modifier.height(12.dp))
-    ModelDropdown(
-        label = stringResource(field.label),
-        selectedValue = field.selectedValue,
-        options = field.filteredOptions ?: field.options,
-        onValueChange = field.onValueChange
-    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ModelDropdown(
+            label = stringResource(field.label),
+            selectedValue = field.selectedValue,
+            options = field.filteredOptions ?: field.options,
+            onValueChange = field.onValueChange,
+            modifier = Modifier.weight(1f)
+        )
+        // Refresh button / loading indicator for checkpoint
+        field.onRefresh?.let {
+            Spacer(modifier = Modifier.width(4.dp))
+            Box(
+                modifier = Modifier.size(40.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (field.isRefreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    IconButton(
+                        onClick = it,
+                        enabled = !field.isRefreshing
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = stringResource(R.string.button_refresh_models),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

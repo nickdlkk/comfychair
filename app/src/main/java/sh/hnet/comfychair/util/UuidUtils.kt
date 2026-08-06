@@ -32,14 +32,18 @@ object UuidUtils {
     }
 
     /**
-     * Generate a unique filename for image uploads to prevent race conditions
-     * when multiple jobs are queued rapidly. Uses timestamp for uniqueness.
+     * Generate a content-based filename for image uploads.
+     * Same bytes always produce the same filename — allowing ComfyUI to overwrite
+     * the same file on repeated uploads instead of creating duplicates.
      *
      * @param prefix The base name for the file (e.g., "editing_source", "itv_source")
+     * @param bytes The image bytes to hash
      * @param extension The file extension without dot (default: "png")
-     * @return A unique filename like "editing_source_1704729600000.png"
+     * @return A stable filename like "editing_source_a1b2c3d4e5f6.png"
      */
-    fun generateUniqueUploadFilename(prefix: String, extension: String = "png"): String {
-        return "${prefix}_${System.currentTimeMillis()}.${extension}"
+    fun generateUploadFilenameFromBytes(prefix: String, bytes: ByteArray, extension: String = "png"): String {
+        val md5 = MessageDigest.getInstance("MD5")
+        val hash = md5.digest(bytes).joinToString("") { "%02x".format(it) }
+        return "${prefix}_${hash}.${extension}"
     }
 }

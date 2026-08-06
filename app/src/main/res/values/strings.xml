@@ -70,6 +70,13 @@
     <string name="hint_negative_prompt">Negative prompt</string>
     <string name="button_generate">Generate</string>
 
+    <!-- Batch generation strings -->
+    <string name="batch_count_label">Batch Count</string>
+    <string name="label_batch_count">Count</string>
+    <string name="button_confirm_batch">Generate (%1$d)</string>
+    <string name="button_generating_progress">%1$d…</string>
+    <string name="menu_batch_generate">Batch Generate</string>
+
     <!-- Gallery screen strings -->
     <string name="title_gallery">Gallery</string>
     <string name="content_description_gallery_thumbnail">Generated image thumbnail</string>
@@ -199,7 +206,24 @@
     <string name="label_megapixels">Megapixels</string>
     <string name="button_upload_source_image">Upload Source Image</string>
     <string name="button_pick_from_gallery">Pick from history</string>
+    <string name="button_pick_from_materials">Pick from materials</string>
     <string name="title_gallery_picker">Select from History</string>
+    <string name="title_material_picker">Select from Materials</string>
+    <string name="title_material_library">Materials</string>
+    <string name="button_import_materials">Import images</string>
+    <string name="button_materials_select">Select items</string>
+    <string name="button_delete_material">Delete materials</string>
+    <string name="button_confirm_delete">Click again to confirm</string>
+    <string name="msg_material_library_empty">No materials imported</string>
+    <string name="msg_materials_imported_success">Materials imported</string>
+    <string name="msg_importing">Importing…</string>
+    <string name="error_materials_import">Failed to import materials</string>
+    <string name="button_save_to_material_library">Add to Material Library</string>
+    <string name="button_import_to_material_library">Import to Material Library</string>
+    <string name="msg_materials_deleted_success">Materials deleted</string>
+    <string name="error_materials_delete">Failed to delete materials</string>
+    <string name="materials_selected_count">%d selected</string>
+    <string name="menu_materials">Materials</string>
     <string name="button_use_as_source">Use as source image</string>
     <string name="msg_gallery_picker_empty">No images in history</string>
     <string name="button_add_image2">Add Image 2</string>
@@ -212,6 +236,7 @@
     <!-- Generation button states -->
     <string name="button_add_to_queue">Add to queue (%d)</string>
     <string name="button_uploading">Uploading…</string>
+    <string name="button_uploading_progress">Uploading… %1$s</string>
     <string name="button_uploading_queue">Uploading… (%d)</string>
     <string name="button_connecting_queue">Connecting… (%d)</string>
     <string name="button_fetching">Fetching…</string>
@@ -281,6 +306,8 @@
     <string name="menu_generation">Generation</string>
     <string name="action_settings">Settings</string>
     <string name="action_logout">Log out</string>
+    <string name="menu_go_offline">Go Offline</string>
+    <string name="menu_go_online">Go Online</string>
     <string name="button_options">Options</string>
 
     <!-- Configuration bottom sheet labels -->
@@ -303,6 +330,7 @@
     <string name="label_latent_upscale_model" translatable="false">Latent Upscale Model</string>
     <string name="label_width">Width</string>
     <string name="label_height">Height</string>
+    <string name="button_resolution_presets">Presets</string>
     <string name="label_steps">Steps</string>
     <string name="label_cfg" translatable="false">CFG</string>
     <string name="label_sampler">Sampler</string>
@@ -478,6 +506,7 @@
     <string name="content_description_reference_image_1">Reference image 1</string>
     <string name="content_description_reference_image_2">Reference image 2</string>
     <string name="content_description_source_image">Source image</string>
+    <string name="content_description_image_info">Image info</string>
     <string name="content_description_decrease">Decrease value</string>
     <string name="content_description_increase">Increase value</string>
     <string name="content_description_show_help">Show help</string>
@@ -609,12 +638,18 @@
     <string name="label_debug_logging_enable">Enable logging</string>
     <string name="desc_debug_logging_enable">Logs are kept in memory only</string>
     <string name="button_debug_logging_view">View logs</string>
+    <string name="label_log_upload_url">Log upload server URL</string>
+    <string name="button_log_upload">Upload log bundle</string>
+    <string name="button_log_uploading">Uploading log bundle…</string>
     <string name="title_debug_log">Debug log</string>
     <string name="msg_debug_log_empty">No log entries</string>
     <string name="debug_log_save">Save</string>
     <string name="debug_log_follow">Follow</string>
     <string name="msg_debug_log_saved">Log saved successfully</string>
     <string name="error_debug_log_save">Failed to save log</string>
+    <string name="msg_log_upload_success">Log bundle uploaded successfully</string>
+    <string name="error_log_upload_failed">Failed to upload log bundle</string>
+    <string name="error_log_upload_url_empty">Please enter the log upload server URL</string>
 
     <!-- Prompt Presets strings -->
     <string name="button_prompt_presets">Prompt presets</string>

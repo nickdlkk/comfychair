@@ -39,7 +39,7 @@ data class LogEntry(
 object DebugLogger {
     private val entries = CopyOnWriteArrayList<LogEntry>()
     private var enabled = false
-    private const val MAX_ENTRIES = 1000
+    private const val MAX_ENTRIES = 5000
 
     private const val LOGCAT_ENABLED = false
     private const val LOGCAT_TAG = "ComfyChair"

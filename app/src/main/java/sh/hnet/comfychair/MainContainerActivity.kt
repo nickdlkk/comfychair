@@ -29,6 +29,7 @@ import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.viewmodel.GenerationViewModel
 import sh.hnet.comfychair.viewmodel.ImageToImageViewModel
 import sh.hnet.comfychair.viewmodel.ImageToVideoViewModel
+import sh.hnet.comfychair.viewmodel.MaterialLibraryViewModel
 import sh.hnet.comfychair.viewmodel.TextToImageViewModel
 import sh.hnet.comfychair.viewmodel.TextToVideoViewModel
 
@@ -47,6 +48,7 @@ class MainContainerActivity : ComponentActivity() {
     private val generationViewModel: GenerationViewModel by viewModels()
     private val imageToImageViewModel: ImageToImageViewModel by viewModels()
     private val imageToVideoViewModel: ImageToVideoViewModel by viewModels()
+    private val materialLibraryViewModel: MaterialLibraryViewModel by viewModels()
 
     // Activity result launchers
     private val settingsLauncher = registerForActivityResult(
@@ -148,6 +150,7 @@ class MainContainerActivity : ComponentActivity() {
                         generationViewModel = generationViewModel,
                         imageToImageViewModel = imageToImageViewModel,
                         imageToVideoViewModel = imageToVideoViewModel,
+                        materialLibraryViewModel = materialLibraryViewModel,
                         onNavigateToSettings = { openSettings() },
                         onNavigateToGallery = { openGallery() },
                         onLogout = { logout() },

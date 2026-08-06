@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.io.InputStream
+import java.nio.charset.StandardCharsets
 
 /**
  * Workflow types supported by ComfyChair
@@ -131,6 +132,8 @@ object WorkflowManager {
     // Available workflows loaded from res/raw and user storage
     private val workflows = mutableListOf<Workflow>()
     private val workflowValuesStorage by lazy { WorkflowValuesStorage(applicationContext) }
+    private val debugArtifactDir: File
+        get() = applicationContext.cacheDir
 
     // Workflow change notification - increments when workflows are added/updated/deleted
     // ViewModels can observe this to refresh their workflow lists
@@ -1252,6 +1255,44 @@ object WorkflowManager {
         return workflows.find { it.id == id }
     }
 
+    private fun saveDebugArtifact(filename: String, content: String) {
+        runCatching {
+            File(debugArtifactDir, filename).writeText(content, StandardCharsets.UTF_8)
+        }.onFailure { e ->
+            DebugLogger.w(TAG, "saveDebugArtifact failed for $filename: ${e.message}")
+        }
+    }
+
+    private fun saveWorkflowDebugSnapshot(
+        workflow: Workflow,
+        workflowId: String,
+        preparedJson: String,
+        extraContext: JSONObject = JSONObject()
+    ) {
+        saveDebugArtifact("selected_workflow_original.json", workflow.jsonContent)
+        saveDebugArtifact("last_prepared_workflow.json", preparedJson)
+
+        val serverId = ConnectionManager.currentServerId
+        val workflowValues = serverId?.let { workflowValuesStorage.loadValues(it, workflowId) }
+        val workflowValuesJson = JSONObject().apply {
+            put("server_id", serverId ?: JSONObject.NULL)
+            put("workflow_id", workflowId)
+            put("workflow_name", workflow.name)
+            put("values", workflowValues?.let { JSONObject(sh.hnet.comfychair.model.WorkflowValues.toJson(it)) } ?: JSONObject.NULL)
+        }
+        saveDebugArtifact("workflow_values_snapshot.json", workflowValuesJson.toString(2))
+
+        val generationContext = JSONObject().apply {
+            put("workflow_id", workflowId)
+            put("workflow_name", workflow.name)
+            put("workflow_type", workflow.type.name)
+            put("server_id", serverId ?: JSONObject.NULL)
+            put("captured_at", System.currentTimeMillis())
+            put("extra", extraContext)
+        }
+        saveDebugArtifact("generation_context.json", generationContext.toString(2))
+    }
+
     /**
      * Get workflow defaults by workflow name
      */
@@ -1642,7 +1683,26 @@ object WorkflowManager {
         )
 
         // Apply node attribute edits from the Workflow Editor
-        return applyBypassedNodes(applyNodeAttributeEdits(processedJson, workflow.id))
+        val finalJson = applyBypassedNodes(applyNodeAttributeEdits(processedJson, workflow.id))
+        saveWorkflowDebugSnapshot(
+            workflow = workflow,
+            workflowId = workflow.id,
+            preparedJson = finalJson,
+            extraContext = JSONObject().apply {
+                put("mode", "TTI")
+                put("width", width)
+                put("height", height)
+                put("steps", steps)
+                put("cfg", cfg.toDouble())
+                put("sampler", samplerName)
+                put("scheduler", scheduler)
+                put("checkpoint", if (checkpoint.isNotEmpty()) checkpoint else JSONObject.NULL)
+                put("unet", if (unet.isNotEmpty()) unet else JSONObject.NULL)
+                put("vae", if (vae.isNotEmpty()) vae else JSONObject.NULL)
+                put("clip", clip ?: JSONObject.NULL)
+            }
+        )
+        return finalJson
     }
 
     /**
@@ -1740,7 +1800,27 @@ object WorkflowManager {
         )
 
         // Apply node attribute edits from the Workflow Editor
-        return applyBypassedNodes(applyNodeAttributeEdits(processedJson, workflow.id))
+        val finalJson = applyBypassedNodes(applyNodeAttributeEdits(processedJson, workflow.id))
+        saveWorkflowDebugSnapshot(
+            workflow = workflow,
+            workflowId = workflow.id,
+            preparedJson = finalJson,
+            extraContext = JSONObject().apply {
+                put("mode", "ITI_INPAINTING")
+                put("megapixels", megapixels.toDouble())
+                put("steps", steps)
+                put("cfg", cfg.toDouble())
+                put("sampler", samplerName)
+                put("scheduler", scheduler)
+                put("denoise", denoise.toDouble())
+                put("source_image", imageFilename)
+                put("checkpoint", if (checkpoint.isNotEmpty()) checkpoint else JSONObject.NULL)
+                put("unet", if (unet.isNotEmpty()) unet else JSONObject.NULL)
+                put("vae", if (vae.isNotEmpty()) vae else JSONObject.NULL)
+                put("clip", if (clip.isNotEmpty()) clip else JSONObject.NULL)
+            }
+        )
+        return finalJson
     }
 
     /**
@@ -2002,10 +2082,63 @@ object WorkflowManager {
             }
 
             // Apply node attribute edits from the Workflow Editor
-            return applyNodeAttributeEdits(json.toString(), workflow.id)
+            val finalJson = applyNodeAttributeEdits(json.toString(), workflow.id)
+            saveWorkflowDebugSnapshot(
+                workflow = workflow,
+                workflowId = workflow.id,
+                preparedJson = finalJson,
+                extraContext = JSONObject().apply {
+                    put("mode", "ITI_EDITING")
+                    put("megapixels", megapixels.toDouble())
+                    put("steps", steps)
+                    put("cfg", cfg.toDouble())
+                    put("sampler", samplerName)
+                    put("scheduler", scheduler)
+                    put("denoise", denoise.toDouble())
+                    put("source_image", sourceImageFilename)
+                    put("source_image_2", sourceImage2Filename ?: JSONObject.NULL)
+                    put("source_image_3", sourceImage3Filename ?: JSONObject.NULL)
+                    put("source_image_4", sourceImage4Filename ?: JSONObject.NULL)
+                    put("reference_image_1", referenceImage1Filename ?: JSONObject.NULL)
+                    put("reference_image_2", referenceImage2Filename ?: JSONObject.NULL)
+                    put("bypassed_slots", JSONArray(bypassedSlots.toList()))
+                    put("unet", unet)
+                    put("lora", lora)
+                    put("vae", vae)
+                    put("clip", clip)
+                }
+            )
+            return finalJson
         } catch (e: Exception) {
             // If JSON parsing fails, return the string-processed version with edits applied
-            return applyBypassedNodes(applyNodeAttributeEdits(processedJson, workflow.id))
+            val finalJson = applyBypassedNodes(applyNodeAttributeEdits(processedJson, workflow.id))
+            saveWorkflowDebugSnapshot(
+                workflow = workflow,
+                workflowId = workflow.id,
+                preparedJson = finalJson,
+                extraContext = JSONObject().apply {
+                    put("mode", "ITI_EDITING")
+                    put("megapixels", megapixels.toDouble())
+                    put("steps", steps)
+                    put("cfg", cfg.toDouble())
+                    put("sampler", samplerName)
+                    put("scheduler", scheduler)
+                    put("denoise", denoise.toDouble())
+                    put("source_image", sourceImageFilename)
+                    put("source_image_2", sourceImage2Filename ?: JSONObject.NULL)
+                    put("source_image_3", sourceImage3Filename ?: JSONObject.NULL)
+                    put("source_image_4", sourceImage4Filename ?: JSONObject.NULL)
+                    put("reference_image_1", referenceImage1Filename ?: JSONObject.NULL)
+                    put("reference_image_2", referenceImage2Filename ?: JSONObject.NULL)
+                    put("bypassed_slots", JSONArray(bypassedSlots.toList()))
+                    put("unet", unet)
+                    put("lora", lora)
+                    put("vae", vae)
+                    put("clip", clip)
+                    put("fallback_after_exception", e.message ?: JSONObject.NULL)
+                }
+            )
+            return finalJson
         }
     }
 
@@ -2104,7 +2237,28 @@ object WorkflowManager {
         )
 
         // Apply node attribute edits from the Workflow Editor
-        return applyBypassedNodes(applyNodeAttributeEdits(processedJson, workflow.id))
+        val finalJson = applyBypassedNodes(applyNodeAttributeEdits(processedJson, workflow.id))
+        saveWorkflowDebugSnapshot(
+            workflow = workflow,
+            workflowId = workflow.id,
+            preparedJson = finalJson,
+            extraContext = JSONObject().apply {
+                put("mode", "TTV")
+                put("width", width)
+                put("height", height)
+                put("length", length)
+                put("fps", fps)
+                put("steps", steps ?: JSONObject.NULL)
+                put("cfg", cfg?.toDouble() ?: JSONObject.NULL)
+                put("sampler", samplerName ?: JSONObject.NULL)
+                put("scheduler", scheduler ?: JSONObject.NULL)
+                put("checkpoint", if (checkpoint.isNotEmpty()) checkpoint else JSONObject.NULL)
+                put("unet", if (unet.isNotEmpty()) unet else JSONObject.NULL)
+                put("vae", if (vae.isNotEmpty()) vae else JSONObject.NULL)
+                put("clip", if (clip.isNotEmpty()) clip else JSONObject.NULL)
+            }
+        )
+        return finalJson
     }
 
     /**
@@ -2207,7 +2361,30 @@ object WorkflowManager {
         )
 
         // Apply node attribute edits from the Workflow Editor
-        return applyBypassedNodes(applyNodeAttributeEdits(processedJson, workflow.id))
+        val finalJson = applyBypassedNodes(applyNodeAttributeEdits(processedJson, workflow.id))
+        saveWorkflowDebugSnapshot(
+            workflow = workflow,
+            workflowId = workflow.id,
+            preparedJson = finalJson,
+            extraContext = JSONObject().apply {
+                put("mode", "ITV")
+                put("width", width)
+                put("height", height)
+                put("length", length)
+                put("fps", fps)
+                put("steps", steps ?: JSONObject.NULL)
+                put("cfg", cfg?.toDouble() ?: JSONObject.NULL)
+                put("sampler", samplerName ?: JSONObject.NULL)
+                put("scheduler", scheduler ?: JSONObject.NULL)
+                put("denoise", denoise?.toDouble() ?: JSONObject.NULL)
+                put("source_image", imageFilename)
+                put("checkpoint", if (checkpoint.isNotEmpty()) checkpoint else JSONObject.NULL)
+                put("unet", if (unet.isNotEmpty()) unet else JSONObject.NULL)
+                put("vae", if (vae.isNotEmpty()) vae else JSONObject.NULL)
+                put("clip", if (clip.isNotEmpty()) clip else JSONObject.NULL)
+            }
+        )
+        return finalJson
     }
 
     /**

@@ -12,6 +12,8 @@ import android.net.Uri
 import androidx.lifecycle.viewModelScope
 import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -96,6 +98,11 @@ data class ImageToImageUiState(
     val sourceImage2: Bitmap? = null,
     val sourceImage3: Bitmap? = null,
     val sourceImage4: Bitmap? = null,
+    // Original file sizes for source images (bytes, captured at load time for display)
+    val sourceImageSize: Long? = null,
+    val sourceImage2Size: Long? = null,
+    val sourceImage3Size: Long? = null,
+    val sourceImage4Size: Long? = null,
     // Bypassed source image slots (for multi-image workflows). Slot 1 is never bypassed — enforced in UI.
     val bypassedSourceSlots: Set<Int> = emptySet(),
     val previewImage: Bitmap? = null,
@@ -118,6 +125,9 @@ data class ImageToImageUiState(
 
     // Workflow capabilities (unified flags derived from placeholders)
     override val capabilities: WorkflowCapabilities = WorkflowCapabilities(),
+
+    // Model refresh loading state
+    override val isRefreshingModels: Boolean = false,
 
     // Available models (from server)
     override val availableCheckpoints: List<String> = emptyList(),
@@ -276,6 +286,13 @@ data class ImageToImageUiState(
     // Upload/fetch state
     val isUploading: Boolean = false,
     val isFetching: Boolean = false,
+    val uploadTotalBytes: Long? = null,
+    val uploadProgressBytes: Long? = null,
+    val uploadLabel: String? = null,
+
+    // Track which source image slots have already been compressed (to prevent double compression).
+    // Compressed slots should upload as JPEG bytes instead of being re-encoded to PNG.
+    val compressedSlots: Set<Int> = emptySet(),
 
     // Dynamic additional image slot count (based on workflow {{image_filename_N}} placeholders)
     val additionalImageSlotCount: Int = 0
@@ -1005,8 +1022,15 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
      */
     @Suppress("unused")
     fun fetchModels() {
-        // Models are now loaded automatically via ConnectionManager.modelCache
-        // which is observed in the init block above.
+        if (_uiState.value.isRefreshingModels) return
+        _uiState.update { it.copy(isRefreshingModels = true) }
+        viewModelScope.launch {
+            ConnectionManager.refreshServerData()
+            ConnectionManager.modelCache
+                .filter { !it.isLoading }
+                .first()
+            _uiState.update { it.copy(isRefreshingModels = false) }
+        }
     }
 
     // View mode
@@ -1095,9 +1119,14 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
     fun onSourceImageChange(context: Context, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream?.close()
+                // Read bytes first to capture file size, then decode bitmap
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes == null || bytes.isEmpty()) {
+                    _events.emit(ImageToImageEvent.ShowToast(R.string.error_save_image))
+                    return@launch
+                }
+                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                val fileSize = bytes.size.toLong()
 
                 if (bitmap != null) {
                     // Store in cache (memory or disk based on mode)
@@ -1105,6 +1134,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
 
                     _uiState.value = _uiState.value.copy(
                         sourceImage = bitmap,
+                        sourceImageSize = fileSize,
                         maskPaths = emptyList() // Clear mask when new image is loaded
                     )
                 }
@@ -1121,9 +1151,14 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
     fun onAdditionalSourceImageChange(context: Context, index: Int, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream?.close()
+                // Read bytes first to capture file size, then decode bitmap
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes == null || bytes.isEmpty()) {
+                    _events.emit(ImageToImageEvent.ShowToast(R.string.error_save_image))
+                    return@launch
+                }
+                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                val fileSize = bytes.size.toLong()
 
                 if (bitmap != null) {
                     val key = when (index) {
@@ -1135,9 +1170,9 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                     MediaStateHolder.putBitmap(key, bitmap, context)
 
                     val update = when (index) {
-                        2 -> _uiState.value.copy(sourceImage2 = bitmap)
-                        3 -> _uiState.value.copy(sourceImage3 = bitmap)
-                        4 -> _uiState.value.copy(sourceImage4 = bitmap)
+                        2 -> _uiState.value.copy(sourceImage2 = bitmap, sourceImage2Size = fileSize)
+                        3 -> _uiState.value.copy(sourceImage3 = bitmap, sourceImage3Size = fileSize)
+                        4 -> _uiState.value.copy(sourceImage4 = bitmap, sourceImage4Size = fileSize)
                         else -> return@launch
                     }
                     _uiState.value = update
@@ -1195,6 +1230,99 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             else -> return
         }
         _uiState.value = update
+    }
+
+    /**
+     * Compress a source image slot in-place (JPEG 80%) to reduce size.
+     * Updates the stored bitmap and file size. Can only be applied once per slot.
+     * @param slot 1-4
+     */
+    fun compressSourceImage(slot: Int) {
+        val state = _uiState.value
+        // Guard against double compression
+        if (slot in state.compressedSlots) return
+
+        val bitmap = when (slot) {
+            1 -> state.sourceImage
+            2 -> state.sourceImage2
+            3 -> state.sourceImage3
+            4 -> state.sourceImage4
+            else -> return
+        } ?: return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            // Compress bitmap to JPEG 80%
+            val outputStream = java.io.ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+            val compressedBytes = outputStream.toByteArray()
+
+            // Decode JPEG bytes back to bitmap
+            val compressedBitmap = BitmapFactory.decodeByteArray(compressedBytes, 0, compressedBytes.size)
+            if (compressedBitmap == null) return@launch
+
+            val compressedSize = compressedBytes.size.toLong()
+
+            // Update state — replace bitmap, update file size, mark as compressed
+            _uiState.update { current ->
+                val slotUpdate = when (slot) {
+                    1 -> current.copy(
+                        sourceImage = compressedBitmap,
+                        sourceImageSize = compressedSize,
+                        compressedSlots = current.compressedSlots + slot
+                    )
+                    2 -> current.copy(
+                        sourceImage2 = compressedBitmap,
+                        sourceImage2Size = compressedSize,
+                        compressedSlots = current.compressedSlots + slot
+                    )
+                    3 -> current.copy(
+                        sourceImage3 = compressedBitmap,
+                        sourceImage3Size = compressedSize,
+                        compressedSlots = current.compressedSlots + slot
+                    )
+                    4 -> current.copy(
+                        sourceImage4 = compressedBitmap,
+                        sourceImage4Size = compressedSize,
+                        compressedSlots = current.compressedSlots + slot
+                    )
+                    else -> return@launch
+                }
+                // Also persist to MediaCache if possible
+                slotUpdate
+            }
+
+            // Save to disk cache so the compressed image persists
+            val ctx = applicationContext ?: return@launch
+            val key = when (slot) {
+                1 -> MediaStateHolder.MediaKey.ItiSource
+                2 -> MediaStateHolder.MediaKey.ItiSource2
+                3 -> MediaStateHolder.MediaKey.ItiSource3
+                4 -> MediaStateHolder.MediaKey.ItiSource4
+                else -> return@launch
+            }
+            MediaStateHolder.putBitmap(key, compressedBitmap, ctx)
+        }
+    }
+
+    private fun encodeSourceImageForUpload(bitmap: Bitmap, compressed: Boolean): Pair<ByteArray, String> {
+        val outputStream = java.io.ByteArrayOutputStream()
+        return if (compressed) {
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+            outputStream.toByteArray() to "jpg"
+        } else {
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+            outputStream.toByteArray() to "png"
+        }
+    }
+
+    private fun setUploadProgress(label: String, totalBytes: Long, writtenBytes: Long = 0L) {
+        _uiState.update {
+            it.copy(
+                uploadLabel = label,
+                uploadTotalBytes = totalBytes,
+                uploadProgressBytes = writtenBytes
+            )
+        }
     }
 
     /**
@@ -1938,7 +2066,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                 ImageToImageMode.INPAINTING -> prepareInpaintingWorkflow(client, sourceImage, state)
             }
         } finally {
-            _uiState.update { it.copy(isUploading = false) }
+            _uiState.update { it.copy(isUploading = false, uploadTotalBytes = null, uploadProgressBytes = null, uploadLabel = null) }
         }
 
         // Pre-submission validation: check for unresolved {{placeholder}} tokens
@@ -1975,18 +2103,23 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         sourceImage4: Bitmap?,
         state: ImageToImageUiState
     ): String? {
-        // Convert source image to PNG bytes
-        val sourceBytes = withContext(Dispatchers.IO) {
-            val outputStream = java.io.ByteArrayOutputStream()
-            sourceImage.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-            outputStream.toByteArray()
+        val sourceCompressed = 1 in state.compressedSlots
+        val (sourceBytes, sourceExtension) = withContext(Dispatchers.IO) {
+            encodeSourceImageForUpload(sourceImage, sourceCompressed)
         }
+        setUploadProgress("source", sourceBytes.size.toLong(), 0L)
 
         // Upload source image
         data class UploadResult(val filename: String?, val failureType: ConnectionFailure)
         val sourceResult: UploadResult = withContext(Dispatchers.IO) {
             kotlin.coroutines.suspendCoroutine { continuation ->
-                client.uploadImage(sourceBytes, UuidUtils.generateUniqueUploadFilename("editing_source")) { success, filename, _, failureType ->
+                client.uploadImage(
+                    sourceBytes,
+                    UuidUtils.generateUploadFilenameFromBytes("editing_source", sourceBytes, sourceExtension),
+                    onProgress = { written, _ ->
+                        _uiState.update { it.copy(uploadProgressBytes = written) }
+                    }
+                ) { success, filename, _, failureType ->
                     continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
                 }
             }
@@ -2014,9 +2147,12 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                 state.referenceImage1.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
                 outputStream.toByteArray()
             }
+            setUploadProgress("reference 1", ref1Bytes.size.toLong(), 0L)
             val ref1Result: UploadResult = withContext(Dispatchers.IO) {
                 kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(ref1Bytes, UuidUtils.generateUniqueUploadFilename("reference_1")) { success, filename, _, failureType ->
+                    client.uploadImage(ref1Bytes, UuidUtils.generateUploadFilenameFromBytes("reference_1", ref1Bytes),
+                        onProgress = { written, _ -> _uiState.update { it.copy(uploadProgressBytes = written) } }
+                    ) { success, filename, _, failureType ->
                         continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
                     }
                 }
@@ -2039,9 +2175,12 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                 state.referenceImage2.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
                 outputStream.toByteArray()
             }
+            setUploadProgress("reference 2", ref2Bytes.size.toLong(), 0L)
             val ref2Result: UploadResult = withContext(Dispatchers.IO) {
                 kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(ref2Bytes, UuidUtils.generateUniqueUploadFilename("reference_2")) { success, filename, _, failureType ->
+                    client.uploadImage(ref2Bytes, UuidUtils.generateUploadFilenameFromBytes("reference_2", ref2Bytes),
+                        onProgress = { written, _ -> _uiState.update { it.copy(uploadProgressBytes = written) } }
+                    ) { success, filename, _, failureType ->
                         continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
                     }
                 }
@@ -2056,20 +2195,26 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             uploadedRef2 = ref2Result.filename
         }
 
-        // Upload additional source images (image 2/3/4) if present
+        // Upload additional source images (image 2/3/4) if present and actually needed by the workflow
         var uploadedSource2: String? = null
         var uploadedSource3: String? = null
         var uploadedSource4: String? = null
+        val needsSource2 = "image_filename_2" in state.workflowPlaceholders
+        val needsSource3 = "image_filename_3" in state.workflowPlaceholders
+        val needsSource4 = "image_filename_4" in state.workflowPlaceholders
 
-        if (sourceImage2 != null && 2 !in state.bypassedSourceSlots) {
-            val bytes2 = withContext(Dispatchers.IO) {
-                val os = java.io.ByteArrayOutputStream()
-                sourceImage2.compress(Bitmap.CompressFormat.PNG, 100, os)
-                os.toByteArray()
+        if (sourceImage2 != null && needsSource2 && 2 !in state.bypassedSourceSlots) {
+            val (bytes2, ext2) = withContext(Dispatchers.IO) {
+                encodeSourceImageForUpload(sourceImage2, 2 in state.compressedSlots)
             }
+            setUploadProgress("source 2", bytes2.size.toLong(), 0L)
             val result2: UploadResult = withContext(Dispatchers.IO) {
                 kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(bytes2, UuidUtils.generateUniqueUploadFilename("editing_source_2")) { success, filename, _, failureType ->
+                    client.uploadImage(
+                        bytes2,
+                        UuidUtils.generateUploadFilenameFromBytes("editing_source_2", bytes2, ext2),
+                        onProgress = { written, _ -> _uiState.update { it.copy(uploadProgressBytes = written) } }
+                    ) { success, filename, _, failureType ->
                         continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
                     }
                 }
@@ -2077,15 +2222,18 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             uploadedSource2 = result2.filename
         }
 
-        if (sourceImage3 != null && 3 !in state.bypassedSourceSlots) {
-            val bytes3 = withContext(Dispatchers.IO) {
-                val os = java.io.ByteArrayOutputStream()
-                sourceImage3.compress(Bitmap.CompressFormat.PNG, 100, os)
-                os.toByteArray()
+        if (sourceImage3 != null && needsSource3 && 3 !in state.bypassedSourceSlots) {
+            val (bytes3, ext3) = withContext(Dispatchers.IO) {
+                encodeSourceImageForUpload(sourceImage3, 3 in state.compressedSlots)
             }
+            setUploadProgress("source 3", bytes3.size.toLong(), 0L)
             val result3: UploadResult = withContext(Dispatchers.IO) {
                 kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(bytes3, UuidUtils.generateUniqueUploadFilename("editing_source_3")) { success, filename, _, failureType ->
+                    client.uploadImage(
+                        bytes3,
+                        UuidUtils.generateUploadFilenameFromBytes("editing_source_3", bytes3, ext3),
+                        onProgress = { written, _ -> _uiState.update { it.copy(uploadProgressBytes = written) } }
+                    ) { success, filename, _, failureType ->
                         continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
                     }
                 }
@@ -2093,15 +2241,18 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             uploadedSource3 = result3.filename
         }
 
-        if (sourceImage4 != null && 4 !in state.bypassedSourceSlots) {
-            val bytes4 = withContext(Dispatchers.IO) {
-                val os = java.io.ByteArrayOutputStream()
-                sourceImage4.compress(Bitmap.CompressFormat.PNG, 100, os)
-                os.toByteArray()
+        if (sourceImage4 != null && needsSource4 && 4 !in state.bypassedSourceSlots) {
+            val (bytes4, ext4) = withContext(Dispatchers.IO) {
+                encodeSourceImageForUpload(sourceImage4, 4 in state.compressedSlots)
             }
+            setUploadProgress("source 4", bytes4.size.toLong(), 0L)
             val result4: UploadResult = withContext(Dispatchers.IO) {
                 kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(bytes4, UuidUtils.generateUniqueUploadFilename("editing_source_4")) { success, filename, _, failureType ->
+                    client.uploadImage(
+                        bytes4,
+                        UuidUtils.generateUploadFilenameFromBytes("editing_source_4", bytes4, ext4),
+                        onProgress = { written, _ -> _uiState.update { it.copy(uploadProgressBytes = written) } }
+                    ) { success, filename, _, failureType ->
                         continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
                     }
                 }
@@ -2176,11 +2327,17 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
 
         imageWithMask.recycle()
 
+        setUploadProgress("source", imageBytes.size.toLong(), 0L)
+
         // Upload to ComfyUI
         data class UploadResult(val filename: String?, val failureType: ConnectionFailure)
         val uploadResult: UploadResult = withContext(Dispatchers.IO) {
             kotlin.coroutines.suspendCoroutine { continuation ->
-                client.uploadImage(imageBytes, UuidUtils.generateUniqueUploadFilename("inpaint_source")) { success, filename, _, failureType ->
+                client.uploadImage(imageBytes, UuidUtils.generateUploadFilenameFromBytes("inpaint_source", imageBytes),
+                    onProgress = { written, _ ->
+                        _uiState.update { it.copy(uploadProgressBytes = written) }
+                    }
+                ) { success, filename, _, failureType ->
                     continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
                 }
             }

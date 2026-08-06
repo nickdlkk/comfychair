@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 import sh.hnet.comfychair.R
 import sh.hnet.comfychair.cache.MediaCache
 import sh.hnet.comfychair.cache.MediaCacheKey
+import sh.hnet.comfychair.materials.MaterialLibrary
 import sh.hnet.comfychair.repository.GalleryRepository
 import sh.hnet.comfychair.util.DebugLogger
 import java.io.File
@@ -443,6 +444,40 @@ class GalleryViewModel : ViewModel() {
             }
 
             // Clear selection after save
+            clearSelection()
+        }
+    }
+
+    fun saveSelectedToMaterialLibrary(context: Context) {
+        val selectedItems = getSelectedItems()
+        if (selectedItems.isEmpty()) return
+
+        viewModelScope.launch {
+            var successCount = 0
+            var failCount = 0
+
+            for (item in selectedItems) {
+                if (item.isVideo) {
+                    failCount++
+                    continue
+                }
+                val saved = withContext(Dispatchers.IO) {
+                    val key = MediaCacheKey(item.promptId, item.filename)
+                    val bitmap = MediaCache.getBitmap(key)
+                        ?: MediaCache.fetchImage(key, item.subfolder, item.type)
+                    if (bitmap == null) return@withContext false
+                    val result = MaterialLibrary.saveBitmap(context, bitmap, item.filename)
+                    result != null
+                }
+                if (saved) successCount++ else failCount++
+            }
+
+            if (failCount == 0 && successCount > 0) {
+                _events.emit(GalleryEvent.ShowToast(R.string.msg_materials_imported_success))
+            } else if (failCount > 0) {
+                _events.emit(GalleryEvent.ShowToast(R.string.error_materials_import))
+            }
+
             clearSelection()
         }
     }

@@ -97,6 +97,12 @@
     <string name="hint_negative_prompt">反向提示词</string>
     <string name="button_generate">生成</string>
 
+    <!-- Batch generation strings -->
+    <string name="label_batch_count">数量</string>
+    <string name="button_confirm_batch">确认生成 (%1$d)</string>
+    <string name="button_generating_progress">%1$d…</string>
+    <string name="menu_batch_generate">批量生成</string>
+
     <!-- Configuration panel strings -->
 
     <!-- Gallery screen strings -->
@@ -184,7 +190,24 @@
     <string name="label_megapixels">百万像素</string>
     <string name="button_upload_source_image">上传原图</string>
     <string name="button_pick_from_gallery">从历史选择</string>
+    <string name="button_pick_from_materials">从素材库选择</string>
     <string name="title_gallery_picker">选择历史图片</string>
+    <string name="title_material_picker">选择素材</string>
+    <string name="title_material_library">素材库</string>
+    <string name="button_import_materials">导入图片</string>
+    <string name="button_materials_select">选择素材</string>
+    <string name="button_delete_material">删除素材</string>
+    <string name="button_confirm_delete">再次点击确认删除</string>
+    <string name="msg_material_library_empty">暂无已导入素材</string>
+    <string name="msg_materials_imported_success">素材导入成功</string>
+    <string name="msg_importing">正在导入…</string>
+    <string name="error_materials_import">导入素材失败</string>
+    <string name="button_save_to_material_library">添加到素材库</string>
+    <string name="button_import_to_material_library">导入到素材库</string>
+    <string name="msg_materials_deleted_success">素材已删除</string>
+    <string name="error_materials_delete">删除素材失败</string>
+    <string name="materials_selected_count">已选择 %d 项</string>
+    <string name="menu_materials">素材库</string>
     <string name="button_use_as_source">用作原图</string>
     <string name="msg_gallery_picker_empty">暂无历史图片</string>
     <string name="button_edit_mask">编辑蒙版</string>
@@ -194,6 +217,7 @@
     <!-- Generation button states -->
     <string name="button_add_to_queue">添加到队列 (%d)</string>
     <string name="button_uploading">上传中…</string>
+    <string name="button_uploading_progress">上传中… %1$s</string>
     <string name="button_uploading_queue">上传中… (%d)</string>
     <string name="button_fetching">获取中…</string>
     <string name="button_fetching_queue">获取中… (%d)</string>
@@ -267,6 +291,7 @@
     <string name="label_workflow">工作流</string>
     <string name="label_width">宽度</string>
     <string name="label_height">高度</string>
+    <string name="button_resolution_presets">预设</string>
     <string name="label_steps">步数</string>
     <string name="label_sampler">采样器</string>
     <string name="label_scheduler">调度器</string>
@@ -357,6 +382,7 @@
     <string name="content_description_reference_image_1">参考图像 1</string>
     <string name="content_description_reference_image_2">参考图像 2</string>
     <string name="content_description_source_image">源图像</string>
+    <string name="content_description_image_info">图像信息</string>
     <string name="content_description_decrease">减少值</string>
     <string name="content_description_increase">增加值</string>
 
@@ -468,12 +494,18 @@
     <string name="label_debug_logging_enable">启用日志记录</string>
     <string name="desc_debug_logging_enable">日志仅保存在内存中</string>
     <string name="button_debug_logging_view">查看日志</string>
+    <string name="label_log_upload_url">日志上传服务器地址</string>
+    <string name="button_log_upload">上传日志包</string>
+    <string name="button_log_uploading">正在上传日志包…</string>
     <string name="title_debug_log">调试日志</string>
     <string name="msg_debug_log_empty">无日志条目</string>
     <string name="debug_log_save">Save</string>
     <string name="debug_log_follow">跟随</string>
     <string name="msg_debug_log_saved">日志保存成功</string>
     <string name="error_debug_log_save">保存日志失败</string>
+    <string name="msg_log_upload_success">日志包上传成功</string>
+    <string name="error_log_upload_failed">上传日志包失败</string>
+    <string name="error_log_upload_url_empty">请输入日志上传服务器地址</string>
 
     <!-- Missing translations -->
     <string name="button_view_workflow">查看工作流</string>

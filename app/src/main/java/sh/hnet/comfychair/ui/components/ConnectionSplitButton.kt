@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -49,6 +51,7 @@ import sh.hnet.comfychair.ui.screens.ConnectionState
  * @param onAddServer Callback to add a new server
  * @param onEditServer Callback to edit the selected server
  * @param onRemoveServer Callback to remove the selected server
+ * @param onOfflineModeToggle Callback when offline mode is toggled
  * @param modifier Modifier for the button layout
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -61,6 +64,7 @@ fun ConnectionSplitButton(
     onAddServer: () -> Unit,
     onEditServer: () -> Unit,
     onRemoveServer: () -> Unit,
+    onOfflineModeToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -146,6 +150,29 @@ fun ConnectionSplitButton(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false }
             ) {
+                // Offline/Online toggle at top
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (isOfflineMode) stringResource(R.string.menu_go_online)
+                            else stringResource(R.string.menu_go_offline)
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        onOfflineModeToggle()
+                    },
+                    leadingIcon = {
+                        Icon(
+                            if (isOfflineMode) Icons.Default.Cloud else Icons.Default.CloudOff,
+                            contentDescription = null
+                        )
+                    }
+                )
+
+                // Divider after offline toggle
+                HorizontalDivider()
+
                 // Add server
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.button_server_add)) },

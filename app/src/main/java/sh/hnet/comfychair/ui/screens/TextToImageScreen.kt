@@ -195,6 +195,9 @@ fun TextToImageScreen(
     var showOptionsBottomSheet by remember { mutableStateOf(false) }
     val optionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    // Batch generation state - persisted across sessions
+    var batchCount by remember { mutableStateOf(AppSettings.getBatchCount(context)) }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Top App Bar with save/share actions (outside content Box)
         TopAppBar(
@@ -223,7 +226,8 @@ fun TextToImageScreen(
                 // Menu button
                 AppMenuDropdown(
                     onSettings = onNavigateToSettings,
-                    onLogout = onLogout
+                    onLogout = onLogout,
+                    showOfflineToggle = true
                 )
             }
         )
@@ -321,6 +325,7 @@ fun TextToImageScreen(
                 .padding(bottom = 16.dp)
         ) {
             GenerationButton(
+                batchCount = batchCount,
                 queueSize = queueState.totalQueueSize,
                 isExecuting = queueState.isExecuting,
                 isEnabled = uiState.positivePrompt.isNotBlank(),
@@ -328,29 +333,43 @@ fun TextToImageScreen(
                 isFetching = uiState.isFetching,
                 isConnecting = isConnecting,
                 onGenerate = {
-                    if (textToImageViewModel.hasValidConfiguration()) {
-                        val workflowJson = textToImageViewModel.prepareWorkflowJson()
-                        if (workflowJson != null) {
-                            generationViewModel.startGeneration(
-                                workflowJson,
-                                TextToImageViewModel.OWNER_ID
-                            ) { success, _, errorMessage ->
-                                if (!success) {
-                                    Toast.makeText(
-                                        context,
-                                        errorMessage ?: context.getString(R.string.error_generation_failed),
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                    if (!textToImageViewModel.hasValidConfiguration()) return@GenerationButton
+                    val workflowJson = textToImageViewModel.prepareWorkflowJson() ?: run {
+                        Toast.makeText(context, context.getString(R.string.error_failed_load_workflow), Toast.LENGTH_SHORT).show()
+                        return@GenerationButton
+                    }
+
+                    if (batchCount > 1) {
+                        // Batch generation: start immediately, no panel
+                        AppSettings.setBatchCount(context, batchCount)
+                        var completed = 0
+                        val total = batchCount
+
+                        fun generateNext() {
+                            if (completed >= total) return
+                            val json = textToImageViewModel.prepareWorkflowJson() ?: return
+                            generationViewModel.startGeneration(json, TextToImageViewModel.OWNER_ID) { success, _, errorMessage ->
+                                completed++
+                                if (!success && errorMessage != null) {
+                                    Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
+                                }
+                                if (completed < total) {
+                                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ generateNext() }, 300)
                                 }
                             }
-                        } else {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.error_failed_load_workflow),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                        }
+                        generateNext()
+                    } else {
+                        generationViewModel.startGeneration(workflowJson, TextToImageViewModel.OWNER_ID) { success, _, errorMessage ->
+                            if (!success) {
+                                Toast.makeText(context, errorMessage ?: context.getString(R.string.error_generation_failed), Toast.LENGTH_LONG).show()
+                            }
                         }
                     }
+                },
+                onBatchCountChange = { newCount ->
+                    batchCount = newCount
+                    AppSettings.setBatchCount(context, newCount)
                 },
                 onCancelCurrent = { generationViewModel.cancelGeneration { } },
                 onAddToFrontOfQueue = {
@@ -460,7 +479,8 @@ fun TextToImageScreen(
                     onAddLora = textToImageViewModel::onAddLora,
                     onRemoveLora = textToImageViewModel::onRemoveLora,
                     onLoraNameChange = textToImageViewModel::onLoraNameChange,
-                    onLoraStrengthChange = textToImageViewModel::onLoraStrengthChange
+                    onLoraStrengthChange = textToImageViewModel::onLoraStrengthChange,
+                    onRefreshModels = textToImageViewModel::fetchModels
                 )
             }
             val bottomSheetConfig = remember(uiState, callbacks) {

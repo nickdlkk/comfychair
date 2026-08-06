@@ -25,6 +25,7 @@ import sh.hnet.comfychair.R
 import sh.hnet.comfychair.cache.MediaCache
 import sh.hnet.comfychair.cache.MediaCacheKey
 import sh.hnet.comfychair.connection.ConnectionManager
+import sh.hnet.comfychair.materials.MaterialLibrary
 import sh.hnet.comfychair.repository.GalleryRepository
 import sh.hnet.comfychair.util.GenerationMetadata
 import sh.hnet.comfychair.util.MetadataParser
@@ -562,6 +563,42 @@ class MediaViewerViewModel : ViewModel() {
                 } else {
                     saveImageFromServer(context, item)
                 }
+            }
+        }
+    }
+
+    fun saveCurrentItemToMaterialLibrary() {
+        val state = _uiState.value
+        val item = state.currentItem ?: return
+        if (item.isVideo) {
+            viewModelScope.launch { _events.emit(MediaViewerEvent.ShowToast(R.string.error_materials_import)) }
+            return
+        }
+
+        viewModelScope.launch {
+            val bitmap = withContext(Dispatchers.IO) {
+                if (state.mode == ViewerMode.SINGLE) {
+                    state.currentBitmap
+                } else {
+                    val key = MediaCacheKey(item.promptId, item.filename)
+                    MediaCache.getBitmap(key) ?: MediaCache.fetchImage(key, item.subfolder, item.type)
+                }
+            }
+
+            if (bitmap == null) {
+                _events.emit(MediaViewerEvent.ShowToast(R.string.error_materials_import))
+                return@launch
+            }
+
+            val saved = MaterialLibrary.saveBitmap(
+                applicationContext!!,
+                bitmap,
+                item.filename
+            )
+            if (saved != null) {
+                _events.emit(MediaViewerEvent.ShowToast(R.string.msg_materials_imported_success))
+            } else {
+                _events.emit(MediaViewerEvent.ShowToast(R.string.error_materials_import))
             }
         }
     }
