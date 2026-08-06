@@ -71,6 +71,7 @@
     <string name="button_generate">Generate</string>
 
     <!-- Batch generation strings -->
+    <string name="batch_count_label">Batch Count</string>
     <string name="label_batch_count">Count</string>
     <string name="button_confirm_batch">Generate (%1$d)</string>
     <string name="button_generating_progress">%1$d…</string>
@@ -329,6 +330,7 @@
     <string name="label_latent_upscale_model" translatable="false">Latent Upscale Model</string>
     <string name="label_width">Width</string>
     <string name="label_height">Height</string>
+    <string name="button_resolution_presets">Presets</string>
     <string name="label_steps">Steps</string>
     <string name="label_cfg" translatable="false">CFG</string>
     <string name="label_sampler">Sampler</string>

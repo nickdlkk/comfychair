@@ -1,34 +1,36 @@
 package sh.hnet.comfychair.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAddCheck
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SplitButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,24 +38,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
-import android.util.Log
 import sh.hnet.comfychair.R
 
 /**
  * Split button for generation screens with queue management dropdown.
  *
  * Leading button: Always submits to queue ("Generate" or "Add to queue (X)")
- * Trailing button: Dropdown menu with queue management actions
- *
- * Long press on leading button triggers batch generation panel.
+ * Trailing button: Dropdown menu with batch count stepper + queue management
  *
  * Button text priority: Connecting > Uploading > Fetching > Queue size > Generate
  *
@@ -64,8 +61,9 @@ import sh.hnet.comfychair.R
  * @param isUploading Whether image upload is in progress (shows "Uploading...")
  * @param isFetching Whether result fetch is in progress (shows "Fetching...")
  * @param isConnecting Whether connection check is in progress (shows "Connecting...")
- * @param onGenerate Callback when Generate/Add to queue is clicked (single generation)
- * @param onBatchGenerate Callback when leading button is long-pressed (opens batch panel)
+ * @param batchCount Current batch count (>= 1)
+ * @param onGenerate Callback when Generate/Add to queue is clicked
+ * @param onBatchCountChange Callback when batch count changes
  * @param onCancelCurrent Callback to cancel the currently executing job
  * @param onAddToFrontOfQueue Callback to add to front of queue
  * @param onClearQueue Callback to clear the server queue
@@ -84,26 +82,17 @@ fun GenerationButton(
     uploadTotalBytes: Long? = null,
     uploadProgressBytes: Long? = null,
     uploadLabel: String? = null,
+    batchCount: Int = 1,
     onGenerate: () -> Unit,
-    onBatchGenerate: () -> Unit = {},
+    onBatchCountChange: (Int) -> Unit = {},
     onCancelCurrent: () -> Unit,
     onAddToFrontOfQueue: () -> Unit = {},
     onClearQueue: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val focusManager = LocalFocusManager.current
     var showMenu by remember { mutableStateOf(false) }
 
-    // Track long-press to prevent tap from firing after long-press
-    var longPressedJustFired by remember { mutableStateOf(false) }
-    LaunchedEffect(longPressedJustFired) {
-        if (longPressedJustFired) {
-            delay(50) // Small delay to ensure tap is blocked
-            longPressedJustFired = false
-        }
-    }
-
-    // Button always uses primary color (no more red cancel state)
+    // Button always uses primary color
     val containerColor = MaterialTheme.colorScheme.primary
     val contentColor = MaterialTheme.colorScheme.onPrimary
 
@@ -133,79 +122,37 @@ fun GenerationButton(
         else -> stringResource(R.string.button_generate)
     }
 
+    // Arrow rotates 180° when menu is open (pointing up)
+    val iconRotation by animateFloatAsState(
+        targetValue = if (showMenu) 180f else 0f,
+        label = "dropdown icon rotation"
+    )
+
     Row(modifier = modifier) {
-        // Leading button - fills available width, always submits to queue
-        // Box wrapper with pointerInput handles long press detection before ElevatedButton consumes touch
-        // Short press falls through to ElevatedButton's onClick
-        Box(
+        // Leading button - simple click, no gesture handling
+        SplitButtonDefaults.ElevatedLeadingButton(
+            onClick = {
+                onGenerate()
+            },
+            enabled = isEnabled && !isOfflineMode,
+            colors = ButtonDefaults.elevatedButtonColors(
+                containerColor = containerColor,
+                contentColor = contentColor
+            ),
             modifier = Modifier
                 .weight(1f)
                 .height(56.dp)
-                .pointerInput(isEnabled, isOfflineMode) {
-                    if (!isEnabled || isOfflineMode) return@pointerInput
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        // Long press detection: wait to see if this is a long press
-                        val longPressTimeout = 500L
-                        var longPressFired = false
-                        do {
-                            val event = withTimeoutOrNull(longPressTimeout) {
-                                awaitPointerEvent()
-                            }
-                            if (event == null) {
-                                // Timeout reached without up → long press
-                                Log.d("ComfyChair", "[GenerationButton] Long press detected, calling onBatchGenerate()")
-                                longPressFired = true
-                                longPressedJustFired = true
-                                onBatchGenerate()
-                                break
-                            }
-                            val up = event.changes.firstOrNull()
-                            if (up != null && !up.pressed) {
-                                // Released before timeout → short tap, let button handle it
-                                break
-                            }
-                        } while (true)
-                    }
-                }
-                .then(
-                    if (isEnabled && !isOfflineMode) {
-                        Modifier.clickable {
-                            Log.d("ComfyChair", "[GenerationButton] Leading button clicked, calling onGenerate()")
-                            focusManager.clearFocus()
-                            onGenerate()
-                        }
-                    } else Modifier
-                ),
-            contentAlignment = Alignment.Center
         ) {
-            SplitButtonDefaults.ElevatedLeadingButton(
-                onClick = { /* handled by Box modifier */ },
-                enabled = isEnabled && !isOfflineMode,
-                colors = ButtonDefaults.elevatedButtonColors(
-                    containerColor = containerColor,
-                    contentColor = contentColor
-                ),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                Text(
-                    text = buttonText,
-                    fontSize = 18.sp
-                )
-            }
+            Text(
+                text = buttonText,
+                fontSize = 18.sp
+            )
         }
 
         // Spacing between buttons (matches SplitButtonDefaults.Spacing)
         Spacer(modifier = Modifier.width(SplitButtonDefaults.Spacing))
 
-        // Trailing button with dropdown - square button matching height of leading
-        // Animate icon rotation: 0° when closed, 180° when open (arrow points up)
-        val iconRotation by animateFloatAsState(
-            targetValue = if (showMenu) 180f else 0f,
-            label = "dropdown icon rotation"
-        )
-
-        // Trailing button - disabled in offline mode (no queue operations available)
+        // Trailing button - toggle menu on click, disabled in offline mode
         Box(modifier = Modifier.wrapContentWidth(unbounded = true)) {
             SplitButtonDefaults.ElevatedTrailingButton(
                 checked = showMenu,
@@ -215,7 +162,7 @@ fun GenerationButton(
                     containerColor = containerColor,
                     contentColor = contentColor
                 ),
-                modifier = Modifier.size(56.dp)  // Square button to match leading height
+                modifier = Modifier.size(56.dp)
             ) {
                 Icon(
                     Icons.Default.KeyboardArrowDown,
@@ -228,21 +175,15 @@ fun GenerationButton(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false }
             ) {
-                // Batch generation - prominent action at top
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.menu_batch_generate)) },
-                    onClick = {
-                        Log.d("ComfyChair", "[BatchGeneration] Dropdown menu: batch generate clicked")
-                        showMenu = false
-                        onBatchGenerate()
-                    },
-                    leadingIcon = {
-                        Icon(Icons.AutoMirrored.Filled.PlaylistAddCheck, contentDescription = null)
-                    }
+                // Batch count stepper section
+                BatchCountStepper(
+                    count = batchCount,
+                    onCountChange = onBatchCountChange
                 )
 
-                // Queue management actions (above gap)
-                // Add to front of queue
+                HorizontalDivider()
+
+                // Queue management actions
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.menu_add_to_front_of_queue)) },
                     onClick = {
@@ -253,7 +194,6 @@ fun GenerationButton(
                         Icon(Icons.AutoMirrored.Filled.PlaylistAddCheck, contentDescription = null)
                     }
                 )
-                // Clear queue
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.button_clear_queue)) },
                     onClick = {
@@ -265,11 +205,9 @@ fun GenerationButton(
                     }
                 )
 
-                // Gap divider separating queue actions from cancel
                 HorizontalDivider()
 
-                // Cancel current (below gap) - destructive action separated
-                // Use error/warning color when enabled to indicate destructive action
+                // Cancel current
                 val cancelColor = if (isExecuting) {
                     MaterialTheme.colorScheme.error
                 } else {
@@ -286,6 +224,103 @@ fun GenerationButton(
                         Icon(Icons.Default.Cancel, contentDescription = null, tint = cancelColor)
                     }
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Batch count stepper with presets (4, 8, 16, 32) and custom input.
+ * Adjusting count immediately updates the shared state; no confirm needed.
+ */
+@Composable
+private fun BatchCountStepper(
+    count: Int,
+    onCountChange: (Int) -> Unit
+) {
+    val presets = listOf(4, 8, 16, 32)
+    val step = 4
+    val minCount = 1
+    val maxCount = 64
+
+    androidx.compose.foundation.layout.Column(
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        // Header
+        Text(
+            text = stringResource(R.string.batch_count_label),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        // Preset buttons
+        androidx.compose.foundation.layout.Row(
+            modifier = Modifier.padding(bottom = 8.dp),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)
+        ) {
+            presets.forEach { preset ->
+                val isSelected = count == preset
+                androidx.compose.material3.FilterChip(
+                    selected = isSelected,
+                    onClick = { onCountChange(preset) },
+                    label = {
+                        Text(
+                            text = preset.toString(),
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        // Stepper with custom value input
+        androidx.compose.foundation.layout.Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)
+        ) {
+            // Decrease button
+            FilledIconButton(
+                onClick = { if (count > minCount) onCountChange((count - step).coerceAtLeast(minCount)) },
+                enabled = count > minCount,
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ),
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.Remove, contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+
+            // Number input
+            OutlinedTextField(
+                value = count.toString(),
+                onValueChange = { raw ->
+                    val new = raw.filter { it.isDigit() }.take(3).toIntOrNull()
+                    if (new != null && new in minCount..maxCount) {
+                        onCountChange(new)
+                    }
+                },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(textAlign = TextAlign.Center),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.weight(1f).height(48.dp)
+            )
+
+            // Increase button
+            FilledIconButton(
+                onClick = { if (count < maxCount) onCountChange((count + step).coerceAtMost(maxCount)) },
+                enabled = count < maxCount,
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ),
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
             }
         }
     }

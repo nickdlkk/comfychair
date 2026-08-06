@@ -64,9 +64,8 @@ object LoraChainManager {
      */
     fun updateLoraStrength(chain: List<LoraSelection>, index: Int, strength: Float): List<LoraSelection> {
         if (index !in chain.indices) return chain
-        val clampedStrength = strength.coerceIn(LoraSelection.MIN_STRENGTH, LoraSelection.MAX_STRENGTH)
         return chain.toMutableList().apply {
-            this[index] = this[index].copy(strength = clampedStrength)
+            this[index] = this[index].copy(strength = strength)
         }
     }
 

@@ -476,6 +476,7 @@ fun ImageToVideoScreen(
                 .padding(bottom = 16.dp)
         ) {
             GenerationButton(
+                batchCount = 1,
                 queueSize = queueState.totalQueueSize,
                 isExecuting = queueState.isExecuting,
                 isEnabled = imageToVideoViewModel.hasValidConfiguration() && uiState.positivePrompt.isNotBlank(),

@@ -9,9 +9,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -21,7 +24,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import sh.hnet.comfychair.R
 import sh.hnet.comfychair.model.LoraSelection
@@ -177,7 +180,7 @@ private fun LoraEntryItem(
             }
         }
 
-        // Strength slider
+        // Strength input row with +/- buttons
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -190,18 +193,71 @@ private fun LoraEntryItem(
                 modifier = Modifier.width(64.dp)
             )
 
-            Slider(
-                value = lora.strength,
-                onValueChange = onStrengthChange,
-                valueRange = LoraSelection.MIN_STRENGTH..LoraSelection.MAX_STRENGTH,
-                modifier = Modifier.weight(1f)
+            OutlinedTextField(
+                value = String.format(Locale.US, "%.2f", lora.strength),
+                onValueChange = { text ->
+                    text.toFloatOrNull()?.let { onStrengthChange(it) }
+                },
+                modifier = Modifier.weight(1f),
+                textStyle = MaterialTheme.typography.bodySmall.copy(
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                ),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal
+                ),
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp)
             )
 
-            Text(
-                text = String.format(Locale.US, "%.1f", lora.strength),
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.width(32.dp)
-            )
+            // Decrease button
+            IconButton(
+                onClick = {
+                    val step = 0.1f
+                    onStrengthChange(lora.strength - step)
+                },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Remove,
+                    contentDescription = stringResource(R.string.content_description_decrease)
+                )
+            }
+
+            // Increase button
+            IconButton(
+                onClick = {
+                    val step = 0.1f
+                    onStrengthChange(lora.strength + step)
+                },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = stringResource(R.string.content_description_increase)
+                )
+            }
+        }
+
+        // Preset strength chips
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            val presets = listOf(-1.0f, -0.5f, 0.5f, 1.0f, 1.5f)
+            presets.forEach { preset ->
+                TextButton(
+                    onClick = { onStrengthChange(preset) },
+                    modifier = Modifier.height(28.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                ) {
+                    Text(
+                        text = String.format(Locale.US, "%.1f", preset),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
         }
     }
 }

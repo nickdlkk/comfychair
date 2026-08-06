@@ -291,6 +291,7 @@
     <string name="label_workflow">工作流</string>
     <string name="label_width">宽度</string>
     <string name="label_height">高度</string>
+    <string name="button_resolution_presets">预设</string>
     <string name="label_steps">步数</string>
     <string name="label_sampler">采样器</string>
     <string name="label_scheduler">调度器</string>

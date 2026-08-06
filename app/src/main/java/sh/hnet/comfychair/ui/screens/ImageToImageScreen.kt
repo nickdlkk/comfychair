@@ -3,6 +3,8 @@ package sh.hnet.comfychair.ui.screens
 import android.content.ClipData
 import android.graphics.Bitmap
 import android.content.ClipboardManager
+import android.os.Handler
+import android.os.Looper
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.core.animateFloatAsState
@@ -84,6 +86,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import sh.hnet.comfychair.MaskEditorActivity
 import sh.hnet.comfychair.MediaViewerActivity
@@ -329,6 +332,7 @@ fun ImageToImageScreen(
     var pendingWorkflowJson by remember { mutableStateOf<String?>(null) }
     var showPlaceholderDialog by remember { mutableStateOf(false) }
     var pendingPlaceholders by remember { mutableStateOf(emptyList<String>()) }
+    var batchCount by remember { mutableStateOf(AppSettings.getBatchCount(context)) }
 
     LaunchedEffect(Unit) {
         imageToImageViewModel.events.collect { event ->
@@ -855,6 +859,7 @@ fun ImageToImageScreen(
                 .padding(bottom = 16.dp)
         ) {
             GenerationButton(
+                batchCount = batchCount,
                 queueSize = queueState.totalQueueSize,
                 isExecuting = queueState.isExecuting,
                 isEnabled = imageToImageViewModel.hasValidConfiguration() &&
@@ -879,32 +884,50 @@ fun ImageToImageScreen(
                             return@launch
                         }
                         val workflowJson = imageToImageViewModel.prepareWorkflow()
-                        // Capture for potential placeholder confirmation dialog
                         pendingWorkflowJson = workflowJson
                         if (workflowJson != null) {
-                            // If UnresolvedPlaceholders was emitted, dialog is now showing.
-                            // User clicks Confirm → startGeneration is called with captured workflowJson.
-                            // If no unresolved placeholders (pendingPlaceholders still empty),
-                            // dialog won't show and we proceed immediately.
                             if (pendingPlaceholders.isEmpty()) {
-                                generationViewModel.startGeneration(
-                                    workflowJson,
-                                    ImageToImageViewModel.OWNER_ID
-                                ) { success, _, errorMessage ->
-                                    if (!success) {
-                                        errorDialogMessage = errorMessage ?: context.getString(R.string.error_generation_failed)
-                                        showErrorDialog = true
+                            if (batchCount > 1) {
+                                AppSettings.setBatchCount(context, batchCount)
+                                var completed = 0
+                                val total = batchCount
+                                scope.launch {
+                                    suspend fun generateNext() {
+                                        if (completed >= total) return
+                                        val json = imageToImageViewModel.prepareWorkflow() ?: return
+                                        generationViewModel.startGeneration(json, ImageToImageViewModel.OWNER_ID) { success, _, errorMessage ->
+                                            completed++
+                                            if (!success && errorMessage != null) {
+                                                errorDialogMessage = errorMessage
+                                                showErrorDialog = true
+                                            }
+                                            if (completed < total) {
+                                                scope.launch { delay(300L); generateNext() }
+                                            }
+                                        }
+                                    }
+                                    generateNext()
+                                }
+                            } else {
+                                    generationViewModel.startGeneration(
+                                        workflowJson,
+                                        ImageToImageViewModel.OWNER_ID
+                                    ) { success, _, errorMessage ->
+                                        if (!success) {
+                                            errorDialogMessage = errorMessage ?: context.getString(R.string.error_generation_failed)
+                                            showErrorDialog = true
+                                        }
                                     }
                                 }
                             }
                         } else {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.error_generation_failed),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            Toast.makeText(context, context.getString(R.string.error_generation_failed), Toast.LENGTH_SHORT).show()
                         }
                     }
+                },
+                onBatchCountChange = { newCount ->
+                    batchCount = newCount
+                    AppSettings.setBatchCount(context, newCount)
                 },
                 onCancelCurrent = { generationViewModel.cancelGeneration { } },
                 onAddToFrontOfQueue = {

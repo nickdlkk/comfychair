@@ -346,6 +346,7 @@ fun TextToVideoScreen(
                 .padding(bottom = 16.dp)
         ) {
             GenerationButton(
+                batchCount = 1,
                 queueSize = queueState.totalQueueSize,
                 isExecuting = queueState.isExecuting,
                 isEnabled = textToVideoViewModel.hasValidConfiguration() && uiState.positivePrompt.isNotBlank(),

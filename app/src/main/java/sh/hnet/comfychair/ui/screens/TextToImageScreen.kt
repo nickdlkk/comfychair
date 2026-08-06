@@ -1,6 +1,5 @@
 package sh.hnet.comfychair.ui.screens
 
-import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
@@ -70,7 +69,6 @@ import sh.hnet.comfychair.ui.components.config.UnifiedCallbacks
 import sh.hnet.comfychair.ui.components.config.toBottomSheetConfig
 import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.ui.components.GenerationButton
-import sh.hnet.comfychair.ui.components.BatchGenerationPanel
 import sh.hnet.comfychair.ui.components.GenerationProgressBar
 import sh.hnet.comfychair.viewmodel.ConnectionStatus
 import sh.hnet.comfychair.viewmodel.GenerationViewModel
@@ -197,11 +195,8 @@ fun TextToImageScreen(
     var showOptionsBottomSheet by remember { mutableStateOf(false) }
     val optionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Batch generation panel state
-    var showBatchPanel by remember { mutableStateOf(false) }
-    var batchCount by remember { mutableStateOf(1) }
-    var isBatchGenerating by remember { mutableStateOf(false) }
-    var batchProgress by remember { mutableStateOf<Int?>(null) }
+    // Batch generation state - persisted across sessions
+    var batchCount by remember { mutableStateOf(AppSettings.getBatchCount(context)) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Top App Bar with save/share actions (outside content Box)
@@ -322,74 +317,6 @@ fun TextToImageScreen(
             }
         )
 
-        // Batch generation panel (expands above the Generate button)
-        BatchGenerationPanel(
-            visible = showBatchPanel,
-            defaultCount = batchCount,
-            isGenerating = isBatchGenerating,
-            batchProgress = batchProgress,
-            onConfirm = { count ->
-                // Start batch generation
-                batchCount = count
-                // Persist the selected count for next time
-                AppSettings.setBatchCount(context, count)
-                isBatchGenerating = true
-                batchProgress = 0
-                showBatchPanel = false
-
-                // Generate count times sequentially
-                var completed = 0
-                val total = count
-
-                fun generateNext() {
-                    if (completed >= total || !textToImageViewModel.hasValidConfiguration()) {
-                        isBatchGenerating = false
-                        batchProgress = null
-                        return
-                    }
-
-                    val workflowJson = textToImageViewModel.prepareWorkflowJson()
-                    if (workflowJson != null) {
-                        generationViewModel.startGeneration(
-                            workflowJson,
-                            TextToImageViewModel.OWNER_ID
-                        ) { success, _, errorMessage ->
-                            completed++
-                            batchProgress = completed
-
-                            if (!success && errorMessage != null) {
-                                Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
-                            }
-
-                            // Generate next after short delay
-                            if (completed < total) {
-                                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                    generateNext()
-                                }, 300)
-                            } else {
-                                isBatchGenerating = false
-                                batchProgress = null
-                            }
-                        }
-                    } else {
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.error_failed_load_workflow),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        isBatchGenerating = false
-                        batchProgress = null
-                    }
-                }
-
-                generateNext()
-            },
-            onDismiss = {
-                showBatchPanel = false
-            },
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-
         // Generate and Options buttons
         Row(
             modifier = Modifier
@@ -398,6 +325,7 @@ fun TextToImageScreen(
                 .padding(bottom = 16.dp)
         ) {
             GenerationButton(
+                batchCount = batchCount,
                 queueSize = queueState.totalQueueSize,
                 isExecuting = queueState.isExecuting,
                 isEnabled = uiState.positivePrompt.isNotBlank(),
@@ -405,36 +333,43 @@ fun TextToImageScreen(
                 isFetching = uiState.isFetching,
                 isConnecting = isConnecting,
                 onGenerate = {
-                    if (textToImageViewModel.hasValidConfiguration()) {
-                        val workflowJson = textToImageViewModel.prepareWorkflowJson()
-                        if (workflowJson != null) {
-                            generationViewModel.startGeneration(
-                                workflowJson,
-                                TextToImageViewModel.OWNER_ID
-                            ) { success, _, errorMessage ->
-                                if (!success) {
-                                    Toast.makeText(
-                                        context,
-                                        errorMessage ?: context.getString(R.string.error_generation_failed),
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                    if (!textToImageViewModel.hasValidConfiguration()) return@GenerationButton
+                    val workflowJson = textToImageViewModel.prepareWorkflowJson() ?: run {
+                        Toast.makeText(context, context.getString(R.string.error_failed_load_workflow), Toast.LENGTH_SHORT).show()
+                        return@GenerationButton
+                    }
+
+                    if (batchCount > 1) {
+                        // Batch generation: start immediately, no panel
+                        AppSettings.setBatchCount(context, batchCount)
+                        var completed = 0
+                        val total = batchCount
+
+                        fun generateNext() {
+                            if (completed >= total) return
+                            val json = textToImageViewModel.prepareWorkflowJson() ?: return
+                            generationViewModel.startGeneration(json, TextToImageViewModel.OWNER_ID) { success, _, errorMessage ->
+                                completed++
+                                if (!success && errorMessage != null) {
+                                    Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
+                                }
+                                if (completed < total) {
+                                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ generateNext() }, 300)
                                 }
                             }
-                        } else {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.error_failed_load_workflow),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                        }
+                        generateNext()
+                    } else {
+                        generationViewModel.startGeneration(workflowJson, TextToImageViewModel.OWNER_ID) { success, _, errorMessage ->
+                            if (!success) {
+                                Toast.makeText(context, errorMessage ?: context.getString(R.string.error_generation_failed), Toast.LENGTH_LONG).show()
+                            }
                         }
                     }
                 },
-                onBatchGenerate = {
-                    Log.d("ComfyChair", "[TextToImage] onBatchGenerate called, batchCount=$batchCount")
-                    // Restore last saved batch count
-                    batchCount = AppSettings.getBatchCount(context)
-                    Log.d("ComfyChair", "[TextToImage] onBatchGenerate: showBatchPanel=true, batchCount=$batchCount")
-                    showBatchPanel = true
+                onBatchCountChange = { newCount ->
+                    batchCount = newCount
+                    AppSettings.setBatchCount(context, newCount)
                 },
                 onCancelCurrent = { generationViewModel.cancelGeneration { } },
                 onAddToFrontOfQueue = {
