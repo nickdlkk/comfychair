@@ -163,11 +163,8 @@ class GenerationViewModel : ViewModel() {
         // Restore generation state
         restoreGenerationState(context)
 
-        // Subscribe to ConnectionManager's WebSocket flows
-        subscribeToWebSocketMessages()
-        subscribeToWebSocketState()
-
         // Open WebSocket connection via ConnectionManager
+        // This will attempt reconnection if needed (handles background disconnection)
         if (ConnectionManager.isConnected) {
             ConnectionManager.openWebSocket()
             // Poll queue to validate restored jobs against server
@@ -224,10 +221,12 @@ class GenerationViewModel : ViewModel() {
                     }
                     is WebSocketState.Failed -> {
                         _connectionStatus.value = ConnectionStatus.FAILED
-                        // Only show dialog if actively generating - otherwise user doesn't need to know
+                        // Only show dialog if actively generating
                         if (_generationState.value.isGenerating) {
                             applicationContext?.let { ctx ->
-                                ConnectionManager.showConnectionAlert(ctx, state.failureType)
+                                // Attempt immediate reconnection before showing dialog
+                                // This handles the case where app returns from background
+                                ConnectionManager.attemptImmediateReconnectForDialog(ctx, state.failureType)
                             }
                         }
                     }

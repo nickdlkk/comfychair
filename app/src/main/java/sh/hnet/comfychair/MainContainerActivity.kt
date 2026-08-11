@@ -232,9 +232,13 @@ class MainContainerActivity : ComponentActivity() {
         super.onResume()
         val isGenerating = generationViewModel.generationState.value.isGenerating
 
-        // Only attempt reconnection if generating (need the connection)
-        // Otherwise, connection will be established on-demand when user taps Generate
-        if (!AppSettings.isOfflineMode(this) && isGenerating) {
+        // Always attempt WebSocket reconnection when returning from background
+        // This ensures the connection is restored even when not actively generating
+        // ConnectionManager.attemptSilentReconnect() handles all edge cases internally:
+        // - Already connected: does nothing
+        // - Reconnect succeeds: app continues normally
+        // - Reconnect fails: sets Failed state (dialog appears via ViewModel observation)
+        if (!AppSettings.isOfflineMode(this)) {
             ConnectionManager.attemptSilentReconnect()
         }
 

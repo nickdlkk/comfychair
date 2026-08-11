@@ -863,7 +863,6 @@ fun ImageToImageScreen(
                 queueSize = queueState.totalQueueSize,
                 isExecuting = queueState.isExecuting,
                 isEnabled = imageToImageViewModel.hasValidConfiguration() &&
-                    uiState.positivePrompt.isNotBlank() &&
                     uiState.sourceImage != null,
                 isOfflineMode = isOfflineMode,
                 isUploading = uiState.isUploading,

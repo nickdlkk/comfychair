@@ -513,6 +513,7 @@ fun WorkflowEditorScreen(
                 expanded = true,
                 isFieldMappingMode = uiState.isFieldMappingMode,
                 canConfirmMapping = uiState.canConfirmMapping,
+                isSaveValidating = uiState.isSaveValidating,
                 isEditMode = uiState.isEditMode,
                 viewingWorkflowIsBuiltIn = uiState.viewingWorkflowIsBuiltIn,
                 hasSelection = uiState.selectedNodeIds.isNotEmpty() || uiState.selectedNoteIds.isNotEmpty(),
@@ -618,6 +619,34 @@ fun WorkflowEditorScreen(
                     Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = stringResource(R.string.content_description_back)
                 )
+            }
+        }
+        if (uiState.isSaveValidating && !uiState.showSaveDialog) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    )
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    tonalElevation = 6.dp,
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.align(Alignment.Center)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        Text(stringResource(R.string.msg_validating_workflow))
+                    }
+                }
             }
         }
 
@@ -920,6 +949,7 @@ private fun WorkflowEditorFloatingToolbar(
     expanded: Boolean,
     isFieldMappingMode: Boolean,
     canConfirmMapping: Boolean,
+    isSaveValidating: Boolean,
     isEditMode: Boolean,
     viewingWorkflowIsBuiltIn: Boolean,
     hasSelection: Boolean,
@@ -951,6 +981,7 @@ private fun WorkflowEditorFloatingToolbar(
         fabContainerColor = MaterialTheme.colorScheme.secondaryContainer,
         fabContentColor = MaterialTheme.colorScheme.onSecondaryContainer
     )
+    val workflowActionsEnabled = !isSaveValidating
 
     HorizontalFloatingToolbar(
         expanded = expanded,
@@ -1129,21 +1160,37 @@ private fun WorkflowEditorFloatingToolbar(
                     )
 
                     // Cancel / Exit edit mode
-                    IconButton(onClick = onExitEditMode) {
+                    IconButton(
+                        onClick = onExitEditMode,
+                        enabled = workflowActionsEnabled
+                    ) {
                         Icon(
                             Icons.Default.Close,
                             contentDescription = stringResource(R.string.workflow_editor_exit_edit_mode),
-                            tint = MaterialTheme.colorScheme.error
+                            tint = if (workflowActionsEnabled)
+                                MaterialTheme.colorScheme.error
+                            else
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                         )
                     }
 
                     // Done button
-                    IconButton(onClick = onDone) {
-                        Icon(
-                            Icons.Default.Check,
-                            contentDescription = stringResource(R.string.workflow_editor_done),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                    IconButton(
+                        onClick = onDone,
+                        enabled = workflowActionsEnabled
+                    ) {
+                        if (isSaveValidating) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = stringResource(R.string.workflow_editor_done),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             } else {

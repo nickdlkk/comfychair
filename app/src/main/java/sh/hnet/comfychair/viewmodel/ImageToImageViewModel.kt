@@ -658,12 +658,12 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         // Load model into appropriate field based on capabilities
         val selectedCheckpoint = if (capabilities.hasCheckpointName) {
             savedModel?.takeIf { it in cache.checkpoints }
-                ?: validateModelSelection("", cache.checkpoints)
+                ?: cache.checkpoints.firstOrNull() ?: ""
         } else ""
 
         val selectedUnet = if (capabilities.hasUnetName) {
             savedModel?.takeIf { it in cache.unets }
-                ?: validateModelSelection("", cache.unets)
+                ?: cache.unets.firstOrNull() ?: ""
         } else ""
 
         _uiState.value = state.copy(
@@ -2010,10 +2010,6 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
 
     override fun hasValidConfiguration(): Boolean {
         val state = _uiState.value
-
-        if (state.positivePrompt.isBlank()) {
-            return false
-        }
 
         return when (state.mode) {
             ImageToImageMode.EDITING -> {

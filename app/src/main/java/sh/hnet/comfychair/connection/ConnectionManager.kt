@@ -517,6 +517,47 @@ object ConnectionManager {
     }
 
     /**
+     * Attempt an immediate reconnection before showing the connection dialog.
+     * This handles the case where the app returns from background and the WebSocket
+     * was temporarily disconnected - we want to try one reconnect attempt silently
+     * before showing a dialog that interrupts the user.
+     *
+     * If reconnection succeeds, no dialog is shown.
+     * If reconnection fails, shows the connection alert dialog.
+     *
+     * @param context Context for showing dialog
+     * @param failureType The original failure type that triggered this attempt
+     */
+    fun attemptImmediateReconnectForDialog(context: Context, failureType: ConnectionFailure) {
+        DebugLogger.d(TAG, "attemptImmediateReconnectForDialog: attempting final reconnect before dialog")
+
+        val client = _client ?: run {
+            DebugLogger.w(TAG, "attemptImmediateReconnectForDialog: client is null, showing dialog")
+            showConnectionAlert(context, failureType)
+            return
+        }
+
+        val sessionId = startNewReconnectionSession()  // Cancel any pending auto-reconnect
+        _webSocketState.value = WebSocketState.Disconnected
+
+        client.testConnection { success, errorMessage, _, resultFailureType ->
+            if (!isSessionValid(sessionId)) {
+                DebugLogger.d(TAG, "attemptImmediateReconnectForDialog: ignoring stale callback")
+                return@testConnection
+            }
+
+            if (success) {
+                DebugLogger.i(TAG, "Immediate reconnect succeeded, opening WebSocket")
+                reconnectAttempts = 0
+                openWebSocket()
+            } else {
+                DebugLogger.w(TAG, "Immediate reconnect failed, showing dialog")
+                showConnectionAlert(context, resultFailureType)
+            }
+        }
+    }
+
+    /**
      * Attempt a silent reconnection when app returns from background.
      * Unlike retrySingleAttempt(), this is designed to recover gracefully:
      * - If already connected, does nothing

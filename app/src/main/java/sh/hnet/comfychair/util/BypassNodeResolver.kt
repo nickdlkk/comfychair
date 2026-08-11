@@ -37,9 +37,28 @@ internal object BypassNodeResolver {
             for (nodeId in nodeIds) {
                 val node = nodes.optJSONObject(nodeId) ?: continue
                 val mode = node.optInt("mode", 0)
+                val inputs = node.optJSONObject("inputs")
+                val classType = node.optString("class_type", "")
+                val isLoraLoader = classType.startsWith("LoraLoader")
+                val isUnetLoader = classType == "UNETLoader"
+                val loraNameEmpty = inputs?.optString("lora_name", "") == ""
+                val unetNameEmpty = inputs?.optString("unet_name", "") == ""
+
+                // Bypass nodes that are explicitly bypassed (mode=4)
                 if (mode == 4) {
                     bypassedNodeIds.add(nodeId)
-                    DebugLogger.d(TAG, "applyBypassedNodes: Found bypassed node $nodeId (${node.optString("class_type")})")
+                    DebugLogger.d(TAG, "applyBypassedNodes: Found bypassed node $nodeId ($classType)")
+                }
+                // Also bypass LoraLoader nodes with empty lora_name — they would cause
+                // ComfyUI to reject the prompt with "Value not in list" on lora_name
+                else if (isLoraLoader && loraNameEmpty) {
+                    bypassedNodeIds.add(nodeId)
+                    DebugLogger.d(TAG, "applyBypassedNodes: Bypassing empty-lora node $nodeId ($classType)")
+                }
+                // Bypass UNETLoader nodes with empty unet_name
+                else if (isUnetLoader && unetNameEmpty) {
+                    bypassedNodeIds.add(nodeId)
+                    DebugLogger.d(TAG, "applyBypassedNodes: Bypassing empty-unet node $nodeId ($classType)")
                 }
             }
 

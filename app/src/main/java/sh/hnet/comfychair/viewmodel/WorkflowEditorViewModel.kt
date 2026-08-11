@@ -754,6 +754,10 @@ class WorkflowEditorViewModel : ViewModel() {
      */
     fun showSaveDialog(context: Context) {
         val state = _uiState.value
+        if (state.isSaveValidating) {
+            DebugLogger.d(TAG, "showSaveDialog: Save validation already in progress")
+            return
+        }
         val hasExistingWorkflow = state.editingWorkflowId != null
         DebugLogger.i(TAG, "showSaveDialog: hasExistingWorkflow=$hasExistingWorkflow")
         val graph = mutableGraph?.toImmutable()
@@ -800,7 +804,8 @@ class WorkflowEditorViewModel : ViewModel() {
             saveDialogName = "",
             saveDialogDescription = "",
             saveDialogNameError = null,
-            saveDialogDescriptionError = null
+            saveDialogDescriptionError = null,
+            isSaveValidating = false
         )
     }
 
@@ -886,6 +891,10 @@ class WorkflowEditorViewModel : ViewModel() {
     fun proceedWithSave(context: Context) {
         DebugLogger.i(TAG, "proceedWithSave: Starting validation")
         val state = _uiState.value
+        if (state.isSaveValidating) {
+            DebugLogger.d(TAG, "proceedWithSave: Validation already in progress")
+            return
+        }
         val graph = mutableGraph?.toImmutable()
         if (graph == null) {
             DebugLogger.e(TAG, "proceedWithSave: No mutable graph available")
@@ -1020,6 +1029,10 @@ class WorkflowEditorViewModel : ViewModel() {
     private fun proceedWithEditExistingSave(context: Context) {
         DebugLogger.i(TAG, "proceedWithEditExistingSave: Starting validation for edit-existing mode")
         val state = _uiState.value
+        if (state.isSaveValidating) {
+            DebugLogger.d(TAG, "proceedWithEditExistingSave: Validation already in progress")
+            return
+        }
         val graph = mutableGraph?.toImmutable()
         if (graph == null) {
             DebugLogger.e(TAG, "proceedWithEditExistingSave: No mutable graph available")
