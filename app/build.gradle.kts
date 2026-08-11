@@ -1,3 +1,8 @@
+import com.android.build.gradle.internal.api.ApkVariantOutputImpl
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -12,8 +17,8 @@ android {
         applicationId = "sh.hnet.comfychair"
         minSdk = 33
         targetSdk = 36
-        versionCode = 45
-        versionName = "v0.8.18"
+        versionCode = 46
+        versionName = "v0.8.19"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -46,6 +51,32 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+    applicationVariants.all {
+        outputs.all {
+            val output = this as ApkVariantOutputImpl
+            val version = versionName ?: "dev"
+            val buildTimestamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date())
+            val apkSuffix = project.findProperty("apkSuffix")
+                ?.toString()
+                ?.trim()
+                ?.replace(Regex("[^A-Za-z0-9._-]+"), "-")
+                ?.trim('-', '.')
+                ?.takeIf { it.isNotEmpty() }
+            output.outputFileName = buildString {
+                append("comfychair-")
+                append(version)
+                append('-')
+                append(buildType.name)
+                if (apkSuffix != null) {
+                    append('-')
+                    append(apkSuffix)
+                }
+                append('-')
+                append(buildTimestamp)
+                append(".apk")
+            }
         }
     }
 }
