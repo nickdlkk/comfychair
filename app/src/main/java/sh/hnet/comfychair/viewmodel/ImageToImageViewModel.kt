@@ -648,6 +648,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
 
         // Get saved model selections
         val savedModel = savedValues?.model
+        val savedUnetModel = savedValues?.unetModel
         val savedVae = savedValues?.vaeModel
         val savedClip = savedValues?.clipModel
         val savedClip1 = savedValues?.clip1Model
@@ -662,7 +663,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         } else ""
 
         val selectedUnet = if (capabilities.hasUnetName) {
-            savedModel?.takeIf { it in cache.unets }
+            savedUnetModel?.takeIf { it in cache.unets }
                 ?: cache.unets.firstOrNull() ?: ""
         } else ""
 
@@ -709,7 +710,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
 
             // Deferred values - applied when model cache updates
             deferredCheckpoint = if (capabilities.hasCheckpointName) savedModel else null,
-            deferredUnet = if (capabilities.hasUnetName) savedModel else null,
+            deferredUnet = if (capabilities.hasUnetName) savedUnetModel else null,
             deferredVae = savedVae,
             deferredClip = savedClip,
             deferredClip1 = savedClip1,
@@ -769,7 +770,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         val cache = ConnectionManager.modelCache.value
 
         // Apply saved model selections - use deferred mechanism to handle race condition
-        val savedEditingUnet = savedValues?.model  // unified field for editing UNET
+        val savedEditingUnet = savedValues?.unetModel  // UNET field ({{unet_name}})
         val savedEditingVae = savedValues?.vaeModel
         val savedEditingClip = savedValues?.clipModel
         val savedEditingClip1 = savedValues?.clip1Model
@@ -780,7 +781,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         val savedEditingTextEncoder = savedValues?.textEncoderModel
         val savedEditingLatentUpscaleModel = savedValues?.latentUpscaleModel
         // Checkpoint and dual-model patterns (for checkpoint-based and video-style workflows)
-        val savedEditingCheckpoint = savedValues?.model  // same field as UNET, workflow type determines usage
+        val savedEditingCheckpoint = savedValues?.model  // Checkpoint field ({{ckpt_name}})
         val savedEditingHighnoiseUnet = savedValues?.highnoiseUnetModel
         val savedEditingLownoiseUnet = savedValues?.lownoiseUnetModel
         val savedEditingHighnoiseLora = savedValues?.highnoiseLoraModel
@@ -896,9 +897,9 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             samplerName = state.sampler,
             scheduler = state.scheduler,
             negativePrompt = state.negativePrompt.takeIf { it.isNotEmpty() },
-            // Save checkpoint OR unet - whichever is set
-            model = state.selectedCheckpoint.takeIf { it.isNotEmpty() }
-                ?: state.selectedUnet.takeIf { it.isNotEmpty() },
+            // Save checkpoint and unet as separate fields
+            model = state.selectedCheckpoint.takeIf { it.isNotEmpty() },
+            unetModel = state.selectedUnet.takeIf { it.isNotEmpty() },
             // Save ALL model selections unconditionally
             vaeModel = state.selectedVae.takeIf { it.isNotEmpty() },
             clipModel = state.selectedClip.takeIf { it.isNotEmpty() },
@@ -942,9 +943,9 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             samplerName = state.editingSampler,
             scheduler = state.editingScheduler,
             negativePrompt = state.editingNegativePrompt.takeIf { it.isNotEmpty() },
-            // model field stores checkpoint or UNET (whichever is set)
-            model = state.selectedEditingCheckpoint.takeIf { it.isNotEmpty() }
-                ?: state.selectedEditingUnet.takeIf { it.isNotEmpty() },
+            // model = checkpoint ({{ckpt_name}}), unetModel = single UNET ({{unet_name}})
+            model = state.selectedEditingCheckpoint.takeIf { it.isNotEmpty() },
+            unetModel = state.selectedEditingUnet.takeIf { it.isNotEmpty() },
             loraModel = state.selectedEditingLora.takeIf { it.isNotEmpty() },
             vaeModel = state.selectedEditingVae.takeIf { it.isNotEmpty() },
             clipModel = state.selectedEditingClip.takeIf { it.isNotEmpty() },
