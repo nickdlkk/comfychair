@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,12 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Close
+import sh.hnet.comfychair.ComfyUIClient
+import java.text.DateFormat
+import java.util.Date
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
@@ -77,6 +84,7 @@ import sh.hnet.comfychair.WorkflowTypeDisplay
 import sh.hnet.comfychair.viewmodel.ExportFormat
 import sh.hnet.comfychair.viewmodel.WorkflowManagementEvent
 import sh.hnet.comfychair.viewmodel.WorkflowManagementViewModel
+import sh.hnet.comfychair.viewmodel.WorkflowManagementUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,6 +95,11 @@ fun WorkflowsSettingsScreen(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val connectionState by ConnectionManager.connectionState.collectAsState()
+    LaunchedEffect(connectionState) {
+        viewModel.onServerConnectionChanged()
+        if (uiState.showServerWorkflows) viewModel.refreshServerWorkflows()
+    }
 
     // State and effects
     // JSON file picker
@@ -212,6 +225,12 @@ fun WorkflowsSettingsScreen(
                 IconButton(onClick = { jsonPickerLauncher.launch(arrayOf("application/json")) }) {
                     Icon(Icons.Default.UploadFile, contentDescription = stringResource(R.string.button_import))
                 }
+                IconButton(onClick = {
+                    if (uiState.showServerWorkflows) viewModel.closeServerWorkflows()
+                    else viewModel.openServerWorkflows()
+                }) {
+                    Icon(Icons.Default.CloudDownload, contentDescription = stringResource(R.string.server_workflow_import))
+                }
                 // Menu button
                 SettingsMenuDropdown(
                     onGeneration = onNavigateToGeneration,
@@ -219,6 +238,16 @@ fun WorkflowsSettingsScreen(
                 )
             }
         )
+
+        if (uiState.showServerWorkflows) {
+            ServerWorkflowPanel(
+                state = uiState,
+                onSearch = viewModel::setServerSearch,
+                onRefresh = viewModel::refreshServerWorkflows,
+                onClose = viewModel::closeServerWorkflows,
+                onSelect = viewModel::selectServerWorkflow
+            )
+        }
 
         // Loading indicator
         if (uiState.isLoading) {
@@ -329,7 +358,11 @@ fun WorkflowsSettingsScreen(
             onDescriptionChange = viewModel::onImportDescriptionChange,
             descriptionError = uiState.importDescriptionError,
             isValidating = uiState.isValidatingNodes,
-            onConfirm = { viewModel.proceedWithImport(context, ConnectionManager.client) },
+            warnings = uiState.pendingImportWarnings,
+            onConfirm = {
+                ConnectionManager.clientOrNull?.let { viewModel.proceedWithImport(context, it) }
+                    ?: Toast.makeText(context, R.string.server_workflow_disconnected, Toast.LENGTH_SHORT).show()
+            },
             onDismiss = viewModel::cancelImport
         )
     }
@@ -392,6 +425,78 @@ fun WorkflowsSettingsScreen(
             onConfirm = viewModel::confirmDuplicate,
             onDismiss = viewModel::cancelDuplicate
         )
+    }
+}
+
+@Composable
+private fun ServerWorkflowPanel(
+    state: WorkflowManagementUiState,
+    onSearch: (String) -> Unit,
+    onRefresh: () -> Unit,
+    onClose: () -> Unit,
+    onSelect: (ComfyUIClient.SavedWorkflow) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.server_workflow_import), modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium)
+                IconButton(onClick = onRefresh, enabled = !state.serverLoading && !state.serverDownloading) {
+                    Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.server_workflow_refresh))
+                }
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.button_cancel))
+                }
+            }
+            OutlinedTextField(
+                value = state.serverSearch, onValueChange = onSearch,
+                label = { Text(stringResource(R.string.server_workflow_search)) },
+                singleLine = true, modifier = Modifier.fillMaxWidth()
+            )
+            if (state.serverLoading || state.serverDownloading) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(if (state.serverDownloading) R.string.server_workflow_downloading
+                        else R.string.server_workflow_loading))
+                }
+            }
+            state.serverError?.let { error ->
+                val message = when (error) {
+                    ComfyUIClient.SavedWorkflowError.DISCONNECTED -> R.string.server_workflow_disconnected
+                    ComfyUIClient.SavedWorkflowError.NOT_FOUND -> R.string.server_workflow_empty
+                    ComfyUIClient.SavedWorkflowError.UNAUTHORIZED -> R.string.server_workflow_unauthorized
+                    ComfyUIClient.SavedWorkflowError.TOO_LARGE -> R.string.server_workflow_too_large
+                    ComfyUIClient.SavedWorkflowError.INVALID_RESPONSE,
+                    ComfyUIClient.SavedWorkflowError.INVALID_PATH -> R.string.server_workflow_invalid
+                    ComfyUIClient.SavedWorkflowError.MULTIUSER_UNSUPPORTED -> R.string.server_workflow_multiuser_unsupported
+                    ComfyUIClient.SavedWorkflowError.NETWORK -> R.string.server_workflow_network_error
+                }
+                Text(stringResource(message), color = MaterialTheme.colorScheme.error)
+            }
+            val filtered = state.serverWorkflows.filter {
+                it.path.contains(state.serverSearch, ignoreCase = true)
+            }
+            if (!state.serverLoading && state.serverError == null && filtered.isEmpty()) {
+                Text(stringResource(R.string.server_workflow_empty))
+            }
+            NoOverscrollContainer(modifier = Modifier.heightIn(max = 280.dp)) {
+                LazyColumn {
+                    items(filtered, key = { it.path }) { file ->
+                        Column(modifier = Modifier.fillMaxWidth()
+                            .clickable(enabled = !state.serverDownloading) { onSelect(file) }
+                            .padding(vertical = 10.dp)) {
+                            Text(file.path, style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.server_workflow_metadata,
+                                file.size / 1024, DateFormat.getDateTimeInstance().format(Date(file.modified))),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -649,6 +754,7 @@ private fun ImportWorkflowDialog(
     onDescriptionChange: (String) -> Unit,
     descriptionError: String?,
     isValidating: Boolean,
+    warnings: List<String>,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -658,7 +764,7 @@ private fun ImportWorkflowDialog(
         onDismissRequest = { if (!isValidating) onDismiss() },
         title = { Text(stringResource(R.string.title_import_workflow)) },
         text = {
-            Column {
+            Column(modifier = Modifier.heightIn(max = 440.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
                 // Type dropdown
                 Text(
                     text = stringResource(R.string.label_workflow_type),
@@ -722,6 +828,11 @@ private fun ImportWorkflowDialog(
                     enabled = !isValidating
                 )
 
+                if (warnings.isNotEmpty()) {
+                    Text(stringResource(R.string.server_workflow_conversion_notes),
+                        color = MaterialTheme.colorScheme.error)
+                    warnings.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                }
                 if (isValidating) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(
