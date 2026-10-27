@@ -296,7 +296,8 @@ private fun ParametersSection(params: ParameterConfig, workflowName: String) {
             onHeightChange = params.height?.onValueChange ?: {},
             heightError = params.height?.error,
             showWidth = showWidth,
-            showHeight = showHeight
+            showHeight = showHeight,
+            sourceDimensionsPreset = params.sourceDimensionsPreset
         )
         Spacer(modifier = Modifier.height(12.dp))
     }

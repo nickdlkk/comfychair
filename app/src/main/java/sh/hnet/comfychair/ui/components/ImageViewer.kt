@@ -45,8 +45,22 @@ import kotlinx.coroutines.launch
 fun ImageViewer(
     bitmap: Bitmap,
     modifier: Modifier = Modifier,
-    onSingleTap: () -> Unit = {}
+    onSingleTap: () -> Unit = {},
+    comparisonOriginal: Bitmap? = null
 ) {
+    var showingOriginal by remember(bitmap, comparisonOriginal) { mutableStateOf(false) }
+    var isResumed by remember { mutableStateOf(true) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE || event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                showingOriginal = false
+                isResumed = false
+            } else if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) isResumed = true
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     // Animatable values for smooth zoom transitions
     val scaleAnimatable = remember { Animatable(1f) }
     val offsetAnimatable = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
@@ -139,7 +153,7 @@ fun ImageViewer(
         contentAlignment = Alignment.Center
     ) {
         Image(
-            bitmap = bitmap.asImageBitmap(),
+            bitmap = (if (showingOriginal) comparisonOriginal ?: bitmap else bitmap).asImageBitmap(),
             contentDescription = null,
             modifier = Modifier
                 .fillMaxSize()
@@ -149,7 +163,7 @@ fun ImageViewer(
                     translationX = if (isAnimating) offsetAnimatable.value.x else offset.x,
                     translationY = if (isAnimating) offsetAnimatable.value.y else offset.y
                 )
-                .pointerInput(Unit) {
+                .pointerInput(bitmap, comparisonOriginal, isResumed) {
                     awaitEachGesture {
                         val firstDown = awaitFirstDown(requireUnconsumed = false)
                         val firstDownTime = System.currentTimeMillis()
@@ -159,8 +173,22 @@ fun ImageViewer(
                         var pointerCount = 1
                         var totalMovement = 0f  // Track total finger movement
 
+                        val hold = sh.hnet.comfychair.viewmodel.HoldComparisonGesture(comparisonOriginal != null && isResumed)
+                        val holdJob = scope.launch {
+                            kotlinx.coroutines.delay(viewConfiguration.longPressTimeoutMillis)
+                            hold.longPress()
+                            showingOriginal = hold.showingOriginal
+                            if (showingOriginal) pendingSingleTap = false
+                        }
+                        try {
                         do {
                             val event = awaitPointerEvent()
+                            if (event.changes.any { it.isConsumed } || event.changes.count { it.pressed } > 1 ||
+                                event.changes.any { (it.position - firstDownPosition).getDistance() > viewConfiguration.touchSlop }) {
+                                hold.cancel()
+                                holdJob.cancel()
+                                showingOriginal = false
+                            }
                             val currentPointerCount = event.changes.size
 
                             // Track if we ever had multiple pointers
@@ -215,6 +243,11 @@ fun ImageViewer(
                                 }
                             }
                         } while (event.changes.any { it.pressed })
+                        } finally {
+                            holdJob.cancel()
+                            hold.release()
+                            showingOriginal = false
+                        }
 
                         // Handle taps after gesture ends
                         val upTime = System.currentTimeMillis()

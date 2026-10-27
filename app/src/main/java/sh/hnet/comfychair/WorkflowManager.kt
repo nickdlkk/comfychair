@@ -11,6 +11,7 @@ import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.util.BypassNodeResolver
 import sh.hnet.comfychair.util.LoraInjectionUtils
 import sh.hnet.comfychair.util.WorkflowJsonAnalyzer
+import sh.hnet.comfychair.util.WorkflowPromptFinalizer
 import sh.hnet.comfychair.util.Obfuscator
 import sh.hnet.comfychair.util.UuidUtils
 import sh.hnet.comfychair.util.ValidationUtils
@@ -1438,42 +1439,7 @@ object WorkflowManager {
     fun applyNodeAttributeEdits(
         workflowJson: String,
         edits: Map<String, Map<String, Any>>
-    ): String {
-        if (edits.isEmpty()) return workflowJson
-
-        return try {
-            val json = JSONObject(workflowJson)
-            val nodes = json.optJSONObject("nodes") ?: json
-
-            for ((nodeId, nodeEdits) in edits) {
-                val node = nodes.optJSONObject(nodeId) ?: continue
-                val inputs = node.optJSONObject("inputs") ?: continue
-
-                for ((inputName, value) in nodeEdits) {
-                    // Only update if the input exists and is not a connection
-                    if (inputs.has(inputName)) {
-                        val currentValue = inputs.opt(inputName)
-                        // Don't overwrite connections (JSONArray format)
-                        if (currentValue !is JSONArray) {
-                            when (value) {
-                                is String -> inputs.put(inputName, value)
-                                is Int -> inputs.put(inputName, value)
-                                is Long -> inputs.put(inputName, value.toInt())
-                                is Float -> inputs.put(inputName, value.toDouble())
-                                is Double -> inputs.put(inputName, value)
-                                is Boolean -> inputs.put(inputName, value)
-                                else -> inputs.put(inputName, value.toString())
-                            }
-                        }
-                    }
-                }
-            }
-
-            json.toString()
-        } catch (e: Exception) {
-            workflowJson
-        }
-    }
+    ): String = WorkflowPromptFinalizer.applyNodeAttributeEdits(workflowJson, edits)
 
     // Bypass handling - delegates to BypassNodeResolver
 
@@ -1531,51 +1497,7 @@ object WorkflowManager {
         }
         val edits = NodeAttributeEdits.fromJson(editsJson)
 
-        if (edits.isEmpty()) return processedJson
-
-        // Parse the workflow JSON
-        val json = try {
-            JSONObject(processedJson)
-        } catch (e: Exception) {
-            DebugLogger.e(TAG, "Failed to parse workflow JSON for edits: ${e.message}")
-            return processedJson
-        }
-
-        // Get the nodes object (could be at root level or under "nodes" key)
-        val nodesJson = if (json.has("nodes")) {
-            json.optJSONObject("nodes") ?: json
-        } else {
-            json
-        }
-
-        // Apply edits to each node
-        var modified = false
-        edits.edits.forEach { (nodeId, nodeEdits) ->
-            val node = nodesJson.optJSONObject(nodeId)
-            if (node != null) {
-                val inputs = node.optJSONObject("inputs")
-                if (inputs != null) {
-                    nodeEdits.forEach { (inputName, value) ->
-                        // Only apply if input exists (don't add new inputs)
-                        if (inputs.has(inputName)) {
-                            when (value) {
-                                is String -> inputs.put(inputName, value)
-                                is Int -> inputs.put(inputName, value)
-                                is Long -> inputs.put(inputName, value.toInt())
-                                is Float -> inputs.put(inputName, value.toDouble())
-                                is Double -> inputs.put(inputName, value)
-                                is Boolean -> inputs.put(inputName, value)
-                                else -> inputs.put(inputName, value.toString())
-                            }
-                            modified = true
-                            DebugLogger.d(TAG, "Applied edit: node $nodeId, $inputName = $value")
-                        }
-                    }
-                }
-            }
-        }
-
-        return if (modified) json.toString() else processedJson
+        return applyNodeAttributeEdits(processedJson, edits.edits)
     }
 
     /**
@@ -1681,9 +1603,8 @@ object WorkflowManager {
             scaleBy = scaleBy,
             stopAtClipLayer = stopAtClipLayer
         )
-
-        // Apply node attribute edits from the Workflow Editor
-        val finalJson = applyBypassedNodes(applyNodeAttributeEdits(processedJson, workflow.id))
+        val editedWorkflow = applyNodeAttributeEdits(processedJson, workflow.id)
+        val finalJson = applyBypassedNodes(WorkflowPromptFinalizer.fillMissingPngSaveInputs(editedWorkflow))
         saveWorkflowDebugSnapshot(
             workflow = workflow,
             workflowId = workflow.id,
@@ -1848,6 +1769,8 @@ object WorkflowManager {
         highnoiseLora: String = "",
         lownoiseLora: String = "",
         megapixels: Float = 2.0f,
+        width: Int? = null,
+        height: Int? = null,
         steps: Int,
         cfg: Float = 1.0f,
         samplerName: String = "euler",
@@ -1963,7 +1886,9 @@ object WorkflowManager {
             samplerName = samplerName,
             scheduler = scheduler,
             denoise = denoise,
-            megapixels = megapixels
+            megapixels = megapixels,
+            width = width,
+            height = height
         )
 
         // Second pass: remove unused reference image nodes and their connections
@@ -1972,7 +1897,7 @@ object WorkflowManager {
             // ComfyUI prompt format uses "prompt" key; workflow files may use "nodes" or raw format.
             val nodes = json.optJSONObject("prompt")
                 ?: json.optJSONObject("nodes")
-                ?: return processedJson
+                ?: json
 
             // Find and remove reference image nodes that weren't provided
             // Also remove connections to those nodes from other nodes
@@ -2081,8 +2006,8 @@ object WorkflowManager {
                 }
             }
 
-            // Apply node attribute edits from the Workflow Editor
-            val finalJson = applyNodeAttributeEdits(json.toString(), workflow.id)
+            val editedWorkflow = applyNodeAttributeEdits(json.toString(), workflow.id)
+            val finalJson = applyBypassedNodes(WorkflowPromptFinalizer.fillMissingPngSaveInputs(editedWorkflow))
             saveWorkflowDebugSnapshot(
                 workflow = workflow,
                 workflowId = workflow.id,
@@ -2111,7 +2036,8 @@ object WorkflowManager {
             return finalJson
         } catch (e: Exception) {
             // If JSON parsing fails, return the string-processed version with edits applied
-            val finalJson = applyBypassedNodes(applyNodeAttributeEdits(processedJson, workflow.id))
+            val editedWorkflow = applyNodeAttributeEdits(processedJson, workflow.id)
+            val finalJson = applyBypassedNodes(WorkflowPromptFinalizer.fillMissingPngSaveInputs(editedWorkflow))
             saveWorkflowDebugSnapshot(
                 workflow = workflow,
                 workflowId = workflow.id,

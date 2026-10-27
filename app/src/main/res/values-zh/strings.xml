@@ -656,4 +656,11 @@
     <string name="server_workflow_metadata">%1$d KB · %2$s</string>
     <string name="server_workflow_conversion_notes">转换提示（请在继续前查看；部分输入可能需要手动修正）：</string>
     <string name="server_workflow_multiuser_unsupported">此服务器启用了多用户。需明确配置用户身份后才能导入服务器工作流，当前不可用。</string>
+    <string name="preset_source_dimensions">与原图相同尺寸</string>
+    <string name="comparison_open">原图 / 结果对比</string>
+    <string name="comparison_close">关闭对比</string>
+    <string name="comparison_original">原图</string>
+    <string name="comparison_result">结果</string>
+    <string name="comparison_drag_hint">左右拖动分隔线，或调整下方滑块</string>
+    <string name="image_file_size_unavailable">文件大小不可用</string>
 </resources>

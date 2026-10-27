@@ -709,4 +709,11 @@
     <string name="server_workflow_metadata">%1$d KB · %2$s</string>
     <string name="server_workflow_conversion_notes">Conversion notes (review before continuing; some inputs may need manual correction):</string>
     <string name="server_workflow_multiuser_unsupported">This server uses multiple users. Server workflow import needs an explicitly configured user identity and is unavailable here.</string>
+    <string name="preset_source_dimensions">Same dimensions as original</string>
+    <string name="comparison_open">Compare original / result</string>
+    <string name="comparison_close">Close comparison</string>
+    <string name="comparison_original">Original</string>
+    <string name="comparison_result">Result</string>
+    <string name="comparison_drag_hint">Drag the divider or adjust the slider</string>
+    <string name="image_file_size_unavailable">File size unavailable</string>
 </resources>

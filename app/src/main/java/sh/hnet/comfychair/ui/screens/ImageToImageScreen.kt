@@ -192,6 +192,9 @@ fun ImageToImageScreen(
     val galleryImages: List<GalleryItem> by GalleryRepository.getInstance().galleryItems.collectAsState()
     val materialUiState by materialLibraryViewModel.uiState.collectAsState()
 
+    var resultInfoVisible by remember(uiState.previewImage) { mutableStateOf(false) }
+    var comparisonEnabled by remember(uiState.previewImage, uiState.comparisonOriginal, uiState.mode) { mutableStateOf(false) }
+
     // Image info overlay state (which slot's info is shown, null = hidden)
     var imageInfoSlot by remember { mutableStateOf<Int?>(null) }
 
@@ -329,7 +332,7 @@ fun ImageToImageScreen(
     }
 
     // Event handling
-    var pendingWorkflowJson by remember { mutableStateOf<String?>(null) }
+    var pendingWorkflowJson by remember { mutableStateOf<sh.hnet.comfychair.viewmodel.PreparedImageWorkflow?>(null) }
     var showPlaceholderDialog by remember { mutableStateOf(false) }
     var pendingPlaceholders by remember { mutableStateOf(emptyList<String>()) }
     var batchCount by remember { mutableStateOf(AppSettings.getBatchCount(context)) }
@@ -488,6 +491,7 @@ fun ImageToImageScreen(
         // Image Preview Area — HorizontalPager
         HorizontalPager(
             state = pagerState,
+            userScrollEnabled = !comparisonEnabled,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
@@ -525,7 +529,12 @@ fun ImageToImageScreen(
                 if (isThisPreviewPage) {
                     // Preview page
                     if (uiState.previewImage != null && !isThisScreenExecuting) {
-                        Image(
+                        if (comparisonEnabled && uiState.comparisonOriginal != null && uiState.mode == ImageToImageMode.EDITING) {
+                            sh.hnet.comfychair.ui.components.EditingImageComparison(
+                                original = uiState.comparisonOriginal!!, result = uiState.previewImage!!,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else Image(
                             bitmap = uiState.previewImage!!.asImageBitmap(),
                             contentDescription = stringResource(R.string.content_description_preview),
                                 modifier = Modifier
@@ -547,7 +556,9 @@ fun ImageToImageScreen(
                                             type = uiState.previewImageType,
                                             replaceSlot = 1,
                                             bypassSlot = 1,
-                                            isSlotBypassed = false
+                                            isSlotBypassed = false,
+                                            comparisonTicket = imageToImageViewModel.editingViewerTicket(),
+                                            resultPromptId = uiState.comparisonSource?.prompt
                                         )
                                         // Prefer ActivityResultLauncher for proper result callback, fallback to direct start
                                         if (mediaViewerReplaceLauncher != null) {
@@ -558,8 +569,31 @@ fun ImageToImageScreen(
                                         }
                                     }
                                 },
-                            contentScale = ContentScale.Crop
+                            contentScale = ContentScale.Fit
                         )
+                        IconButton(
+                            onClick = { resultInfoVisible = !resultInfoVisible },
+                            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
+                        ) {
+                            Icon(Icons.Filled.Info, stringResource(R.string.content_description_image_info),
+                                tint = Color.White.copy(alpha = 0.85f))
+                        }
+                        if (resultInfoVisible) {
+                            Column(Modifier.align(Alignment.TopEnd).padding(top = 52.dp, end = 8.dp)
+                                .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                Text("${uiState.previewImage!!.width} × ${uiState.previewImage!!.height}",
+                                    color = Color.White, style = MaterialTheme.typography.bodySmall)
+                                // No encoded response bytes retained by fetchImage: never report bitmap RAM as file size.
+                                Text(stringResource(R.string.image_file_size_unavailable),
+                                    color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall)
+                                if (uiState.mode == ImageToImageMode.EDITING && uiState.comparisonOriginal != null) {
+                                    TextButton(onClick = { comparisonEnabled = !comparisonEnabled }) {
+                                        Text(stringResource(if (comparisonEnabled) R.string.comparison_close else R.string.comparison_open), color = Color.White)
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         Image(
                             painter = painterResource(R.drawable.ic_comfychair_foreground),
@@ -884,6 +918,8 @@ fun ImageToImageScreen(
                         }
                         val workflowJson = imageToImageViewModel.prepareWorkflow()
                         pendingWorkflowJson = workflowJson
+                        pendingPlaceholders = workflowJson?.unresolved.orEmpty()
+                        showPlaceholderDialog = pendingPlaceholders.isNotEmpty()
                         if (workflowJson != null) {
                             if (pendingPlaceholders.isEmpty()) {
                             if (batchCount > 1) {
@@ -894,7 +930,13 @@ fun ImageToImageScreen(
                                     suspend fun generateNext() {
                                         if (completed >= total) return
                                         val json = imageToImageViewModel.prepareWorkflow() ?: return
-                                        generationViewModel.startGeneration(json, ImageToImageViewModel.OWNER_ID) { success, _, errorMessage ->
+                                        if (json.unresolved.isNotEmpty()) {
+                                            pendingWorkflowJson = json
+                                            pendingPlaceholders = json.unresolved
+                                            showPlaceholderDialog = true
+                                            return
+                                        }
+                                        imageToImageViewModel.submitPreparedWorkflow(generationViewModel, json) { success, _, errorMessage ->
                                             completed++
                                             if (!success && errorMessage != null) {
                                                 errorDialogMessage = errorMessage
@@ -908,9 +950,8 @@ fun ImageToImageScreen(
                                     generateNext()
                                 }
                             } else {
-                                    generationViewModel.startGeneration(
-                                        workflowJson,
-                                        ImageToImageViewModel.OWNER_ID
+                                    imageToImageViewModel.submitPreparedWorkflow(
+                                        generationViewModel, workflowJson
                                     ) { success, _, errorMessage ->
                                         if (!success) {
                                             errorDialogMessage = errorMessage ?: context.getString(R.string.error_generation_failed)
@@ -943,11 +984,12 @@ fun ImageToImageScreen(
                         val workflowJson = imageToImageViewModel.prepareWorkflow()
                         // Capture for potential placeholder confirmation dialog
                         pendingWorkflowJson = workflowJson
+                        pendingPlaceholders = workflowJson?.unresolved.orEmpty()
+                        showPlaceholderDialog = pendingPlaceholders.isNotEmpty()
                         if (workflowJson != null) {
                             if (pendingPlaceholders.isEmpty()) {
-                                generationViewModel.startGeneration(
-                                    workflowJson,
-                                    ImageToImageViewModel.OWNER_ID,
+                                imageToImageViewModel.submitPreparedWorkflow(
+                                    generationViewModel, workflowJson,
                                     front = true
                                 ) { success, _, errorMessage ->
                                     if (!success) {
@@ -1120,6 +1162,8 @@ fun ImageToImageScreen(
                     onScaleByChange = imageToImageViewModel::onScaleByChange,
                     onStopAtClipLayerChange = imageToImageViewModel::onStopAtClipLayerChange,
                     // Editing parameter callbacks
+                    onEditingWidthChange = imageToImageViewModel::onEditingWidthChange,
+                    onEditingHeightChange = imageToImageViewModel::onEditingHeightChange,
                     onEditingMegapixelsChange = imageToImageViewModel::onEditingMegapixelsChange,
                     onEditingStepsChange = imageToImageViewModel::onEditingStepsChange,
                     onEditingCfgChange = imageToImageViewModel::onEditingCfgChange,
@@ -1260,9 +1304,8 @@ fun ImageToImageScreen(
                         pendingPlaceholders = emptyList()
                         pendingWorkflowJson?.let { json ->
                             scope.launch {
-                                generationViewModel.startGeneration(
-                                    json,
-                                    ImageToImageViewModel.OWNER_ID
+                                imageToImageViewModel.submitPreparedWorkflow(
+                                    generationViewModel, json
                                 ) { success, _, errorMessage ->
                                     if (!success) {
                                         errorDialogMessage = errorMessage ?: context.getString(R.string.error_generation_failed)

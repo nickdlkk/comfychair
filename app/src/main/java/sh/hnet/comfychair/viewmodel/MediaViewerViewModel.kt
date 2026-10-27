@@ -109,6 +109,7 @@ data class MediaViewerUiState(
     val isUiVisible: Boolean = true,
     val isLoading: Boolean = false,
     val currentBitmap: Bitmap? = null,
+    val comparisonOriginal: Bitmap? = null,
     val currentVideoUri: Uri? = null
 ) {
     val currentItem: MediaViewerItem?
@@ -139,6 +140,7 @@ sealed class MediaViewerEvent {
 class MediaViewerViewModel : ViewModel() {
 
     private var applicationContext: Context? = null
+    private var comparisonRequest = 0L
 
     private val _uiState = MutableStateFlow(MediaViewerUiState())
     val uiState: StateFlow<MediaViewerUiState> = _uiState.asStateFlow()
@@ -166,8 +168,10 @@ class MediaViewerViewModel : ViewModel() {
         items: List<MediaViewerItem>,
         initialIndex: Int,
         singleBitmap: Bitmap? = null,
-        singleVideoUri: Uri? = null
+        singleVideoUri: Uri? = null,
+        comparisonTicket: String? = null
     ) {
+        val request = ++comparisonRequest
         applicationContext = context.applicationContext
 
         _uiState.value = MediaViewerUiState(
@@ -179,6 +183,29 @@ class MediaViewerViewModel : ViewModel() {
             isLoading = mode == ViewerMode.GALLERY && items.isNotEmpty()
         )
 
+        if (mode == ViewerMode.SINGLE && singleBitmap != null && items.singleOrNull()?.isVideo == false) {
+            val item = items.single()
+            val server = sh.hnet.comfychair.cache.MediaStateHolder.getCurrentServerId()
+            viewModelScope.launch {
+                val original = withContext(Dispatchers.IO) {
+                    val file = if (server == null) null else EditingViewerSnapshots.resolve(comparisonTicket, context.cacheDir, server,
+                        item.promptId, item.filename, item.subfolder, item.type)
+                    try {
+                        if (file == null) null else {
+                            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            android.graphics.BitmapFactory.decodeFile(file.path, bounds)
+                            val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = 1 }
+                            while (maxOf(bounds.outWidth, bounds.outHeight) / options.inSampleSize > 2048) options.inSampleSize *= 2
+                            android.graphics.BitmapFactory.decodeFile(file.path, options)
+                        }
+                    } catch (_: Exception) { null } catch (_: OutOfMemoryError) { null }
+                }
+                if (comparisonRequest == request && _uiState.value.currentItem == item &&
+                    server == sh.hnet.comfychair.cache.MediaStateHolder.getCurrentServerId()) {
+                    _uiState.value = _uiState.value.copy(comparisonOriginal = original)
+                }
+            }
+        }
         // For gallery mode, set up priorities and load current item
         if (mode == ViewerMode.GALLERY && items.isNotEmpty()) {
             val currentIdx = _uiState.value.currentIndex

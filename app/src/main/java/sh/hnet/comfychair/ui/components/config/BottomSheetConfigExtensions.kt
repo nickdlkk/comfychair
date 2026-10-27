@@ -539,6 +539,24 @@ private fun buildEditingModeParameterConfig(
     callbacks: UnifiedCallbacks
 ): ParameterConfig {
     return ParameterConfig(
+        sourceDimensionsPreset = sourceDimensionsPreset(
+            editing = true, mappedWidth = caps.hasWidth, mappedHeight = caps.hasHeight,
+            width = state.sourceImage?.width, height = state.sourceImage?.height,
+            onWidth = callbacks.onEditingWidthChange ?: noOpString,
+            onHeight = callbacks.onEditingHeightChange ?: noOpString
+        ),
+        width = NumericField(
+            value = state.editingWidth,
+            onValueChange = callbacks.onEditingWidthChange ?: noOpString,
+            error = state.editingWidthError,
+            isVisible = caps.hasWidth
+        ),
+        height = NumericField(
+            value = state.editingHeight,
+            onValueChange = callbacks.onEditingHeightChange ?: noOpString,
+            error = state.editingHeightError,
+            isVisible = caps.hasHeight
+        ),
         megapixels = NumericField(
             value = state.editingMegapixels,
             onValueChange = callbacks.onEditingMegapixelsChange ?: noOpString,

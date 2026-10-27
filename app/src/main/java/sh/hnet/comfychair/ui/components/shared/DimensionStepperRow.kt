@@ -88,7 +88,8 @@ fun DimensionStepperRow(
     heightError: String?,
     showWidth: Boolean = true,
     showHeight: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    sourceDimensionsPreset: sh.hnet.comfychair.ui.components.config.SourceDimensionsPreset? = null
 ) {
     if (!showWidth && !showHeight) return
 
@@ -176,6 +177,14 @@ fun DimensionStepperRow(
                 expanded = showPresetMenu,
                 onDismissRequest = { showPresetMenu = false }
             ) {
+                sourceDimensionsPreset?.let { preset ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.preset_source_dimensions) +
+                            if (preset.enabled) " (${preset.width} × ${preset.height})" else "") },
+                        enabled = preset.enabled,
+                        onClick = { preset.onApply(); showPresetMenu = false }
+                    )
+                }
                 // Grouped presets
                 DropdownMenuItem(
                     text = {
@@ -196,8 +205,8 @@ fun DimensionStepperRow(
                     DropdownMenuItem(
                         text = { Text(label) },
                         onClick = {
-                            onWidthChange(resolution.first.toString())
-                            onHeightChange(resolution.second.toString())
+                            if (showWidth) onWidthChange(resolution.first.toString())
+                            if (showHeight) onHeightChange(resolution.second.toString())
                             showPresetMenu = false
                         }
                     )
@@ -223,8 +232,8 @@ fun DimensionStepperRow(
                     DropdownMenuItem(
                         text = { Text(label) },
                         onClick = {
-                            onWidthChange(resolution.first.toString())
-                            onHeightChange(resolution.second.toString())
+                            if (showWidth) onWidthChange(resolution.first.toString())
+                            if (showHeight) onHeightChange(resolution.second.toString())
                             showPresetMenu = false
                         }
                     )
@@ -250,8 +259,8 @@ fun DimensionStepperRow(
                     DropdownMenuItem(
                         text = { Text(label) },
                         onClick = {
-                            onWidthChange(resolution.first.toString())
-                            onHeightChange(resolution.second.toString())
+                            if (showWidth) onWidthChange(resolution.first.toString())
+                            if (showHeight) onHeightChange(resolution.second.toString())
                             showPresetMenu = false
                         }
                     )
@@ -276,8 +285,8 @@ fun DimensionStepperRow(
                     DropdownMenuItem(
                         text = { Text(label) },
                         onClick = {
-                            onWidthChange(resolution.first.toString())
-                            onHeightChange(resolution.second.toString())
+                            if (showWidth) onWidthChange(resolution.first.toString())
+                            if (showHeight) onHeightChange(resolution.second.toString())
                             showPresetMenu = false
                         }
                     )
@@ -302,8 +311,8 @@ fun DimensionStepperRow(
                     DropdownMenuItem(
                         text = { Text(label) },
                         onClick = {
-                            onWidthChange(resolution.first.toString())
-                            onHeightChange(resolution.second.toString())
+                            if (showWidth) onWidthChange(resolution.first.toString())
+                            if (showHeight) onHeightChange(resolution.second.toString())
                             showPresetMenu = false
                         }
                     )

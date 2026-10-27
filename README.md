@@ -2,7 +2,9 @@
 
 An unofficial, native Android UI for [ComfyUI](https://github.com/comfyanonymous/ComfyUI).
 
-**Current version**: v0.8.11
+**Current version**: [v0.8.24](https://github.com/nickdlkk/comfychair/releases/tag/v0.8.24) · [简体中文](README.zh-CN.md)
+
+This fork's APKs are published in [nickdlkk/comfychair Releases](https://github.com/nickdlkk/comfychair/releases). The badges below link to the upstream project and F-Droid; they do not necessarily contain this fork's changes.
 
 [<img src="https://raw.githubusercontent.com/rubenpgrady/get-it-on-github/refs/heads/main/get-it-on-github.png"
     alt="Get it on GitHub"
@@ -63,6 +65,20 @@ ComfyChair provides a streamlined mobile interface for interacting with ComfyUI 
   - Animate still images into videos with adjustable length and frame rate
   - High Noise / Low Noise UNET and LoRA model selection
   - Live preview during generation
+
+### Editing dimensions and before/after comparison (v0.8.24)
+
+1. Open **Image to Image → Editing**, select a workflow, and open its configuration. Width and height controls appear independently only when those fields are mapped in the workflow. Valid edits are saved per workflow and used for generation; unmapped dimensions remain controlled by the workflow. Saved values take priority over imported defaults, then the visible 1024 UI default. Invalid mapped dimensions block generation (current range: 1–4096).
+2. Under **resolution presets**, choose **Same size as source image** to copy the primary source (slot 1)'s exact decoded pixel dimensions into the mapped fields, without rounding to multiples of 8 or 64. The preset is disabled without a primary image and hidden outside Editing or without dimension mappings. Out-of-range source dimensions are shown as validation errors, not silently resized.
+3. After generation, open the result preview's **top-right Info** button. The panel shows the decoded result dimensions and **file size unavailable**: encoded response bytes are not retained, so bitmap memory size is not reported as file size. The **Original / result comparison** toggle is below this information.
+4. Enable comparison, then drag the vertical divider left/right on the image or use the slider. Original is on the left, result on the right. Both fit the same full viewport before clipping; different aspect ratios retain letterboxing rather than stretching. Preview paging is disabled while comparing. Close comparison to restore tapping the result to open fullscreen.
+5. In fullscreen, **press and hold with one stationary finger** to see the original; release or cancel to return to the result. Movement beyond touch slop, multitouch, leaving the page, or pausing the app also ends the comparison. Existing zoom/pan positioning is retained when temporarily showing the original.
+
+**Availability:** Comparisons use the primary source snapshot captured when preparing that generation, associated with its server and prompt—not whichever source is selected now. They apply only to eligible Editing results, not gallery entries, source slots, videos, or unknown/restored history. Associations are session-dependent and snapshots live in the system cache; process restart, missing cache, or expired fullscreen capability tickets disable comparison. Comparison decoding may be downsampled (longest side at most 2048); the source-size preset uses the full decoded source dimensions. This is not permanent editing history.
+
+**Workflow fixes:** Node-property edits now share raw/`nodes`/`prompt` handling, preserve connection arrays and Long precision. Editing raw prompts continue through finalization, bypass handling and debug snapshots. Only `SaveImageAdvanced` with explicit `format=png` receives missing/blank/null `format.bit_depth=8-bit` and `format.input_color_space=sRGB`; explicit values and unresolved placeholders are preserved. This does **not** claim to fix every Qwen 2.1 server validation error or infer missing model/sampler inputs.
+
+**Validation:** Debug APK built successfully with 40 JVM tests passing (no failures, errors, or skips). Device touch gestures and live ComfyUI generation have not been verified; see the [validation handoff](docs/comfychair-qwen21-validation-handoff-2026-10-27.md).
 
 ### Media
 
@@ -166,7 +182,7 @@ ComfyChair provides a streamlined mobile interface for interacting with ComfyUI 
 ### Prerequisites
 
 1. **Android Studio** (latest stable version recommended)
-2. **JDK 11** or higher
+2. **JDK 17** (used by the Android Gradle plugin and CI)
 3. **Android SDK** with API level 36
 
 ### Building the project

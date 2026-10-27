@@ -71,6 +71,8 @@ class MediaViewerActivity : ComponentActivity() {
         const val EXTRA_INITIAL_INDEX = "initial_index"
 
         // Single mode extras
+        const val EXTRA_COMPARISON_TICKET = "editing_comparison_ticket"
+        const val EXTRA_RESULT_PROMPT = "editing_result_prompt"
         const val EXTRA_IS_VIDEO = "is_video"
         const val EXTRA_VIDEO_URI = "video_uri"
 
@@ -144,7 +146,9 @@ class MediaViewerActivity : ComponentActivity() {
             type: String? = null,
             replaceSlot: Int? = null,
             bypassSlot: Int? = null,
-            isSlotBypassed: Boolean = false
+            isSlotBypassed: Boolean = false,
+            comparisonTicket: String? = null,
+            resultPromptId: String? = null
         ): Intent {
             // Store bitmap in companion object (survives activity init, unlike BitmapCache which gets cleared)
             singleModeBitmap = bitmap
@@ -163,6 +167,8 @@ class MediaViewerActivity : ComponentActivity() {
                 // Add bypass slot if provided (shows correct initial bypass state in toolbar)
                 bypassSlot?.let { putExtra(EXTRA_BYPASS_SLOT, it) }
                 putExtra(EXTRA_IS_BYPASSED, isSlotBypassed)
+                comparisonTicket?.let { putExtra(EXTRA_COMPARISON_TICKET, it) }
+                resultPromptId?.let { putExtra(EXTRA_RESULT_PROMPT, it) }
             }
         }
 
@@ -336,7 +342,7 @@ class MediaViewerActivity : ComponentActivity() {
 
             // Create a single item for the image with file info
             val item = MediaViewerItem(
-                promptId = notificationPromptId ?: "",
+                promptId = intent.getStringExtra(EXTRA_RESULT_PROMPT) ?: notificationPromptId ?: "",
                 filename = filename,
                 subfolder = subfolder,
                 type = type,
@@ -351,7 +357,8 @@ class MediaViewerActivity : ComponentActivity() {
                 mode = ViewerMode.SINGLE,
                 items = listOf(item),
                 initialIndex = 0,
-                singleBitmap = bitmap
+                singleBitmap = bitmap,
+                comparisonTicket = intent.getStringExtra(EXTRA_COMPARISON_TICKET)
             )
         }
     }

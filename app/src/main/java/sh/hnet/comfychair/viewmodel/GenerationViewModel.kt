@@ -648,6 +648,7 @@ class GenerationViewModel : ViewModel() {
         ownerId: String,
         contentType: ContentType = ContentType.IMAGE,
         front: Boolean = false,
+        onSubmitted: (String) -> Unit = {},
         onResult: (success: Boolean, promptId: String?, errorMessage: String?) -> Unit
     ) {
         DebugLogger.i(TAG, "Starting generation (owner: $ownerId, type: $contentType${if (front) ", front" else ""})")
@@ -671,7 +672,7 @@ class GenerationViewModel : ViewModel() {
         // Dialog is shown by ensureConnection if reconnection fails
         ConnectionManager.ensureConnection(context) { connected ->
             if (connected) {
-                submitWorkflow(workflowJson, front, onResult)
+                submitWorkflow(workflowJson, front, onSubmitted, onResult)
             } else {
                 // Connection failed - dialog already shown by ensureConnection
                 // Don't show Toast (no error message) to avoid duplicate notifications
@@ -686,6 +687,7 @@ class GenerationViewModel : ViewModel() {
     private fun submitWorkflow(
         workflowJson: String,
         front: Boolean = false,
+        onSubmitted: (String) -> Unit = {},
         onResult: (success: Boolean, promptId: String?, errorMessage: String?) -> Unit
     ) {
         val client = comfyUIClient ?: return
@@ -696,6 +698,8 @@ class GenerationViewModel : ViewModel() {
             if (success && promptId != null) {
                 DebugLogger.i(TAG, "Workflow submitted successfully (promptId: ${Obfuscator.promptId(promptId)})")
 
+                // Bind immutable source metadata before completion can be delivered to its owner.
+                onSubmitted(promptId)
                 // Register job with JobRegistry for queue tracking
                 generationOwnerId?.let { ownerId ->
                     JobRegistry.registerJob(promptId, ownerId, generationContentType)

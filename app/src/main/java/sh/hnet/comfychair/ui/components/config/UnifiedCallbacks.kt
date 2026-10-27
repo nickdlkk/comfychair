@@ -115,6 +115,8 @@ data class UnifiedCallbacks(
     val onEditingLownoiseLoraChange: ((String) -> Unit)? = null,
 
     // === ITI-Specific: Editing Mode Parameters ===
+    val onEditingWidthChange: ((String) -> Unit)? = null,
+    val onEditingHeightChange: ((String) -> Unit)? = null,
     val onEditingMegapixelsChange: ((String) -> Unit)? = null,
     val onEditingStepsChange: ((String) -> Unit)? = null,
     val onEditingCfgChange: ((String) -> Unit)? = null,

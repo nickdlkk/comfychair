@@ -268,7 +268,8 @@ fun MediaViewerScreen(
                     bitmap = uiState.currentBitmap,
                     videoUri = uiState.currentVideoUri,
                     isLoading = uiState.isLoading,
-                    onSingleTap = { viewModel.toggleUiVisibility() }
+                    onSingleTap = { viewModel.toggleUiVisibility() },
+                    comparisonOriginal = uiState.comparisonOriginal
                 )
             }
         }
@@ -514,7 +515,8 @@ private fun MediaContent(
     videoUri: android.net.Uri?,
     isLoading: Boolean,
     onSingleTap: () -> Unit,
-    cacheKey: MediaCacheKey? = null
+    cacheKey: MediaCacheKey? = null,
+    comparisonOriginal: android.graphics.Bitmap? = null
 ) {
     Box(
         modifier = Modifier
@@ -540,7 +542,8 @@ private fun MediaContent(
                 ImageViewer(
                     bitmap = bitmap,
                     modifier = Modifier.fillMaxSize(),
-                    onSingleTap = onSingleTap
+                    onSingleTap = onSingleTap,
+                    comparisonOriginal = if (isVideo) null else comparisonOriginal
                 )
             }
             isVideo || isLoading -> {

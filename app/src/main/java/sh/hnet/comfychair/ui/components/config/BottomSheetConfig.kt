@@ -100,6 +100,7 @@ data class ModelField(
  */
 @Stable
 data class ParameterConfig(
+    val sourceDimensionsPreset: SourceDimensionsPreset? = null,
     val width: NumericField? = null,
     val height: NumericField? = null,
     val steps: NumericField? = null,

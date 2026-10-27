@@ -106,6 +106,8 @@ data class ImageToImageUiState(
     // Bypassed source image slots (for multi-image workflows). Slot 1 is never bypassed — enforced in UI.
     val bypassedSourceSlots: Set<Int> = emptySet(),
     val previewImage: Bitmap? = null,
+    val comparisonOriginal: Bitmap? = null,
+    internal val comparisonSource: EditingViewerSnapshots.Source? = null,
     val maskPaths: List<MaskPathData> = emptyList(),
     val brushSize: Float = 50f,
     val isEraserMode: Boolean = false,
@@ -243,6 +245,10 @@ data class ImageToImageUiState(
     val editingLownoiseLoraChain: List<LoraSelection> = emptyList(),
 
     // Editing parameters
+    val editingWidth: String = "1024",
+    val editingHeight: String = "1024",
+    val editingWidthError: String? = null,
+    val editingHeightError: String? = null,
     val editingMegapixels: String = "2.0",
     val editingSteps: String = "4",
     val editingCfg: String = "1.0",
@@ -788,7 +794,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         val savedEditingLownoiseLora = savedValues?.lownoiseLoraModel
 
         val state = _uiState.value
-        _uiState.value = state.copy(
+        _uiState.value = state.loadEditingDimensions(savedValues, defaults).copy(
             selectedEditingWorkflow = workflow.name,
             selectedEditingWorkflowId = workflow.id,
             workflowPlaceholders = placeholders,
@@ -935,8 +941,11 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
 
         // Load existing values to preserve nodeAttributeEdits from Workflow Editor
         val existingValues = storage.loadValues(serverId, workflowId)
+        val dimensions = state.saveEditingDimensions(existingValues ?: WorkflowValues())
 
         val values = WorkflowValues(
+            width = dimensions.width,
+            height = dimensions.height,
             megapixels = state.editingMegapixels.toFloatOrNull(),
             steps = state.editingSteps.toIntOrNull(),
             cfg = state.editingCfg.toFloatOrNull(),
@@ -1011,6 +1020,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             sourceImage3 = sourceImage3,
             sourceImage4 = sourceImage4,
             previewImage = previewImage,
+            comparisonOriginal = null, comparisonSource = null,
             referenceImage1 = referenceImage1,
             referenceImage2 = referenceImage2
         )
@@ -1041,8 +1051,9 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
 
     // Image-to-Image mode (Inpainting vs Editing)
     fun onModeChange(mode: ImageToImageMode) {
+        comparisonFetchToken++
         val state = _uiState.value
-        _uiState.value = state.copy(mode = mode)
+        _uiState.value = state.copy(mode = mode, comparisonOriginal = null, comparisonSource = null)
 
         // Reload workflow values to restore field visibility flags for the new mode's workflow
         when (mode) {
@@ -1814,6 +1825,22 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         savePreferences()
     }
 
+    fun onEditingWidthChange(width: String) {
+        _uiState.update { it.copy(
+            editingWidth = width,
+            editingWidthError = ValidationUtils.validateDimension(width, applicationContext)
+        ) }
+        savePreferences()
+    }
+
+    fun onEditingHeightChange(height: String) {
+        _uiState.update { it.copy(
+            editingHeight = height,
+            editingHeightError = ValidationUtils.validateDimension(height, applicationContext)
+        ) }
+        savePreferences()
+    }
+
     fun onEditingMegapixelsChange(megapixels: String) {
         val error = ValidationUtils.validateMegapixels(megapixels, applicationContext)
         _uiState.value = _uiState.value.copy(
@@ -2017,7 +2044,8 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                 // Editing mode: only check for validation errors
                 state.stepsError == null &&
                 state.megapixelsError == null &&
-                state.cfgError == null
+                state.cfgError == null &&
+                state.hasValidEditingDimensions()
             }
             ImageToImageMode.INPAINTING -> {
                 // Inpainting mode: source image with mask required, plus validation errors
@@ -2032,7 +2060,20 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
     /**
      * Upload source image (with mask for inpainting, without for editing) to ComfyUI and prepare workflow
      */
-    suspend fun prepareWorkflow(): String? {
+    private val comparisonSources = ResultSourceAssociation<java.io.File>()
+
+    fun submitPreparedWorkflow(
+        generation: GenerationViewModel, prepared: PreparedImageWorkflow, front: Boolean = false,
+        onResult: (Boolean, String?, String?) -> Unit
+    ) {
+        val serverId = MediaStateHolder.getCurrentServerId()
+        generation.startGeneration(prepared.json, OWNER_ID, front = front,
+            onSubmitted = { promptId -> comparisonSources.bind("$serverId:$promptId", prepared.sourceSnapshot) },
+            onResult = onResult)
+
+    }
+
+    suspend fun prepareWorkflow(): PreparedImageWorkflow? {
         val client = comfyUIClient ?: return null
         val context = applicationContext ?: return null
 
@@ -2066,15 +2107,18 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             _uiState.update { it.copy(isUploading = false, uploadTotalBytes = null, uploadProgressBytes = null, uploadLabel = null) }
         }
 
-        // Pre-submission validation: check for unresolved {{placeholder}} tokens
-        workflowJson?.let { json ->
-            val unresolved = findUnresolvedPlaceholders(json)
-            if (unresolved.isNotEmpty()) {
-                _events.emit(ImageToImageEvent.UnresolvedPlaceholders(unresolved))
-            }
-        }
-
-        return workflowJson
+        if (workflowJson == null) return null
+        // Stream the exact primary source used by this preparation to private cache. No bitmap
+        // copy / ByteArray / Intent payload; failure disables comparison, never generation.
+        val snapshot = if (state.mode == ImageToImageMode.EDITING) withContext(Dispatchers.IO) {
+            try {
+                java.io.File.createTempFile("editing-original-", ".png", context.cacheDir).also { file ->
+                    file.outputStream().use { check(sourceImage.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+                }
+            } catch (e: Exception) { null }
+        } else null
+        val unresolved = findUnresolvedPlaceholders(workflowJson)
+        return PreparedImageWorkflow(workflowJson, snapshot, unresolved)
     }
 
     /**
@@ -2100,6 +2144,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         sourceImage4: Bitmap?,
         state: ImageToImageUiState
     ): String? {
+        if (!state.hasValidEditingDimensions()) return null
         val sourceCompressed = 1 in state.compressedSlots
         val (sourceBytes, sourceExtension) = withContext(Dispatchers.IO) {
             encodeSourceImageForUpload(sourceImage, sourceCompressed)
@@ -2257,6 +2302,9 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             uploadedSource4 = result4.filename
         }
 
+        // Mapped dimensions come from the current editing controls, never stale storage
+        // or source-image dimensions. Unmapped inputs remain owned by the workflow.
+
         // Prepare editing workflow JSON
         val baseWorkflow = WorkflowManager.prepareImageEditingWorkflowById(
             workflowId = state.selectedEditingWorkflowId,
@@ -2278,6 +2326,8 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             highnoiseLora = state.selectedEditingHighnoiseLora,
             lownoiseLora = state.selectedEditingLownoiseLora,
             megapixels = state.editingMegapixels.toFloatOrNull() ?: 2.0f,
+            width = state.editingWidthForExecution(),
+            height = state.editingHeightForExecution(),
             steps = state.editingSteps.toIntOrNull() ?: 4,
             cfg = state.editingCfg.toFloatOrNull() ?: 1.0f,
             samplerName = state.editingSampler,
@@ -2417,7 +2467,12 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
      * @param promptId The prompt ID to fetch
      * @param onComplete Callback with success boolean (true if image was fetched and set)
      */
+    @Volatile private var comparisonFetchToken = 0L
+
     fun fetchGeneratedImage(promptId: String, onComplete: (success: Boolean) -> Unit) {
+        val token = ++comparisonFetchToken
+        val serverId = MediaStateHolder.getCurrentServerId()
+        _uiState.update { it.copy(comparisonOriginal = null, comparisonSource = null) }
         val client = comfyUIClient ?: run {
             onComplete(false)
             return
@@ -2461,10 +2516,33 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                     client.fetchImage(filename, subfolder, type) { bitmap, failureType ->
                         _uiState.update { it.copy(isFetching = false) }
                         if (bitmap != null) {
-                            // Store in cache (memory or disk based on mode)
-                            MediaStateHolder.putBitmap(MediaStateHolder.MediaKey.ItiPreview, bitmap, context)
+                            // Publish/cache only after the async identity guard below.
 
+                            viewModelScope.launch {
+                                val source = comparisonSources.sourceFor("$serverId:$promptId")
+                                val original = withContext(Dispatchers.IO) {
+                                    comparisonSources.sourceFor("$serverId:$promptId")?.let { file ->
+                                        try {
+                                            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                            BitmapFactory.decodeFile(file.absolutePath, bounds)
+                                            val options = BitmapFactory.Options().apply { inSampleSize = 1 }
+                                            while (maxOf(bounds.outWidth, bounds.outHeight) / options.inSampleSize > 2048) {
+                                                options.inSampleSize = maxOf(1, options.inSampleSize) * 2
+                                            }
+                                            BitmapFactory.decodeFile(file.absolutePath, options)
+                                        } catch (_: Exception) { null }
+                                        catch (_: OutOfMemoryError) { null }
+                                    }
+                                }
+                            if (token != comparisonFetchToken || serverId != MediaStateHolder.getCurrentServerId()) {
+                                onComplete(false)
+                                return@launch
+                            }
+                            MediaStateHolder.putBitmap(MediaStateHolder.MediaKey.ItiPreview, bitmap, context)
                             _uiState.value = _uiState.value.copy(
+                                comparisonOriginal = original,
+                                comparisonSource = if (original != null && source != null && serverId != null) EditingViewerSnapshots.Source(
+                                    source, serverId, promptId, filename, subfolder, type) else null,
                                 previewImage = bitmap,
                                 previewImageFilename = filename,
                                 previewImageSubfolder = subfolder,
@@ -2472,6 +2550,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                                 viewMode = ImageToImageViewMode.PREVIEW
                             )
                             onComplete(true)
+                            }
                         } else if (failureType == ConnectionFailure.STALLED) {
                             ConnectionManager.showConnectionAlert(context, failureType)
                             onComplete(false)
@@ -2488,8 +2567,18 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         }
     }
 
+    fun editingViewerTicket(): String? {
+        val state = _uiState.value
+        val source = state.comparisonSource ?: return null
+        if (state.mode != ImageToImageMode.EDITING || state.comparisonOriginal == null ||
+            source.server != MediaStateHolder.getCurrentServerId() || source.filename != state.previewImageFilename ||
+            source.subfolder != state.previewImageSubfolder || source.type != state.previewImageType) return null
+        return EditingViewerSnapshots.issue(source)
+    }
+
     fun onPreviewBitmapChange(bitmap: Bitmap) {
-        _uiState.value = _uiState.value.copy(previewImage = bitmap)
+        comparisonFetchToken++
+        _uiState.value = _uiState.value.copy(previewImage = bitmap, comparisonOriginal = null, comparisonSource = null)
         saveLastPreviewImage(bitmap)
     }
 
@@ -2501,11 +2590,13 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         if (promptId == lastClearedForPromptId) {
             return // Already cleared for this promptId
         }
+        comparisonFetchToken++
         lastClearedForPromptId = promptId
         // Evict from cache so loadSavedImages() won't restore the old preview
         // when navigating back to this screen during generation
         MediaStateHolder.evict(MediaStateHolder.MediaKey.ItiPreview)
         _uiState.value = _uiState.value.copy(
+            comparisonOriginal = null, comparisonSource = null,
             previewImage = null,
             previewImageFilename = null,
             previewImageSubfolder = null,
@@ -2514,8 +2605,10 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
     }
 
     fun clearPreview() {
+        comparisonFetchToken++
         lastClearedForPromptId = null // Reset tracking when manually clearing
         _uiState.value = _uiState.value.copy(
+            comparisonOriginal = null, comparisonSource = null,
             previewImage = null,
             previewImageFilename = null,
             previewImageSubfolder = null,
@@ -2576,6 +2669,9 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                     }
                     // If not successful, don't complete - will retry on next return
                 }
+            }
+            is GenerationEvent.VideoGenerated -> {
+                _uiState.update { it.copy(comparisonOriginal = null, comparisonSource = null) }
             }
             is GenerationEvent.ConnectionLostDuringGeneration -> {
                 DebugLogger.w(TAG, "ConnectionLostDuringGeneration")
