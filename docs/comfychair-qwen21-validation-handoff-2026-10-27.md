@@ -9,7 +9,11 @@
 - 发布使用现有 v0.8.24 / code51，不再次升版。本次只改文档，复用已验证APK：源APK与分享APK均为86,687,706 bytes，SHA256 `12f898194707681fbdabc119f3220e9e4a1b94de6584cea1a462460db7713277`；源码及build.gradle时间均不晚于APK。
 - 发布前再次执行 testDebugUnitTest 成功（31s，编译与测试任务UP-TO-DATE），XML仍为40 tests / 0 failures / 0 errors / 0 skipped，证明Gradle输入未变；之前完整构建日志见下文。aapt确认 `sh.hnet.comfychair` / code51 / v0.8.24。
 - 已fetch个人fork确认 nick/main 与起始HEAD一致；目标tag及Release原不存在。只提交明确列出的功能、测试、版本及文档文件，保留无关 `.agents/skills` 和已有stash。
-- 发布URL、最终ref与tag CI结果将在发布后补入本节。
+- 已发布正式Release（draft=false / prerelease=false）：https://github.com/nickdlkk/comfychair/releases/tag/v0.8.24 。发布提交 `f0bf145e46d3f01066f1d32b6b0b12c8350dde35`；annotated tag对象 `e68332de0359070d58b34d56a61f9e5381b098c5`，剥离后精确指向发布提交。远端main在发布时读回同提交；本节最终证据作为后续纯文档提交加入main，不移动tag。
+- 主附件 `comfychair-v0.8.24-debug-editing-compare-info-20261027-1635.apk`，asset ID `681093972` / node ID `RA_kwDOSJ2irs4omKtU`，Release完整下载86,687,706 bytes并校验SHA256与上述本地值一致。下载：https://github.com/nickdlkk/comfychair/releases/download/v0.8.24/comfychair-v0.8.24-debug-editing-compare-info-20261027-1635.apk 。
+- tag CI https://github.com/nickdlkk/comfychair/actions/runs/40480851815 已 completed/success；headSha与发布提交一致。SDK安装、编译、Release上传均success；日志 `BUILD SUCCESSFUL in 4m 21s` / `38 actionable tasks: 38 executed`。本地完整CI日志位于dev scratch `comfychair-v0824-tag-ci-full.log`。此workflow只assembleDebug，不执行JVM测试；40测试证据来自本地。
+- CI独立构建的第二附件 `comfychair-v0.8.24.apk`，asset ID `681106891`，86,687,706 bytes，API digest `8dda212471a90632d1ac18ec587a17e92519957673edeef8a4305ea58ab7e58f`；与主附件为不同构建，不能当作主附件同字节/签名；完整下载字节数与SHA256已实测一致，aapt确认 `sh.hnet.comfychair` / code51 / v0.8.24。
+- 未移动/覆盖已发布tag，未改workflow或remote，未动无关skills/stash。仍无设备UI及真实ComfyUI生成验收；无发布阻塞。
 
 
 ## v0.8.24 结果信息与全屏长按对比 — 最新验收
