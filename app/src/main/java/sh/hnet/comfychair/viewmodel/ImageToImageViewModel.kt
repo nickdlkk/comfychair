@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import sh.hnet.comfychair.ComfyUIClient
 import sh.hnet.comfychair.R
@@ -337,7 +338,115 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         private const val FEATHER_RADIUS = 8
     }
 
+    private data class DownloadedSource(val bitmap: Bitmap, val size: Long, val prepared: java.io.File?)
+
+    private fun serverImageIdentity(): ServerImageIdentity? {
+        if (ConnectionManager.connectionState.value !is sh.hnet.comfychair.connection.ConnectionState.Connected) return null
+        val serverId = ConnectionManager.currentServerId ?: return null
+        val client = ConnectionManager.clientOrNull ?: return null
+        if (MediaStateHolder.getCurrentServerId() != serverId) return null
+        return ServerImageIdentity(serverId, client)
+    }
+
+    private val sourcePicker = ServerImagePicker(
+        scope = viewModelScope,
+        identity = ::serverImageIdentity,
+        validSlot = { it in 1..(1 + _uiState.value.additionalImageSlotCount.coerceIn(0, 3)) },
+        list = { owner, source, offset -> withContext(Dispatchers.IO) {
+            (owner.client as ComfyUIClient).listSourceImagePage(source, offset)
+        } },
+        download = { owner, image ->
+            var prepared: java.io.File? = null
+            try { withContext(Dispatchers.IO) {
+            val bytes = (owner.client as ComfyUIClient).downloadSourceImage(image)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            // Preserve exact image dimensions; reject oversized sources instead of silently resizing.
+            require(bounds.outWidth > 0 && bounds.outHeight > 0 &&
+                bounds.outWidth.toLong() * bounds.outHeight <= 16_777_216L)
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                ?: throw java.io.IOException("Invalid image")
+            try {
+                if (!MediaStateHolder.isMemoryFirstMode()) {
+                    val context = applicationContext ?: throw java.io.IOException("No context")
+                    prepared = java.io.File.createTempFile("server-source-", ".png", context.cacheDir)
+                    prepared!!.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+                }
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                DownloadedSource(bitmap, bytes.size.toLong(), prepared)
+            } catch (e: Throwable) { prepared?.delete(); throw e }
+            } } catch (e: Throwable) { prepared?.delete(); throw e }
+        },
+        browse = { owner, source, query -> withContext(Dispatchers.IO) {
+            (owner.client as ComfyUIClient).browseSourceImages(source, query)
+        } },
+        dispose = { value: DownloadedSource -> value.prepared?.delete(); Unit },
+        accept = { owner, slot, value: DownloadedSource ->
+            if (serverImageIdentity() == owner) {
+                val key = when (slot) {
+                    1 -> MediaStateHolder.MediaKey.ItiSource
+                    2 -> MediaStateHolder.MediaKey.ItiSource2
+                    3 -> MediaStateHolder.MediaKey.ItiSource3
+                    else -> MediaStateHolder.MediaKey.ItiSource4
+                }
+                // Synchronous cache publication avoids a second unguarded coroutine after selection.
+                MediaStateHolder.putPreparedBitmap(key, value.bitmap, applicationContext, owner.serverId, value.prepared)
+                _uiState.update { state ->
+                    val reset = state.copy(compressedSlots = state.compressedSlots - slot,
+                        viewMode = ImageToImageViewMode.SOURCE)
+                    when (slot) {
+                        1 -> reset.copy(sourceImage = value.bitmap, sourceImageSize = value.size, maskPaths = emptyList())
+                        2 -> reset.copy(sourceImage2 = value.bitmap, sourceImage2Size = value.size)
+                        3 -> reset.copy(sourceImage3 = value.bitmap, sourceImage3Size = value.size)
+                        else -> reset.copy(sourceImage4 = value.bitmap, sourceImage4Size = value.size)
+                    }
+                }
+            }
+        }
+    )
+    // Process/ViewModel-local only: owner includes authenticated client identity. No raw credentials
+    // or image files are written to disk, and reconnecting cannot reuse another owner's preview.
+    private data class PreviewKey(val owner: ServerImageIdentity, val image: sh.hnet.comfychair.model.ServerImage)
+    private val sourcePreviewCache = ServerImagePreviewCache<PreviewKey, Bitmap>(12L * 1024 * 1024, 64)
+    suspend fun loadServerImagePreview(image: sh.hnet.comfychair.model.ServerImage): Bitmap =
+        sourcePicker.preview(image) { owner -> withContext(Dispatchers.IO) {
+            val key = PreviewKey(owner, image)
+            sourcePreviewCache.get(key) ?: run {
+                val bytes = (owner.client as ComfyUIClient).downloadSourcePreview(image)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                require(options.outWidth > 0 && options.outHeight > 0 &&
+                    options.outWidth.toLong() * options.outHeight <= 268_435_456L)
+                options.inJustDecodeBounds = false
+                options.inSampleSize = 1
+                while (options.outWidth / options.inSampleSize > 256 || options.outHeight / options.inSampleSize > 256)
+                    options.inSampleSize *= 2
+                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                    ?: throw java.io.IOException("Invalid preview")
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                sourcePreviewCache.put(key, bitmap, bitmap.allocationByteCount.toLong())
+                bitmap
+            }
+        } }
+    val serverImagePickerState = sourcePicker.state
+    fun openServerImagePicker(slot: Int, source: sh.hnet.comfychair.model.ServerImageSource) {
+        sh.hnet.comfychair.DiagnosticsApplication.event("picker_open slot=$slot source=${source.name} connected=${ConnectionManager.isConnected}")
+        sourcePicker.open(slot, source)
+    }
+    fun loadMoreServerImages(retry: Boolean = false) = sourcePicker.loadMore(retry)
+    fun changeServerImageQuery(name: String, sort: sh.hnet.comfychair.model.ServerImageSort) = sourcePicker.changeQuery(name, sort)
+    fun refreshServerImages() = sourcePicker.refresh()
+    fun cancelServerImageDownload() = sourcePicker.cancelDownload()
+    fun retryServerImageDownload() = sourcePicker.retryDownload()
+    fun closeServerImagePicker() = sourcePicker.close()
+    fun validateServerImagePicker() = sourcePicker.connectionChanged()
+    fun selectServerImage(image: sh.hnet.comfychair.model.ServerImage) = sourcePicker.select(image)
+
     init {
+        viewModelScope.launch {
+            ConnectionManager.connectionState.collect { sourcePicker.connectionChanged() }
+        }
         // Observe model cache from ConnectionManager
         viewModelScope.launch {
             ConnectionManager.modelCache.collect { cache ->
@@ -1129,6 +1238,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
 
     // Source image
     fun onSourceImageChange(context: Context, uri: Uri) {
+        closeServerImagePicker()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 // Read bytes first to capture file size, then decode bitmap
@@ -1161,6 +1271,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
      * @param index 2, 3, or 4
      */
     fun onAdditionalSourceImageChange(context: Context, index: Int, uri: Uri) {
+        closeServerImagePicker()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 // Read bytes first to capture file size, then decode bitmap
@@ -1201,6 +1312,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
      * @param slot 1-4
      */
     fun onSourceImageFromGallery(context: Context, slot: Int, bitmap: Bitmap) {
+        closeServerImagePicker()
         viewModelScope.launch(Dispatchers.IO) {
             val key = when (slot) {
                 1 -> MediaStateHolder.MediaKey.ItiSource

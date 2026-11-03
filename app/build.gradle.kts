@@ -17,15 +17,18 @@ android {
         applicationId = "sh.hnet.comfychair"
         minSdk = 33
         targetSdk = 36
-        versionCode = 51
-        versionName = "v0.8.24"
+        // Stable releases must exceed every previously distributed beta versionCode.
+        versionCode = 54
+        versionName = "v0.8.25"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            // Keep the existing certificate so distributed beta/debug installs can upgrade.
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

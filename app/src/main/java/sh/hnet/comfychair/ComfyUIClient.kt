@@ -1092,6 +1092,147 @@ class ComfyUIClient(
         })
     }
 
+    /** Cancellable, authenticated reads for the source picker. /view is retrieval only. */
+    suspend fun listSourceImages(source: sh.hnet.comfychair.model.ServerImageSource): List<sh.hnet.comfychair.model.ServerImage> =
+        listSourceImagePage(source).images
+
+    suspend fun listSourceImagePage(
+        source: sh.hnet.comfychair.model.ServerImageSource,
+        endExclusive: Int? = null
+    ): sh.hnet.comfychair.model.ServerImagePage {
+        val base = getBaseUrl()?.toHttpUrl() ?: throw IOException("Not connected")
+        suspend fun history(offset: Int, count: Int): JSONObject {
+            val url = base.newBuilder().addPathSegment("history")
+                .addQueryParameter("max_items", count.toString())
+                .addQueryParameter("offset", offset.toString()).build()
+            return JSONObject(readSourcePickerBytes(url, 8 * 1024 * 1024).toString(Charsets.UTF_8))
+        }
+        if (source == sh.hnet.comfychair.model.ServerImageSource.INPUT) {
+            val url = base.newBuilder().addPathSegment("object_info").addPathSegment("LoadImage").build()
+            val json = JSONObject(readSourcePickerBytes(url, 8 * 1024 * 1024).toString(Charsets.UTF_8))
+            return sh.hnet.comfychair.model.ServerImagePage(sh.hnet.comfychair.model.ServerImageDiscovery.input(json))
+        }
+        require(endExclusive == null || endExclusive >= 0)
+        // Upstream offset is oldest-based. Negative values ALL mean len(history)-max_items,
+        // not a reverse cursor! Find the record count using bounded one-record probes once.
+        val end = endExclusive ?: run {
+            if (history(0, 1).length() == 0) return sh.hnet.comfychair.model.ServerImagePage(emptyList())
+            var low = 0
+            var high = 1
+            while (history(high, 1).length() != 0) {
+                low = high
+                if (high > Int.MAX_VALUE / 2) throw IOException("History too large")
+                high *= 2
+            }
+            while (high - low > 1) {
+                val middle = low + (high - low) / 2
+                if (history(middle, 1).length() == 0) high = middle else low = middle
+            }
+            high
+        }
+        if (end == 0) return sh.hnet.comfychair.model.ServerImagePage(emptyList())
+        val start = (end - 50).coerceAtLeast(0)
+        val json = history(start, end - start)
+        // A cleared/pruned history can invalidate offsets; stop on empty instead of looping.
+        return sh.hnet.comfychair.model.ServerImagePage(
+            sh.hnet.comfychair.model.ServerImageDiscovery.output(json),
+            start.takeIf { it > 0 && json.length() > 0 }
+        )
+    }
+
+    private class PickerHttpError(val status: Int, val disabled: Boolean) : IOException("HTTP $status")
+    // Dedicated derived client retains authentication/TLS configuration but never follows redirects.
+    private val pickerClient by lazy { transferClient.newBuilder().followRedirects(false).followSslRedirects(false).build() }
+    private var sourceAssetsSupported: Boolean? = null
+
+    suspend fun browseSourceImages(source: sh.hnet.comfychair.model.ServerImageSource,
+        query: sh.hnet.comfychair.model.ServerImageQuery): sh.hnet.comfychair.model.ServerImagePage {
+        val base = getBaseUrl()?.toHttpUrl() ?: throw IOException("Not connected")
+        if (sourceAssetsSupported == null) {
+            try {
+                val features = JSONObject(readSourcePickerBytes(base.newBuilder().addPathSegment("api")
+                    .addPathSegment("features").build(), 256 * 1024).toString(Charsets.UTF_8))
+                sourceAssetsSupported = if (features.has("assets")) features.getBoolean("assets") else true
+            } catch (e: PickerHttpError) {
+                if (e.status != 404 && !(e.status == 503 && e.disabled)) throw e
+                sourceAssetsSupported = e.status != 503 // old features route may be absent; probe assets.
+            }
+        }
+        if (sourceAssetsSupported == true) {
+            try {
+                val builder = base.newBuilder().addPathSegment("api").addPathSegment("assets")
+                    .addQueryParameter("limit", "50").addQueryParameter("tags_all", source.type)
+                    .addQueryParameter("tags_none", "missing").addQueryParameter("sort", query.sort.field)
+                    .addQueryParameter("order", query.sort.order)
+                if (query.name.isNotEmpty()) builder.addQueryParameter("name_contains", query.name)
+                query.cursor?.let { builder.addQueryParameter("after", it) }
+                val json = JSONObject(readSourcePickerBytes(builder.build(), 8 * 1024 * 1024).toString(Charsets.UTF_8))
+                return sh.hnet.comfychair.model.ServerAssetDiscovery.page(json, source, base, query.cursor)
+            } catch (e: PickerHttpError) {
+                if (e.status != 404 && !(e.status == 503 && e.disabled)) throw e
+                sourceAssetsSupported = false
+            }
+        }
+        return listSourceImagePage(source, query.legacyOffset)
+    }
+
+    suspend fun downloadSourceImage(image: sh.hnet.comfychair.model.ServerImage): ByteArray {
+        require(sh.hnet.comfychair.model.ServerImageDiscovery.descriptor(image.path, image.type) == image.copy(assetId = null))
+        val base = getBaseUrl()?.toHttpUrl() ?: throw IOException("Not connected")
+        val url = image.assetId?.let { sh.hnet.comfychair.model.ServerAssetDiscovery.contentUrl(base, it) } ?: image.viewUrl(base)
+        return readSourcePickerBytes(url, 32 * 1024 * 1024)
+    }
+
+    suspend fun downloadSourcePreview(image: sh.hnet.comfychair.model.ServerImage): ByteArray {
+        require(sh.hnet.comfychair.model.ServerImageDiscovery.descriptor(image.path, image.type) == image.copy(assetId = null))
+        val base = getBaseUrl()?.toHttpUrl() ?: throw IOException("Not connected")
+        // Native ComfyUI preview conversion; older servers may return the original (still bounded).
+        val url = image.viewUrl(base).newBuilder().addQueryParameter("preview", "webp;60").build()
+        return readSourcePickerBytes(url, 4 * 1024 * 1024)
+    }
+
+    private suspend fun readSourcePickerBytes(url: okhttp3.HttpUrl, limit: Int): ByteArray =
+        kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+            // A finite call timeout also bounds slow transfers; cancellation closes the body.
+            val call = pickerClient.newCall(Request.Builder().url(url).get().build())
+            call.timeout().timeout(60, TimeUnit.SECONDS)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : okhttp3.Callback {
+                override fun onFailure(call: okhttp3.Call, e: IOException) {
+                    continuation.resumeWith(Result.failure(e))
+                }
+
+                override fun onResponse(call: okhttp3.Call, response: Response) {
+                    val result = runCatching {
+                        response.use {
+                            if (!it.isSuccessful) {
+                                // Read only a bounded error payload; no raw server message enters logs.
+                                val disabled = if (it.code == 503) {
+                                    val text = it.body?.byteStream()?.readNBytes(4096)?.toString(Charsets.UTF_8).orEmpty()
+                                    runCatching { JSONObject(text).optJSONObject("error")?.optString("code") == "SERVICE_DISABLED" }.getOrDefault(false)
+                                } else false
+                                throw PickerHttpError(it.code, disabled)
+                            }
+                            val body = it.body ?: throw IOException("Empty response")
+                            if (body.contentLength() > limit) throw IOException("Response too large")
+                            body.byteStream().use { input ->
+                                val output = java.io.ByteArrayOutputStream()
+                                val buffer = ByteArray(8192)
+                                while (true) {
+                                    val count = input.read(buffer)
+                                    if (count < 0) break
+                                    if (output.size() + count > limit) throw IOException("Response too large")
+                                    output.write(buffer, 0, count)
+                                }
+                                output.toByteArray()
+                            }
+                        }
+                    }
+                    continuation.resumeWith(result)
+                }
+            })
+        }
+
     /**
      * Fetch execution history for a prompt ID
      * Used to get information about generated images

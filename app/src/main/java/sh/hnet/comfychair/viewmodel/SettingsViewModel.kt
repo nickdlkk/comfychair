@@ -489,6 +489,7 @@ class SettingsViewModel : ViewModel() {
         AppSettings.setDebugLoggingEnabled(context, enabled)
         _isDebugLoggingEnabled.value = enabled
         DebugLogger.setEnabled(enabled)
+        sh.hnet.comfychair.DiagnosticsApplication.refresh()
     }
 
     /**
@@ -579,6 +580,15 @@ class SettingsViewModel : ViewModel() {
             zos.putNextEntry(ZipEntry("metadata.json"))
             zos.write(metadataJson.toByteArray(Charsets.UTF_8))
             zos.closeEntry()
+
+            for (name in listOf("recent.log", "recent.log.previous")) {
+                val recent = File(context.filesDir, "diagnostics/$name")
+                if (recent.isFile) {
+                    zos.putNextEntry(ZipEntry("diagnostics/$name"))
+                    zos.write(recent.readBytes())
+                    zos.closeEntry()
+                }
+            }
 
             val debugArtifacts = listOf(
                 "last_submitted_prompt.json",

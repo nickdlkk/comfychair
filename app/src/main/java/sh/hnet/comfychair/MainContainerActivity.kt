@@ -80,6 +80,7 @@ class MainContainerActivity : ComponentActivity() {
         // Guard check - redirect to login if not connected (unless in offline mode)
         val isOfflineMode = AppSettings.isOfflineMode(this)
         if (!ConnectionManager.isConnected && !isOfflineMode) {
+            DiagnosticsApplication.event("login_redirect guard_not_connected restored=" + (savedInstanceState != null))
             val intent = Intent(this, MainActivity::class.java)
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(intent)
@@ -172,6 +173,7 @@ class MainContainerActivity : ComponentActivity() {
                             AppSettings.setOfflineMode(this@MainContainerActivity, true)
                         },
                         onReturnToLogin = {
+                            DiagnosticsApplication.event("login_return connection_alert")
                             ConnectionManager.clearConnectionAlert()
                             generationViewModel.logout()
                             finish()
@@ -204,6 +206,7 @@ class MainContainerActivity : ComponentActivity() {
      * Log out from the server and return to MainActivity
      */
     private fun logout() {
+        DiagnosticsApplication.event("login_return explicit_logout")
         generationViewModel.logout()
         finish()
     }

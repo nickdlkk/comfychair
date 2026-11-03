@@ -8,6 +8,16 @@ import android.content.Context
  */
 object AppSettings {
     private const val PREFS_NAME = "AppSettings"
+    fun isRealtimeLoggingEnabled(context: Context): Boolean = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean("realtime_logging", false)
+    fun getRealtimeLogUrl(context: Context): String = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString("realtime_log_url", "") ?: ""
+    fun setRealtimeLoggingEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().putBoolean("realtime_logging", enabled).apply()
+        sh.hnet.comfychair.DiagnosticsApplication.refresh()
+    }
+    fun setRealtimeLogUrl(context: Context, url: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().putString("realtime_log_url", url).apply()
+        sh.hnet.comfychair.DiagnosticsApplication.refresh()
+    }
     private const val KEY_MEDIA_CACHE_DISABLED = "media_cache_disabled"
     private const val KEY_MEMORY_FIRST_CACHE = "memory_first_cache"
     private const val KEY_LIVE_PREVIEW_ENABLED = "live_preview_enabled"

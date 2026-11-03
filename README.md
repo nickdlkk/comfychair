@@ -2,7 +2,7 @@
 
 An unofficial, native Android UI for [ComfyUI](https://github.com/comfyanonymous/ComfyUI).
 
-**Current version**: [v0.8.24](https://github.com/nickdlkk/comfychair/releases/tag/v0.8.24) · [简体中文](README.zh-CN.md)
+**Current version**: [v0.8.25](https://github.com/nickdlkk/comfychair/releases/tag/v0.8.25) · [简体中文](README.zh-CN.md)
 
 This fork's APKs are published in [nickdlkk/comfychair Releases](https://github.com/nickdlkk/comfychair/releases). The badges below link to the upstream project and F-Droid; they do not necessarily contain this fork's changes.
 
@@ -65,6 +65,24 @@ ComfyChair provides a streamlined mobile interface for interacting with ComfyUI 
   - Animate still images into videos with adjustable length and frame rate
   - High Noise / Low Noise UNET and LoRA model selection
   - Live preview during generation
+
+### Server Input / Output source picker (v0.8.25)
+
+- In **Image to Image**, use the cloud upload/download icons beside the existing file/material buttons to choose server Input or Output images for source slots 1–4. The captured target slot does not change when paging the source carousel. Existing local file, material library and gallery selection remain available.
+- The compact material-style bottom sheet has a three-column image grid, a combined source/slot/count header, refresh/close/info actions, and one search/sort row. Asset-enabled servers provide debounced name search, cursor pagination and newest/oldest/name/size ordering. Counts distinguish displayed images from matching assets (which may include nonimages). Five sparse pages per automatic round are followed by explicit **Load more**.
+- The existing authenticated connection probes `/api/features` and reads `/api/assets`. Only disabled/unsupported asset APIs fall back: Input uses the server's LoadImage options; Output uses paginated execution history, **not an output-directory scan**. Legacy mode has no server-side asset search/sort. Neither assets nor history promise a complete live filesystem view; deleted files and concurrent history deletion can require refresh. Authentication/network/server errors are shown, not disguised as empty lists or fallback.
+- Visible thumbnails use at most three concurrent requests, 4 MiB encoded responses and sampled decoding to at most 256px. The owner-aware memory LRU is bounded to 12 MiB / 64 entries, with no thumbnail disk cache. Choosing an image pauses new previews without clearing rendered thumbnails, list or scroll state; an overlay and cancellable indeterminate status indicate the original download (no invented percentage). Failed downloads retain the list and offer retry.
+- Originals are fetched separately (asset-ID content for assets), limited to 32 MiB / 16,777,216 pixels; accepted images preserve original dimensions and replace only the captured slot. Server/client/slot/revision checks reject stale results. Closing, backgrounding, changing source or connection cancels work. Stable String grid keys avoid unsupported Android saved-state keys.
+
+### Opt-in diagnostics
+
+**Settings → Debug logging** retains the manual ZIP export/upload and adds separately enabled realtime diagnostic events. Debug capture and realtime upload are off by default; configure your own trusted endpoint ending exactly in `/events` (the separate ZIP endpoint may use `/upload`). Only value-free lifecycle/connection/picker events and sanitized fatal stack information are sent, without prompts, images, workflow contents, server addresses or ComfyUI credentials. HTTP is plaintext: use only on a trusted LAN, or use HTTPS. Upload runs only while an Activity is started, with bounded queues, batching, timeouts and retry backoff; disabling or changing the target cancels and clears pending uploads. A bounded private local journal is included in manual diagnostic ZIPs, but is not a complete persistent debug log. This helps investigate login-page returns; it does not prove every return was a crash.
+
+### Release versus beta
+
+`v0.8.25` is stable **versionCode 54**, newer than distributed `v0.8.25-beta.1` / 53. Release enables R8 code optimization/obfuscation and resource shrinking; debug remains unminified and usable for development. Explicit rules preserve reflective ViewModel/worker construction and diagnostics; dependency consumer rules cover framework/JNI integration. Diagnostic logging/realtime upload are **not stripped**. The locally published release retains the existing **Android Debug signing certificate** and application ID for upgrade compatibility; this is not newly provisioned production signing. Independently built CI APKs may use another debug certificate—do not assume they can update the local release.
+
+Measured against beta.1 debug: **86,933,230 → 8,266,557 bytes (90.49% smaller)**; DEX **18 → 1**. The final build passed **94 JVM tests**, including explicitly enabled readonly live assets GETs. This compares debug with optimized Release, not an isolated shrinker-only A/B. Actual APK sizes and current validation evidence are recorded in the [release shrinking handoff](docs/requirements/release-v0.8.25-shrinking.md). JVM/live HTTP tests do not exercise optimized Android runtime code. Device installation, touch/rendering, Android bitmap/cache publication and release runtime remain unverified without an attached device.
 
 ### Editing dimensions and before/after comparison (v0.8.24)
 

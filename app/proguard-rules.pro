@@ -1,21 +1,22 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Android/Compose/Lifecycle/WorkManager/Media3/OkHttp ship consumer rules.
+# JSON is parsed explicitly with org.json: no reflective Gson/Moshi model keep.
+# No application JNI, dynamic resource lookup, or reflection-based serialization.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Default ViewModelProvider creates these through their public no-arg constructors.
+-keepclassmembers,allowoptimization class sh.hnet.comfychair.viewmodel.** extends androidx.lifecycle.ViewModel {
+    public <init>();
+}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# WorkManager persists the worker class name and reflectively invokes this constructor.
+-keep,allowoptimization class sh.hnet.comfychair.notification.GenerationCheckWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Preserve readable opt-in diagnostics; do not strip logging or realtime reporting.
+-keepattributes SourceFile,LineNumberTable,InnerClasses,EnclosingMethod
+-keepnames class sh.hnet.comfychair.*Activity
+-keepnames class sh.hnet.comfychair.connection.ConnectionState$*
+-keepnames class sh.hnet.comfychair.connection.WebSocketState$*
+# Keep this source-level diagnostics boundary auditable in release DEX/mapping.
+-keep,allowoptimization class sh.hnet.comfychair.DiagnosticsApplication { *; }
+-keep,allowoptimization class sh.hnet.comfychair.util.RealtimeDiagnostics { *; }

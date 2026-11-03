@@ -2,7 +2,7 @@
 
 非官方原生 Android [ComfyUI](https://github.com/comfyanonymous/ComfyUI) 客户端。
 
-**当前版本**：[v0.8.24](https://github.com/nickdlkk/comfychair/releases/tag/v0.8.24) · [English](README.md)
+**当前版本**：[v0.8.25](https://github.com/nickdlkk/comfychair/releases/tag/v0.8.25) · [English](README.md)
 
 本分支 APK 请从 [nickdlkk/comfychair Releases](https://github.com/nickdlkk/comfychair/releases) 下载。英文首页的上游 GitHub/F-Droid 徽章不代表包含本分支功能。
 
@@ -16,6 +16,24 @@
 - **媒体**：图片/视频全屏浏览、缩放、画廊、批量保存/分享/删除、生成参数查看。
 - **工作流**：节点和连线可视化编辑、属性编辑、旁路、分组、字段映射；导入 LiteGraph、ComfyUI API JSON、ComfyChair JSON；后两种支持导出。
 - **配置**：多服务器和资源信息、缓存管理、配置备份/恢复、每工作流保存参数。
+
+### 服务器 Input / Output 原图选择（v0.8.25）
+
+- **图生图**顶部文件/素材按钮旁的云上传/下载图标，可为原图槽1–4选择服务器 Input / Output 图片；打开时固定目标槽，滑动原图页不会改目标。原本地文件、素材库和图库流程保留。
+- 紧凑素材样式弹窗：三列方图、来源/目标槽/计数合并标题、刷新/关闭/信息按钮；搜索和排序同排。资产服务支持300ms防抖名称搜索、cursor分页、最新/最旧/名称/大小四种排序。计数区分已加载图片与匹配资产（包含非图片）；稀疏过滤每轮最多自动五页，之后手动加载更多。
+- 复用当前已认证连接探测 `/api/features`、读取 `/api/assets`；仅禁用/不支持资产API时回退：Input读取LoadImage选项，Output分页读取执行历史，**不是扫描output磁盘目录**。旧模式无资产服务端搜索/排序；索引/历史都不保证实时完整目录，删除文件或并发清历史可能需刷新。认证、网络和服务器错误明确显示，不假装空列表或自动回退。
+- 仅可见项请求缩略图，并发最多3、每响应4 MiB、采样最长边256px；按server/client身份隔离的内存LRU上限12 MiB /64项，无缩略图磁盘缓存。选择原图暂停新预览，不清已有缩略图/列表/滚动；所选遮罩和可取消不定进度，无虚构百分比。失败可保留列表重试。
+- 原图单独下载（资产用ID content），上限32 MiB /16,777,216像素，不静默缩图；仅替换打开时目标槽。server/client/slot/revision守卫拒绝迟到结果；关闭、后台、切来源或连接取消任务。网格使用可保存的String稳定键。
+
+### 可选实时诊断
+
+**设置 → 调试日志**保留手动ZIP导出/上传，新增独立开关的实时事件。调试采集与实时发送默认关闭；填写自己的可信 `/events` 地址（ZIP另用 `/upload`）。只发送无业务值的生命周期/连接/picker事件与去message的fatal栈，不发送prompt、图片、工作流、服务器地址或ComfyUI凭据。HTTP明文只适用于可信LAN，或使用HTTPS。仅Activity started前台联网，队列/批次/超时/退避有界；关闭或换目标取消并清旧队列。私有有界本地journal会加入手动ZIP，但不是完整持久化debug日志。此功能用于调查回登录页，不能证明每次回退都是崩溃。
+
+### 正式版与 beta
+
+正式 **v0.8.25 /versionCode54** 高于已分发 beta.1 /53。Release开启R8代码优化/混淆及资源裁剪，debug仍不裁剪；精确保留ViewModel/worker反射构造和诊断，依赖consumer rules处理框架/JNI。**不剥离调试日志与实时诊断功能**。本地正式APK保留原applicationId及现有 **Android Debug签名证书** 以兼容升级，并非新生产签名；CI独立构建可能使用不同debug证书，不能视为可覆盖安装的同包。
+
+实测beta.1 debug **86,933,230 → 8,266,557 bytes（减少90.49%）**，DEX **18 → 1**；最终 **94项JVM测试通过**，含显式启用的真实资产只读GET。这是debug与优化Release比较，不是只开关裁剪的独立A/B。实际裁剪体积及验证见[Release裁剪移交](docs/requirements/release-v0.8.25-shrinking.md)。JVM与真实HTTP回归不运行裁剪后的Android代码；无连接设备，安装、触摸/渲染、Android解码/磁盘发布及Release运行时尚未实机验证。
 
 ### 编辑尺寸与原图对比（v0.8.24）
 

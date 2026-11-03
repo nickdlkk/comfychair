@@ -15,6 +15,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +31,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
@@ -112,6 +115,7 @@ import sh.hnet.comfychair.materials.MaterialLibrary
 import sh.hnet.comfychair.viewmodel.GalleryItem
 import sh.hnet.comfychair.viewmodel.MaterialLibraryViewModel
 import sh.hnet.comfychair.ui.components.GenerationButton
+import sh.hnet.comfychair.ui.components.ServerImageSourceButtons
 import sh.hnet.comfychair.ui.components.GenerationProgressBar
 import sh.hnet.comfychair.ui.components.config.ConfigBottomSheetContent
 import sh.hnet.comfychair.ui.components.config.UnifiedCallbacks
@@ -147,6 +151,11 @@ fun ImageToImageScreen(
     val generationState by generationViewModel.generationState.collectAsState()
     val connectionStatus by generationViewModel.connectionStatus.collectAsState()
     val uiState by imageToImageViewModel.uiState.collectAsState()
+    val serverPickerState by imageToImageViewModel.serverImagePickerState.collectAsState()
+    DisposableEffect(imageToImageViewModel) {
+        onDispose { imageToImageViewModel.closeServerImagePicker() }
+    }
+    LaunchedEffect(uiState.additionalImageSlotCount) { imageToImageViewModel.validateServerImagePicker() }
     val queueState by JobRegistry.queueState.collectAsState()
     val isConnecting by ConnectionManager.isConnecting.collectAsState()
     val presetUiState by presetViewModel.uiState.collectAsState()
@@ -163,6 +172,7 @@ fun ImageToImageScreen(
     // Refresh presets when screen resumes (catches external changes from Media Viewer)
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) imageToImageViewModel.closeServerImagePicker()
             if (event == Lifecycle.Event.ON_RESUME) {
                 presetViewModel.refreshPresets()
             }
@@ -406,6 +416,9 @@ fun ImageToImageScreen(
             title = { Text(stringResource(R.string.title_image_to_image)) },
             windowInsets = WindowInsets(0, 0, 0, 0),
             actions = {
+                // Bounded, scrollable strip: keep full Material touch targets on narrow screens
+                // (including inpainting's two mask actions) instead of clipping later buttons.
+                Row(Modifier.widthIn(max = 240.dp).horizontalScroll(rememberScrollState())) {
                 // Upload image button — routes to the correct slot based on current Pager page
                 val currentSourceSlot = if (pagerState.currentPage < imagePages.size) {
                     imagePages[pagerState.currentPage].slot
@@ -421,6 +434,7 @@ fun ImageToImageScreen(
                 }
                 IconButton(
                     onClick = {
+                        imageToImageViewModel.closeServerImagePicker()
                         when (currentSourceSlot) {
                             1 -> currentPicker.launch(arrayOf("image/*"))
                             else -> currentPicker.launch(arrayOf("image/*"))
@@ -430,12 +444,16 @@ fun ImageToImageScreen(
                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = stringResource(R.string.button_upload_source_image))
                 }
                 IconButton(onClick = {
+                    imageToImageViewModel.closeServerImagePicker()
                     currentPickerSlot = currentSourceSlot
                     materialLibraryViewModel.load(context)
                     showMaterialPicker = true
                 }) {
                     Icon(Icons.Default.Collections, contentDescription = stringResource(R.string.button_pick_from_materials))
                 }
+                ServerImageSourceButtons(onSelect = { source ->
+                    imageToImageViewModel.openServerImagePicker(currentSourceSlot, source)
+                })
                 // Edit mask button (only in inpainting mode when source image exists)
                 if (uiState.sourceImage != null && uiState.mode == ImageToImageMode.INPAINTING) {
                     IconButton(onClick = {
@@ -470,6 +488,7 @@ fun ImageToImageScreen(
                         Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.button_clear_mask))
                     }
                 }
+                }
                 // Menu button
                 AppMenuDropdown(
                     onSettings = onNavigateToSettings,
@@ -477,6 +496,20 @@ fun ImageToImageScreen(
                     showOfflineToggle = true
                 )
             }
+        )
+
+
+        sh.hnet.comfychair.ui.components.ServerImagePickerPanel(
+            state = serverPickerState,
+            loadPreview = imageToImageViewModel::loadServerImagePreview,
+            onSelect = imageToImageViewModel::selectServerImage,
+            onLoadMore = { imageToImageViewModel.loadMoreServerImages() },
+            onRetryMore = { imageToImageViewModel.loadMoreServerImages(retry = true) },
+            onRefresh = imageToImageViewModel::refreshServerImages,
+            onQuery = imageToImageViewModel::changeServerImageQuery,
+            onCancelDownload = imageToImageViewModel::cancelServerImageDownload,
+            onRetryDownload = imageToImageViewModel::retryServerImageDownload,
+            onClose = imageToImageViewModel::closeServerImagePicker
         )
 
         // Progress indicator - below app bar, only show if THIS screen's job is executing

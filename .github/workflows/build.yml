@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,11 +28,29 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
-      - name: Build debug APK
+      - name: Test and build shrunk release APK
         run: |
-          ./gradlew assembleDebug --no-daemon
-          APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
-          cp "$APK" "comfychair-${{ github.ref_name }}.apk"
+          ./gradlew testDebugUnitTest assembleRelease --no-daemon --max-workers=2
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import shutil
+          metadata = pathlib.Path('app/build/outputs/apk/release/output-metadata.json')
+          elements = json.loads(metadata.read_text())['elements']
+          if len(elements) != 1:
+              raise SystemExit('Expected one universal release APK')
+          apk = metadata.parent / elements[0]['outputFile']
+          shutil.copy2(apk, 'comfychair-${{ github.ref_name }}-release-ci.apk')
+          PY
+
+      - name: Preserve R8 mapping and test reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-build-evidence
+          path: |
+            app/build/outputs/mapping/release/
+            app/build/test-results/testDebugUnitTest/
+          if-no-files-found: error
 
       - name: Upload to Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -37,4 +58,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Upload APK to existing release (idempotent)
-          gh release upload "${{ github.ref_name }}" "comfychair-${{ github.ref_name }}.apk" --clobber
+          gh release upload "${{ github.ref_name }}" "comfychair-${{ github.ref_name }}-release-ci.apk" --clobber

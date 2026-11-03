@@ -285,6 +285,7 @@ object ConnectionManager {
             return
         }
 
+        sh.hnet.comfychair.DiagnosticsApplication.event("connection_disconnect")
         DebugLogger.i(TAG, "Disconnecting")
         pendingReconnectJob?.cancel()
         pendingReconnectJob = null
@@ -364,6 +365,7 @@ object ConnectionManager {
      * @param failureType The type of connection failure
      */
     fun showConnectionAlert(context: Context, failureType: ConnectionFailure) {
+        sh.hnet.comfychair.DiagnosticsApplication.event("connection_alert " + failureType.name)
         val hasCache = when {
             failureType == ConnectionFailure.STALLED -> false
             failureType == ConnectionFailure.AUTHENTICATION -> false

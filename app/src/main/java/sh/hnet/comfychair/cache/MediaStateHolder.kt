@@ -187,6 +187,18 @@ object MediaStateHolder {
      * Store a bitmap. In memory-first mode, stores in RAM. In disk-first mode, writes to disk.
      * @param context Required for disk-first mode, optional for memory-first mode.
      */
+    /** Publish an IO-prepared source without PNG encoding on the main thread. Caller owns cleanup. */
+    fun putPreparedBitmap(key: MediaKey, bitmap: Bitmap, context: Context?, expectedServer: String, prepared: java.io.File?) {
+        check(currentServerId == expectedServer)
+        if (isMemoryFirstMode) {
+            bitmaps[key] = bitmap
+            dirtyBitmaps.add(key)
+        } else {
+            check(context != null && prepared != null)
+            check(prepared.renameTo(context.getFileStreamPath(key.filename(expectedServer))))
+        }
+    }
+
     fun putBitmap(key: MediaKey, bitmap: Bitmap, context: Context? = null) {
         val serverId = currentServerId
         if (serverId == null) {

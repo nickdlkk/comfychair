@@ -76,6 +76,8 @@ fun ApplicationSettingsScreen(
     val isOfflineMode by viewModel.isOfflineMode.collectAsState()
     val edgeRouterId by viewModel.edgeRouterId.collectAsState()
     val logUploadUrl by viewModel.logUploadUrl.collectAsState()
+    var realtimeEnabled by remember { mutableStateOf(AppSettings.isRealtimeLoggingEnabled(context)) }
+    var realtimeUrl by remember { mutableStateOf(AppSettings.getRealtimeLogUrl(context)) }
     val isUploadingLogs by viewModel.isUploadingLogs.collectAsState()
 
     // State and effects
@@ -735,6 +737,23 @@ fun ApplicationSettingsScreen(
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = realtimeUrl,
+                    onValueChange = { realtimeUrl = it; AppSettings.setRealtimeLogUrl(context, it) },
+                    label = { Text(stringResource(R.string.label_realtime_url)) },
+                    placeholder = { Text("http://192.168.4.168:9011/events") },
+                    isError = realtimeUrl.isNotBlank() && !sh.hnet.comfychair.util.RealtimeDiagnostics.validTarget(realtimeUrl),
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    enabled = isDebugLoggingEnabled
+                )
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.label_realtime_enable), Modifier.weight(1f))
+                    Switch(checked = realtimeEnabled, onCheckedChange = {
+                        realtimeEnabled = it; AppSettings.setRealtimeLoggingEnabled(context, it)
+                    }, enabled = isDebugLoggingEnabled && sh.hnet.comfychair.util.RealtimeDiagnostics.validTarget(realtimeUrl))
+                }
+                Text(stringResource(R.string.desc_realtime_logging), style = MaterialTheme.typography.bodySmall)
 
                 // View logs button
                 Button(
