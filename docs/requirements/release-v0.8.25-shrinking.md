@@ -2,7 +2,16 @@
 
 ## Scope and version
 
-User authorized commit/push/Release after first measuring shrinking. This implementation/build worker performed **no commit, push, tag or GitHub Release**; the publishing agent handles those steps. Existing unrelated `.agents/skills/`, stash and all earlier uncommitted features were preserved. `.github/workflows/build.yml` is owned by the publishing agent, not edited here.
+User authorized commit/push/Release after first measuring shrinking. Published **v0.8.25**: https://github.com/nickdlkk/comfychair/releases/tag/v0.8.25 (`draft=false`, `prerelease=false`). Release commit `800c5560c227e2bf07086fa8c9d8da0c6e88a56b`; annotated tag object `292d2bdac5dc5765284d408ff61bb056433ee4ad` peels to that exact commit. This final evidence is a follow-up documentation-only main commit; the published tag is not moved. Unrelated `.agents/skills/` and stash remain untouched.
+
+## Published release readback
+
+- Primary compatible-signature APK asset `704688466`: `comfychair-v0.8.25-release-shrunk-20261103-1455.apk`, 8,266,557 bytes, full GitHub download hash verified `286414233c46e5a0a35b101e2ec0bb359a02a30f0b5be63f3b11b78f1cd42730`.
+- Matching local R8 mapping/usage/config/seeds/resources archive also attached: `comfychair-v0.8.25-local-release-r8-mapping.zip`, asset `704700493`, 7,084,294 bytes; API digest `9140b2e54cfde53bee9ab7196cfeadfa8162869715b63ed0e55d165fcd4209a3`.
+- Tag CI https://github.com/nickdlkk/comfychair/actions/runs/41594997633 completed **success**, head SHA matches the release commit; `BUILD SUCCESSFUL in 7m59s`, 72 tasks executed. Downloaded Actions test evidence totals **94 tests /0 failures /0 errors /0 skipped**. CI saves its own R8 mapping and XML as `release-build-evidence`.
+- CI independent APK asset `704710109`: `comfychair-v0.8.25-release-ci.apk`, 8,266,557 bytes, full download hash verified `bdb7c12f27135f9ef09534c8859db9b2715bf5a3b1f20e82ed0eb40fcfb79cd3`. Its certificate/bytes are independent: do not substitute it for the primary APK when updating the locally signed beta.
+- Initial tag push hit a network connection failure; readback confirmed no tag existed remotely before retry. No force push/tag rewrite or remote changes occurred. Release and primary asset read back successfully. No publishing blocker; Android device runtime/upgrade caveats below remain.
+
 
 Read actual beta version first: `v0.8.25-beta.1` / code53. Completed the first R8 experiment at that unchanged version, then bumped once to **v0.8.25 /code54**, application ID `sh.hnet.comfychair`. Release enables `isMinifyEnabled=true` and `isShrinkResources=true`; debug remains unminified. Existing debug signing configuration intentionally remains for update compatibility; no production certificate was invented.
 
