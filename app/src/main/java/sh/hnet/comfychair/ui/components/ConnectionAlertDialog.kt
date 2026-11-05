@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package sh.hnet.comfychair.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
@@ -10,7 +12,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,7 +45,9 @@ fun ConnectionAlertDialog(
     onReturnToLogin: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val isAuthFailure = failureType == ConnectionFailure.AUTHENTICATION
+    val isCertificateFailure = failureType == ConnectionFailure.CERTIFICATE
+    // Certificate problems are resolved on the login screen, like expired sessions
+    val isAuthFailure = failureType == ConnectionFailure.AUTHENTICATION || isCertificateFailure
     val isStallFailure = failureType == ConnectionFailure.STALLED
 
     AlertDialog(
@@ -51,6 +56,7 @@ fun ConnectionAlertDialog(
             Text(
                 text = stringResource(
                     when {
+                        isCertificateFailure -> R.string.title_certificate_changed
                         isAuthFailure -> R.string.title_session_expired
                         isStallFailure -> R.string.title_transfer_stalled
                         else -> R.string.title_connection_lost
@@ -63,6 +69,7 @@ fun ConnectionAlertDialog(
                 Text(
                     text = stringResource(
                         when {
+                            isCertificateFailure -> R.string.msg_certificate_rejected_session
                             isAuthFailure -> R.string.msg_session_expired
                             isStallFailure -> R.string.msg_transfer_stalled
                             else -> R.string.msg_connection_lost
@@ -119,9 +126,9 @@ fun ConnectionAlertDialog(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             if (isReconnecting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
+                                LoadingIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = LocalContentColor.current
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(stringResource(R.string.action_reconnecting))

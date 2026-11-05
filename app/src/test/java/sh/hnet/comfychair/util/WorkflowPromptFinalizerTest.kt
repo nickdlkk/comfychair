@@ -127,3 +127,19 @@ class WorkflowPromptFinalizerTest {
         assertEquals(spaced, WorkflowPromptFinalizer.applyNodeAttributeEdits(spaced, emptyMap()))
     }
 }
+
+    /** The unit-test classpath may expose the Android org.json stub without [JSONObject.similar]; compare structurally. */
+    private fun JSONObject.similar(other: JSONObject): Boolean {
+        if (length() != other.length()) return false
+        val keys = keys().asSequence().toList()
+        for (key in keys) {
+            if (!other.has(key)) return false
+            val a = opt(key); val b = other.opt(key)
+            when (a) {
+                is JSONObject -> if (!(b is JSONObject && a.similar(b))) return false
+                is org.json.JSONArray -> if (!(b is org.json.JSONArray && a.toString() == b.toString())) return false
+                else -> if (a != b) return false
+            }
+        }
+        return true
+    }

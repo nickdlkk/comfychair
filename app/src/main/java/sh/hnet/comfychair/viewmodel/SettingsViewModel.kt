@@ -1,7 +1,12 @@
 package sh.hnet.comfychair.viewmodel
 
+import sh.hnet.comfychair.ui.components.config.OptionsSectionPrefs
+import android.os.LocaleList
+import android.app.LocaleManager
 import android.content.Context
 import android.net.Uri
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.File
@@ -38,14 +43,14 @@ import sh.hnet.comfychair.cache.MediaStateHolder
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.storage.BackupManager
-import sh.hnet.comfychair.storage.RestoreResult
 import sh.hnet.comfychair.storage.CredentialStorage
-import sh.hnet.comfychair.storage.ServerStorage
+import sh.hnet.comfychair.storage.GalleryMetadataCache
+import sh.hnet.comfychair.storage.MediaStorageMode
 import sh.hnet.comfychair.storage.PromptPresetStorage
+import sh.hnet.comfychair.storage.RestoreResult
+import sh.hnet.comfychair.storage.ServerStorage
 import sh.hnet.comfychair.storage.WorkflowValuesStorage
 import sh.hnet.comfychair.util.DebugLogger
-import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.Stable
 
 /**
  * UI state for server settings screen
@@ -57,7 +62,8 @@ data class ServerSettingsUiState(
     val systemStats: SystemStats? = null,
     val isLoadingStats: Boolean = false,
     val isClearingHistory: Boolean = false,
-    val isRefreshingModels: Boolean = false
+    val isRefreshingModels: Boolean = false,
+    val isFreeingMemory: Boolean = false
 )
 
 /**
@@ -161,20 +167,15 @@ class SettingsViewModel : ViewModel() {
     private val _isLivePreviewEnabled = MutableStateFlow(true)
     val isLivePreviewEnabled: StateFlow<Boolean> = _isLivePreviewEnabled.asStateFlow()
 
-    private val _isMemoryFirstCache = MutableStateFlow(true)
-    val isMemoryFirstCache: StateFlow<Boolean> = _isMemoryFirstCache.asStateFlow()
+    private val _mediaStorageMode = MutableStateFlow(MediaStorageMode.MEMORY_ONLY)
+    val mediaStorageMode: StateFlow<MediaStorageMode> = _mediaStorageMode.asStateFlow()
 
-    private val _isMediaCacheDisabled = MutableStateFlow(false)
-    val isMediaCacheDisabled: StateFlow<Boolean> = _isMediaCacheDisabled.asStateFlow()
 
     private val _isDebugLoggingEnabled = MutableStateFlow(false)
     val isDebugLoggingEnabled: StateFlow<Boolean> = _isDebugLoggingEnabled.asStateFlow()
 
     private val _isAutoConnectEnabled = MutableStateFlow(true)
     val isAutoConnectEnabled: StateFlow<Boolean> = _isAutoConnectEnabled.asStateFlow()
-
-    private val _isShowBuiltInWorkflows = MutableStateFlow(true)
-    val isShowBuiltInWorkflows: StateFlow<Boolean> = _isShowBuiltInWorkflows.asStateFlow()
 
     private val _isOfflineMode = MutableStateFlow(false)
     val isOfflineMode: StateFlow<Boolean> = _isOfflineMode.asStateFlow()
@@ -187,6 +188,9 @@ class SettingsViewModel : ViewModel() {
 
     private val _isUploadingLogs = MutableStateFlow(false)
     val isUploadingLogs: StateFlow<Boolean> = _isUploadingLogs.asStateFlow()
+    private val _isPromptSpellCheckEnabled = MutableStateFlow(false)
+    val isPromptSpellCheckEnabled: StateFlow<Boolean> = _isPromptSpellCheckEnabled.asStateFlow()
+
 
     private val _events = MutableSharedFlow<SettingsEvent>()
     val events: SharedFlow<SettingsEvent> = _events.asSharedFlow()
@@ -199,14 +203,13 @@ class SettingsViewModel : ViewModel() {
         imageCachePolicy.value = AppSettings.getImageCachePolicy(context)
         // Load settings
         _isLivePreviewEnabled.value = AppSettings.isLivePreviewEnabled(context)
-        _isMemoryFirstCache.value = AppSettings.isMemoryFirstCache(context)
-        _isMediaCacheDisabled.value = AppSettings.isMediaCacheDisabled(context)
+        _mediaStorageMode.value = AppSettings.getMediaStorageMode(context)
         _isDebugLoggingEnabled.value = AppSettings.isDebugLoggingEnabled(context)
         _isAutoConnectEnabled.value = AppSettings.isAutoConnectEnabled(context)
-        _isShowBuiltInWorkflows.value = AppSettings.isShowBuiltInWorkflows(context)
         _isOfflineMode.value = AppSettings.isOfflineMode(context)
         _edgeRouterId.value = AppSettings.getEdgeRouterId(context)
         _logUploadUrl.value = AppSettings.getLogUploadUrl(context)
+        _isPromptSpellCheckEnabled.value = AppSettings.isPromptSpellCheckEnabled(context)
 
         // Initialize debug logger with saved state
         DebugLogger.setEnabled(_isDebugLoggingEnabled.value)
@@ -316,6 +319,32 @@ class SettingsViewModel : ViewModel() {
         )
     }
 
+    /**
+     * Free memory on the server: unload the models, or also free its other caches. The usage meters show the result
+     * at their next refresh.
+     */
+    fun freeServerMemory(unloadModelsOnly: Boolean) {
+        val client = comfyUIClient ?: return
+        _serverSettingsState.value = _serverSettingsState.value.copy(isFreeingMemory = true)
+        viewModelScope.launch {
+            val success = withContext(Dispatchers.IO) {
+                kotlin.coroutines.suspendCoroutine { continuation ->
+                    client.freeMemory(unloadModelsOnly) { continuation.resumeWith(Result.success(it)) }
+                }
+            }
+            _serverSettingsState.value = _serverSettingsState.value.copy(isFreeingMemory = false)
+            _events.emit(
+                SettingsEvent.ShowToast(
+                    when {
+                        !success -> R.string.error_free_memory
+                        unloadModelsOnly -> R.string.msg_models_unloaded
+                        else -> R.string.msg_memory_freed
+                    }
+                )
+            )
+        }
+    }
+
     fun clearHistory() {
         val client = comfyUIClient ?: return
 
@@ -402,33 +431,47 @@ class SettingsViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Restore the app as installed, keeping only the servers: their connections, credentials and trusted certificates
+     * (and the server data cached for them), plus the jobs being followed. Every app setting returns to its default,
+     * the app follows the system language again, and imported workflows, the prompt library, the workflows' saved
+     * values, the screens' choices and the media stored on the device are deleted. Media in memory stay until the app
+     * closes, as when switching to memory only.
+     */
     fun restoreDefaults(context: Context) {
         viewModelScope.launch {
+            // Memory only is the default: switching first deletes the media stored on the device
+            applyMediaStorageMode(context, MediaStorageMode.MEMORY_ONLY)
             withContext(Dispatchers.IO) {
-                // Clear per-workflow saved values
-                val workflowValuesStorage = WorkflowValuesStorage(context)
-                workflowValuesStorage.clearAll()
-
-                // Clear global preferences (mode, workflow selections, prompts)
-                val prefsToDelete = listOf(
+                // App settings, then each workflow's values and each screen's choices
+                AppSettings.clearAll(context)
+                WorkflowValuesStorage(context).clearAll()
+                listOf(
                     "TextToImageFragmentPrefs",
                     "ImageToImageFragmentPrefs",
                     "TextToVideoFragmentPrefs",
                     "ImageToVideoFragmentPrefs"
-                )
-
-                prefsToDelete.forEach { prefsName ->
-                    try {
-                        val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
-                        prefs.edit().clear().commit()
-                    } catch (e: Exception) {
-                        // Failed to clear preferences
-                    }
+                ).forEach { prefsName ->
+                    context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().clear().commit()
                 }
-            }
+                OptionsSectionPrefs.clearAll(context)
 
-            _events.emit(SettingsEvent.ShowToast(sh.hnet.comfychair.R.string.msg_defaults_restored_success))
+                // What the user added: imported workflows and the prompt library. The workflow manager keeps the
+                // switched-off workflows in memory, so it reloads them from the cleared settings first
+                WorkflowManager.ensureInitialized(context)
+                WorkflowManager.reloadWorkflows()
+                WorkflowManager.clearAllUserWorkflows()
+                PromptPresetStorage(context).clearAll()
+            }
+            // The settings shown (and debug logging) follow the cleared values
+            reloadAppSettings(context)
+
+            _events.emit(SettingsEvent.ShowToast(R.string.msg_defaults_restored_success))
             _events.emit(SettingsEvent.RefreshNeeded)
+
+            // Last: a language change recreates the activity
+            val localeManager = context.getSystemService(LocaleManager::class.java)
+            if (!localeManager.applicationLocales.isEmpty) localeManager.applicationLocales = LocaleList.getEmptyLocaleList()
         }
     }
 
@@ -485,45 +528,47 @@ class SettingsViewModel : ViewModel() {
     }
 
     /**
-     * Set whether memory-first caching should be enabled.
-     * When disabled, switches to disk-first mode and forces media cache to be enabled.
+     * Whether generated media is stored on the device, so switching to memory-only storage needs
+     * a confirmation (the files will be deleted).
      */
-    fun setMemoryFirstCache(context: Context, enabled: Boolean) {
+    fun hasStoredMedia(context: Context): Boolean =
+        MediaStateHolder.hasDiskMedia(context) || MediaCache.hasDiskCache(context)
+
+    /**
+     * Set where generated media is kept. Switching to memory-only storage moves the current
+     * results to RAM and deletes all stored media from the device right away.
+     */
+    fun setMediaStorageMode(context: Context, mode: MediaStorageMode) {
         viewModelScope.launch {
-            // Persist current state before changing mode
-            // This is critical because activity restart may skip onStop()
-            if (MediaStateHolder.isMemoryFirstMode() && !enabled) {
-                // Switching FROM memory-first: persist before clearing
-                MediaStateHolder.persistToDisk(context)
-            }
-
-            AppSettings.setMemoryFirstCache(context, enabled)
-            _isMemoryFirstCache.value = enabled
-
-            if (!enabled) {
-                // When switching to disk-first, disable media cache must be OFF
-                AppSettings.setMediaCacheDisabled(context, false)
-                _isMediaCacheDisabled.value = false
-            }
-
-            _events.emit(SettingsEvent.RefreshNeeded)
+            if (applyMediaStorageMode(context, mode)) _events.emit(SettingsEvent.RefreshNeeded)
         }
     }
 
-    /**
-     * Set whether media cache should be disabled.
-     * When enabled, clears the cache first and prevents future disk persistence.
-     * Only applicable in memory-first mode.
-     */
-    fun setMediaCacheDisabled(context: Context, disabled: Boolean) {
-        viewModelScope.launch {
-            if (disabled) {
-                // Clear cache first when disabling media cache
-                clearCache(context)
-            }
-            AppSettings.setMediaCacheDisabled(context, disabled)
-            _isMediaCacheDisabled.value = disabled
+    /** Switch where media is kept (see [setMediaStorageMode]); returns whether the mode changed. */
+    private suspend fun applyMediaStorageMode(context: Context, mode: MediaStorageMode): Boolean {
+        val previous = AppSettings.getMediaStorageMode(context)
+        if (previous == mode) return false
+
+        // Keep the current results when they start being stored on the device; the
+        // activity restart may skip onStop()
+        if (previous != MediaStorageMode.DEVICE && mode == MediaStorageMode.DEVICE) {
+            MediaStateHolder.persistToDisk(context)
         }
+
+        AppSettings.setMediaStorageMode(context, mode)
+        _mediaStorageMode.value = mode
+
+        // The gallery list is kept only for offline mode, i.e. with storage on the device
+        if (mode != MediaStorageMode.DEVICE) GalleryMetadataCache.clearAllCaches(context)
+
+        if (mode == MediaStorageMode.MEMORY_ONLY) {
+            MediaStateHolder.enforceMemoryOnly(context)
+            MediaCache.setMemoryFirstMode(true)
+            MediaCache.deleteDiskCache(context)
+        } else {
+            MediaStateHolder.isMemoryOnly = false
+        }
+        return true
     }
 
     /**
@@ -544,15 +589,6 @@ class SettingsViewModel : ViewModel() {
     fun setAutoConnectEnabled(context: Context, enabled: Boolean) {
         AppSettings.setAutoConnectEnabled(context, enabled)
         _isAutoConnectEnabled.value = enabled
-    }
-
-    fun setShowBuiltInWorkflows(context: Context, show: Boolean) {
-        AppSettings.setShowBuiltInWorkflows(context, show)
-        _isShowBuiltInWorkflows.value = show
-        // Notify that workflows need to be reloaded
-        viewModelScope.launch {
-            _events.emit(SettingsEvent.RefreshNeeded)
-        }
     }
 
     /**
@@ -679,6 +715,11 @@ class SettingsViewModel : ViewModel() {
             DebugLogger.i(TAG, "Log upload response: code=${response.code}, body=$body")
             return response.isSuccessful
         }
+    }
+
+    fun setPromptSpellCheckEnabled(context: Context, enabled: Boolean) {
+        AppSettings.setPromptSpellCheckEnabled(context, enabled)
+        _isPromptSpellCheckEnabled.value = enabled
     }
 
     /**
@@ -883,14 +924,13 @@ class SettingsViewModel : ViewModel() {
      */
     private fun reloadAppSettings(context: Context, preserveDebugLogging: Boolean = false) {
         val newLivePreview = AppSettings.isLivePreviewEnabled(context)
-        val newMemoryFirst = AppSettings.isMemoryFirstCache(context)
-        val newMediaCacheDisabled = AppSettings.isMediaCacheDisabled(context)
+        val newMediaStorageMode = AppSettings.getMediaStorageMode(context)
         val restoredDebugLogging = AppSettings.isDebugLoggingEnabled(context)
         val newAutoConnect = AppSettings.isAutoConnectEnabled(context)
-        val newShowBuiltInWorkflows = AppSettings.isShowBuiltInWorkflows(context)
         val newOfflineMode = AppSettings.isOfflineMode(context)
         val newEdgeRouterId = AppSettings.getEdgeRouterId(context)
         val newLogUploadUrl = AppSettings.getLogUploadUrl(context)
+        val newPromptSpellCheck = AppSettings.isPromptSpellCheckEnabled(context)
 
         // If debug logging was enabled before restore, keep it enabled
         val finalDebugLogging = if (preserveDebugLogging && !restoredDebugLogging) {
@@ -902,17 +942,16 @@ class SettingsViewModel : ViewModel() {
             restoredDebugLogging
         }
 
-        DebugLogger.d(TAG, "Reloaded AppSettings - livePreview: $newLivePreview, memoryFirst: $newMemoryFirst, mediaCacheDisabled: $newMediaCacheDisabled, debugLogging: $finalDebugLogging, autoConnect: $newAutoConnect, showBuiltInWorkflows: $newShowBuiltInWorkflows")
+        DebugLogger.d(TAG, "Reloaded AppSettings - livePreview: $newLivePreview, mediaStorage: $newMediaStorageMode, debugLogging: $finalDebugLogging, autoConnect: $newAutoConnect")
 
         _isLivePreviewEnabled.value = newLivePreview
-        _isMemoryFirstCache.value = newMemoryFirst
-        _isMediaCacheDisabled.value = newMediaCacheDisabled
+        _mediaStorageMode.value = newMediaStorageMode
         _isDebugLoggingEnabled.value = finalDebugLogging
         _isAutoConnectEnabled.value = newAutoConnect
-        _isShowBuiltInWorkflows.value = newShowBuiltInWorkflows
         _isOfflineMode.value = newOfflineMode
         _edgeRouterId.value = newEdgeRouterId
         _logUploadUrl.value = newLogUploadUrl
+        _isPromptSpellCheckEnabled.value = newPromptSpellCheck
 
         // Update DebugLogger state to match
         DebugLogger.setEnabled(finalDebugLogging)

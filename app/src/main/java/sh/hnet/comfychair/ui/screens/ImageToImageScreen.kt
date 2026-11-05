@@ -6,8 +6,8 @@ import android.content.ClipboardManager
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import sh.hnet.comfychair.ui.components.mediaOrigin
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -25,10 +25,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -71,9 +71,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
@@ -83,28 +85,26 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import sh.hnet.comfychair.MaskEditorActivity
 import sh.hnet.comfychair.MediaViewerActivity
 import sh.hnet.comfychair.R
-import sh.hnet.comfychair.WorkflowEditorActivity
 import sh.hnet.comfychair.cache.MaskEditorStateHolder
 import sh.hnet.comfychair.cache.MediaCache
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.model.ScreenType
+import sh.hnet.comfychair.navigation.MainRoute
+import sh.hnet.comfychair.queue.JobDescription
 import sh.hnet.comfychair.queue.JobRegistry
 import sh.hnet.comfychair.ui.components.AppMenuDropdown
 import sh.hnet.comfychair.ui.components.PromptLibraryDialog
 import sh.hnet.comfychair.ui.components.PromptPresetDialog
 import sh.hnet.comfychair.ui.components.shared.PromptPresetDropdown
-import sh.hnet.comfychair.ui.theme.Dimensions
 import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.repository.GalleryRepository
 import sh.hnet.comfychair.ui.components.shared.rememberLastPickedImageUri
@@ -116,18 +116,47 @@ import sh.hnet.comfychair.viewmodel.GalleryItem
 import sh.hnet.comfychair.viewmodel.MaterialLibraryViewModel
 import sh.hnet.comfychair.ui.components.GenerationButton
 import sh.hnet.comfychair.ui.components.ServerImageSourceButtons
-import sh.hnet.comfychair.ui.components.GenerationProgressBar
 import sh.hnet.comfychair.ui.components.config.ConfigBottomSheetContent
 import sh.hnet.comfychair.ui.components.config.UnifiedCallbacks
-import sh.hnet.comfychair.ui.components.config.toBottomSheetConfig
+import sh.hnet.comfychair.ui.components.LocalMediaViewer
 import sh.hnet.comfychair.ui.components.MaskPreview
-import sh.hnet.comfychair.viewmodel.ConnectionStatus
+import sh.hnet.comfychair.ui.components.ResultHeroImage
+import sh.hnet.comfychair.ui.components.ResultHeroVideo
+import sh.hnet.comfychair.ui.components.ResultsPreview
+import sh.hnet.comfychair.ui.components.SourceTarget
+import sh.hnet.comfychair.ui.components.config.toBottomSheetConfig
+import sh.hnet.comfychair.ui.components.config.workflowGroups
+import sh.hnet.comfychair.ui.components.config.workflowIcon
+import sh.hnet.comfychair.ui.components.generation.EmptyResultState
+import sh.hnet.comfychair.ui.components.generation.EmptySourcePicker
+import sh.hnet.comfychair.ui.components.generation.GenerationControls
+import sh.hnet.comfychair.ui.components.generation.GenerationOptionsSheet
+import sh.hnet.comfychair.ui.components.generation.GenerationPreviewArea
+import sh.hnet.comfychair.ui.components.generation.GenerationScreenEffects
+import sh.hnet.comfychair.ui.components.generation.GenerationTopBar
+import sh.hnet.comfychair.ui.components.generation.MaskLabel
+import sh.hnet.comfychair.ui.components.generation.MaskTools
+import sh.hnet.comfychair.ui.components.generation.PromptDock
+import sh.hnet.comfychair.ui.components.generation.PromptPresetDialogs
+import sh.hnet.comfychair.ui.components.generation.RecipeChips
+import sh.hnet.comfychair.ui.components.generation.ReferenceSlot
+import sh.hnet.comfychair.ui.components.generation.ReferenceSlots
+import sh.hnet.comfychair.ui.components.generation.ResultActionsMenu
+import sh.hnet.comfychair.ui.components.generation.ResultMedia
+import sh.hnet.comfychair.ui.components.generation.ScreenJobStatus
+import sh.hnet.comfychair.ui.components.generation.SourceResultSwitcher
+import sh.hnet.comfychair.ui.components.generation.SourceToolbar
+import sh.hnet.comfychair.ui.components.generation.imageSendActions
+import sh.hnet.comfychair.ui.components.generation.rememberJobSubmitter
+import sh.hnet.comfychair.ui.components.generation.rememberOutputThumbnail
+import sh.hnet.comfychair.ui.components.generation.rememberPromptInputState
+import sh.hnet.comfychair.ui.components.loadResultBitmap
+import sh.hnet.comfychair.ui.components.rememberResultsViewer
+import sh.hnet.comfychair.util.VideoUtils
 import sh.hnet.comfychair.viewmodel.GenerationViewModel
-import sh.hnet.comfychair.viewmodel.ImageToImageEvent
 import sh.hnet.comfychair.viewmodel.ImageToImageMode
 import sh.hnet.comfychair.viewmodel.ImageToImageViewMode
 import sh.hnet.comfychair.viewmodel.ImageToImageViewModel
-import sh.hnet.comfychair.viewmodel.PromptPresetEvent
 import sh.hnet.comfychair.viewmodel.PromptPresetViewModel
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class)
@@ -135,63 +164,53 @@ import sh.hnet.comfychair.viewmodel.PromptPresetViewModel
 fun ImageToImageScreen(
     generationViewModel: GenerationViewModel,
     imageToImageViewModel: ImageToImageViewModel,
-    onNavigateToSettings: () -> Unit,
-    onLogout: () -> Unit,
+    onUseAsSource: (SourceTarget, suspend () -> Bitmap?) -> Unit,
+    presetViewModel: PromptPresetViewModel = viewModel(),
     materialLibraryViewModel: MaterialLibraryViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
 
-    // Prompt preset ViewModel
-    val presetViewModel: PromptPresetViewModel = viewModel()
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val ownerId = ImageToImageViewModel.OWNER_ID
 
-    // State and effects
-    // Collect state
-    val generationState by generationViewModel.generationState.collectAsState()
-    val connectionStatus by generationViewModel.connectionStatus.collectAsState()
     val uiState by imageToImageViewModel.uiState.collectAsState()
     val serverPickerState by imageToImageViewModel.serverImagePickerState.collectAsState()
     DisposableEffect(imageToImageViewModel) {
         onDispose { imageToImageViewModel.closeServerImagePicker() }
     }
-    LaunchedEffect(uiState.additionalImageSlotCount) { imageToImageViewModel.validateServerImagePicker() }
-    val queueState by JobRegistry.queueState.collectAsState()
-    val isConnecting by ConnectionManager.isConnecting.collectAsState()
-    val presetUiState by presetViewModel.uiState.collectAsState()
-
-    // Error dialog state
-    var showErrorDialog by remember { mutableStateOf(false) }
-    var errorDialogMessage by remember { mutableStateOf("") }
-
-    // Initialize preset ViewModel (shared for both inpainting and editing modes)
-    LaunchedEffect(Unit) {
-        presetViewModel.initialize(context, ScreenType.IMAGE_TO_IMAGE)
+    LaunchedEffect(uiState.mode, uiState.editingParams.workflowPlaceholders) {
+        imageToImageViewModel.validateServerImagePicker()
     }
+    val sourceImage = uiState.sourceImage
+    val previewImage = uiState.previewImage
+    val useAsReference: ((Bitmap) -> Unit)? =
+        if (imageToImageViewModel.freeReferenceSlot(uiState) != null) imageToImageViewModel::useAsReference else null
+    val presetUiState by presetViewModel.uiState.collectAsState()
+    val queueState by JobRegistry.queueState.collectAsState()
 
-    // Refresh presets when screen resumes (catches external changes from Media Viewer)
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) imageToImageViewModel.closeServerImagePicker()
-            if (event == Lifecycle.Event.ON_RESUME) {
-                presetViewModel.refreshPresets()
-            }
+    GenerationScreenEffects(
+        imageToImageViewModel, generationViewModel, presetViewModel, ScreenType.IMAGE_TO_IMAGE, ownerId,
+        onJobStarted = { imageToImageViewModel.onViewModeChange(ImageToImageViewMode.PREVIEW) }
+    )
+    val promptInput = rememberPromptInputState()
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, imageToImageViewModel) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) imageToImageViewModel.closeServerImagePicker()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-
-    // Check if THIS screen owns the currently executing job (for progress bar)
-    val isThisScreenExecuting = queueState.executingOwnerId == ImageToImageViewModel.OWNER_ID
-
-    // Check offline mode
-    val isOfflineMode = remember { AppSettings.isOfflineMode(context) }
-
     var showOptionsSheet by remember { mutableStateOf(false) }
 
-    val optionsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val isThisScreenExecuting = queueState.executingOwnerId == ownerId
+    // Several results of the last job are shown as a pager with a thumbnail strip
+    val showResults = !isThisScreenExecuting && uiState.generationOutputs.size > 1
+    val isThisScreenQueued = !isThisScreenExecuting && queueState.hasWaitingJob(ownerId)
+    val generationState by generationViewModel.generationState.collectAsState()
+    val isConnecting by ConnectionManager.isConnecting.collectAsState()
+    val isOfflineMode = remember { AppSettings.isOfflineMode(context) }
 
     // Gallery picker state
     var showGalleryPicker by remember { mutableStateOf(false) }
@@ -286,11 +305,8 @@ fun ImageToImageScreen(
     }
 
     // PagerState for HorizontalPager — initial page 0 (source image 1)
-    val pagerState = rememberPagerState(initialPage = 0) {
-        // Page count: driven by workflow additionalImageSlotCount + preview tab
-        val sourcePages = 1 + uiState.additionalImageSlotCount.coerceIn(0, 3)
-        sourcePages + 1 // +1 for preview tab
-    }
+    val activeSlots = sh.hnet.comfychair.viewmodel.activeSourceSlots(uiState.mode, uiState.editingParams.workflowPlaceholders)
+    val pagerState = rememberPagerState(initialPage = 0) { activeSlots.size + 1 }
 
     // Sync pagerState with viewMode when viewMode changes externally
     LaunchedEffect(uiState.viewMode) {
@@ -315,191 +331,121 @@ fun ImageToImageScreen(
     // Tabs reflect workflow capabilities (how many slots the workflow supports),
     // not whether images are already set (which would break workflow switching UX)
     data class ImagePage(val slot: Int, val title: String) // slot 1-4 for sources, 0 for preview
-    val imagePages = buildList {
-        // Slot 1 (primary source) is always available
-        add(ImagePage(1, "原图1"))
-        // Additional slots (2-4) depend on workflow additionalImageSlotCount
-        val maxAdditional = uiState.additionalImageSlotCount.coerceIn(0, 3)
-        if (maxAdditional >= 1) add(ImagePage(2, "原图2"))
-        if (maxAdditional >= 2) add(ImagePage(3, "原图3"))
-        if (maxAdditional >= 3) add(ImagePage(4, "原图4"))
-    }
+    val imagePages = activeSlots.map { slot -> ImagePage(slot, "原图$slot") }
     val previewPageIndex = imagePages.size // preview is always last
     val isPreviewPage = pagerState.currentPage == previewPageIndex
-
-    // Initialize ViewModel
-    LaunchedEffect(Unit) {
-        generationViewModel.getClient()?.let { client ->
-            imageToImageViewModel.initialize(context, client)
-        }
-    }
-
-    // Fetch models when connected
-    LaunchedEffect(connectionStatus) {
-        if (connectionStatus == ConnectionStatus.CONNECTED) {
-            imageToImageViewModel.fetchModels()
-        }
-    }
 
     // Event handling
     var pendingWorkflowJson by remember { mutableStateOf<sh.hnet.comfychair.viewmodel.PreparedImageWorkflow?>(null) }
     var showPlaceholderDialog by remember { mutableStateOf(false) }
     var pendingPlaceholders by remember { mutableStateOf(emptyList<String>()) }
     var batchCount by remember { mutableStateOf(AppSettings.getBatchCount(context)) }
+    var errorDialogMessage by remember { mutableStateOf("") }
+    var showErrorDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        imageToImageViewModel.events.collect { event ->
-            when (event) {
-                is ImageToImageEvent.ShowToast -> {
-                    Toast.makeText(context, event.messageResId, Toast.LENGTH_SHORT).show()
+    // UI composition
+    // Opens the mask editor on the current source; its edits come back through the ViewModel
+    fun openMaskEditor(sourceImage: Bitmap) {
+        MaskEditorStateHolder.initialize(
+            sourceImage = sourceImage,
+            maskPaths = uiState.maskPaths,
+            brushSize = uiState.brushSize,
+            isEraserMode = uiState.isEraserMode,
+            onPathAdded = { path, isEraser, brushSize ->
+                imageToImageViewModel.addMaskPath(path, isEraser, brushSize)
+                // Update state holder with new paths
+                MaskEditorStateHolder.updateMaskPaths(imageToImageViewModel.uiState.value.maskPaths)
+            },
+            onClearMask = {
+                imageToImageViewModel.clearMask()
+                MaskEditorStateHolder.updateMaskPaths(emptyList())
+            },
+            onInvertMask = {
+                imageToImageViewModel.invertMask()
+                MaskEditorStateHolder.updateMaskPaths(imageToImageViewModel.uiState.value.maskPaths)
+            },
+            onBrushSizeChange = { imageToImageViewModel.onBrushSizeChange(it) },
+            onEraserModeChange = { imageToImageViewModel.onEraserModeChange(it) }
+        )
+        context.startActivity(MaskEditorActivity.createIntent(context))
+    }
+
+    // Whether the mask is drawn over the source; only a view setting, the mask itself stays
+    var maskVisible by rememberSaveable { mutableStateOf(true) }
+
+    val mediaViewer = LocalMediaViewer.current
+
+    // Generate from the dock and from the prompt editor
+    fun submitPrepared(prepared: sh.hnet.comfychair.viewmodel.PreparedImageWorkflow, front: Boolean) {
+        if (batchCount > 1) {
+            AppSettings.setBatchCount(context, batchCount)
+            var completed = 0
+            val total = batchCount
+            fun generateNext() {
+                if (completed >= total) return
+                imageToImageViewModel.submitPreparedWorkflow(generationViewModel, prepared, front) { success, _, errorMessage ->
+                    completed++
+                    if (!success && errorMessage != null) {
+                        errorDialogMessage = errorMessage
+                        showErrorDialog = true
+                    }
+                    if (completed < total) {
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ generateNext() }, 300)
+                    }
                 }
-                is ImageToImageEvent.ShowToastMessage -> {
-                    Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
-                }
-                is ImageToImageEvent.UnresolvedPlaceholders -> {
-                    pendingPlaceholders = event.placeholders
-                    // pendingWorkflowJson was captured by the calling onGenerate callback
-                    showPlaceholderDialog = true
-                }
-                is ImageToImageEvent.DetailedError -> {
-                    errorDialogMessage = event.message
+            }
+            generateNext()
+        } else {
+            imageToImageViewModel.submitPreparedWorkflow(generationViewModel, prepared, front) { success, _, errorMessage ->
+                if (!success) {
+                    errorDialogMessage = errorMessage ?: context.getString(R.string.error_generation_failed)
                     showErrorDialog = true
                 }
             }
         }
     }
 
-    // Preset event handling
-    LaunchedEffect(Unit) {
-        presetViewModel.events.collect { event ->
-            when (event) {
-                is PromptPresetEvent.PresetApplied -> {
-                    imageToImageViewModel.onPositivePromptChange(event.prompt)
-                }
-                is PromptPresetEvent.ShowToast -> {
-                    Toast.makeText(context, context.getString(event.messageResId), Toast.LENGTH_SHORT).show()
-                }
-                is PromptPresetEvent.MaxFavoritesReached -> {
-                    Toast.makeText(context, context.getString(R.string.prompt_preset_max_favorites), Toast.LENGTH_SHORT).show()
-                }
-                is PromptPresetEvent.ResetPrompt -> {
-                    imageToImageViewModel.resetPromptToDefault()
-                }
+    // The fork's submit flow: require the mask in inpainting, prepare (uploading sources), confirm any
+    // unresolved placeholders, then submit — honouring the batch count and front-of-queue requests.
+    val submitJob: (front: Boolean) -> Unit = { front ->
+        scope.launch {
+            if (uiState.mode == ImageToImageMode.INPAINTING && !imageToImageViewModel.hasMask()) {
+                Toast.makeText(context, context.getString(R.string.hint_paint_mask), Toast.LENGTH_SHORT).show()
+                return@launch
             }
+            val prepared = imageToImageViewModel.prepareWorkflow()
+            if (prepared == null) {
+                Toast.makeText(context, context.getString(R.string.error_failed_load_workflow), Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            pendingWorkflowJson = prepared
+            pendingPlaceholders = prepared.unresolved
+            if (prepared.unresolved.isNotEmpty()) {
+                showPlaceholderDialog = true
+                return@launch
+            }
+            submitPrepared(prepared, front)
         }
     }
 
-    // Register event handler when screen is active
-    DisposableEffect(Unit) {
-        imageToImageViewModel.startListening(generationViewModel)
-        onDispose {
-            imageToImageViewModel.stopListening(generationViewModel)
-        }
-    }
 
-    // Handle when a NEW job starts executing for this screen
-    // Using both executingPromptId and executingOwnerId as keys handles the race condition
-    // where execution_start arrives before job registration (owner becomes known later)
-    LaunchedEffect(queueState.executingPromptId, queueState.executingOwnerId) {
-        val promptId = queueState.executingPromptId
-        if (queueState.executingOwnerId == ImageToImageViewModel.OWNER_ID && promptId != null) {
-            imageToImageViewModel.clearPreviewForExecution(promptId)
-            imageToImageViewModel.onViewModeChange(ImageToImageViewMode.PREVIEW)
-            imageToImageViewModel.startListening(generationViewModel)
-        }
-    }
 
-    // UI composition
     Column(modifier = Modifier.fillMaxSize()) {
-        // Top App Bar with image options
-        TopAppBar(
-            title = { Text(stringResource(R.string.title_image_to_image)) },
-            windowInsets = WindowInsets(0, 0, 0, 0),
+        GenerationTopBar(
+            screen = MainRoute.ImageToImage,
+            ownerId = ownerId,
+            generationViewModel = generationViewModel,
+            // Fork: server image sources share the top bar's icon-action row, alongside the picker
             actions = {
-                // Bounded, scrollable strip: keep full Material touch targets on narrow screens
-                // (including inpainting's two mask actions) instead of clipping later buttons.
-                Row(Modifier.widthIn(max = 240.dp).horizontalScroll(rememberScrollState())) {
-                // Upload image button — routes to the correct slot based on current Pager page
-                val currentSourceSlot = if (pagerState.currentPage < imagePages.size) {
-                    imagePages[pagerState.currentPage].slot
-                } else {
-                    1 // preview page → upload to slot 1
-                }
-                val currentPicker = when (currentSourceSlot) {
-                    1 -> imagePickerLauncher
-                    2 -> imagePickerLauncher2
-                    3 -> imagePickerLauncher3
-                    4 -> imagePickerLauncher4
-                    else -> imagePickerLauncher
-                }
-                IconButton(
-                    onClick = {
-                        imageToImageViewModel.closeServerImagePicker()
-                        when (currentSourceSlot) {
-                            1 -> currentPicker.launch(arrayOf("image/*"))
-                            else -> currentPicker.launch(arrayOf("image/*"))
-                        }
-                    }
-                ) {
-                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = stringResource(R.string.button_upload_source_image))
-                }
-                IconButton(onClick = {
-                    imageToImageViewModel.closeServerImagePicker()
-                    currentPickerSlot = currentSourceSlot
-                    materialLibraryViewModel.load(context)
-                    showMaterialPicker = true
-                }) {
-                    Icon(Icons.Default.Collections, contentDescription = stringResource(R.string.button_pick_from_materials))
-                }
                 ServerImageSourceButtons(onSelect = { source ->
-                    imageToImageViewModel.openServerImagePicker(currentSourceSlot, source)
+                    imageToImageViewModel.openServerImagePicker(
+                        imagePages.getOrNull(pagerState.currentPage)?.slot ?: 1, source
+                    )
                 })
-                // Edit mask button (only in inpainting mode when source image exists)
-                if (uiState.sourceImage != null && uiState.mode == ImageToImageMode.INPAINTING) {
-                    IconButton(onClick = {
-                        // Initialize state holder and launch mask editor activity
-                        MaskEditorStateHolder.initialize(
-                            sourceImage = uiState.sourceImage!!,
-                            maskPaths = uiState.maskPaths,
-                            brushSize = uiState.brushSize,
-                            isEraserMode = uiState.isEraserMode,
-                            onPathAdded = { path, isEraser, brushSize ->
-                                imageToImageViewModel.addMaskPath(path, isEraser, brushSize)
-                                // Update state holder with new paths
-                                MaskEditorStateHolder.updateMaskPaths(imageToImageViewModel.uiState.value.maskPaths)
-                            },
-                            onClearMask = {
-                                imageToImageViewModel.clearMask()
-                                MaskEditorStateHolder.updateMaskPaths(emptyList())
-                            },
-                            onInvertMask = {
-                                imageToImageViewModel.invertMask()
-                                MaskEditorStateHolder.updateMaskPaths(imageToImageViewModel.uiState.value.maskPaths)
-                            },
-                            onBrushSizeChange = { imageToImageViewModel.onBrushSizeChange(it) },
-                            onEraserModeChange = { imageToImageViewModel.onEraserModeChange(it) }
-                        )
-                        context.startActivity(MaskEditorActivity.createIntent(context))
-                    }) {
-                        Icon(Icons.Default.Brush, contentDescription = stringResource(R.string.button_edit_mask))
-                    }
-                    // Clear mask button
-                    IconButton(onClick = { imageToImageViewModel.clearMask() }) {
-                        Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.button_clear_mask))
-                    }
-                }
-                }
-                // Menu button
-                AppMenuDropdown(
-                    onSettings = onNavigateToSettings,
-                    onLogout = onLogout,
-                    showOfflineToggle = true
-                )
             }
         )
 
-
-        sh.hnet.comfychair.ui.components.ServerImagePickerPanel(
+            sh.hnet.comfychair.ui.components.ServerImagePickerPanel(
             state = serverPickerState,
             loadPreview = imageToImageViewModel::loadServerImagePreview,
             onSelect = imageToImageViewModel::selectServerImage,
@@ -514,10 +460,9 @@ fun ImageToImageScreen(
         )
 
         // Progress indicator - below app bar, only show if THIS screen's job is executing
-        if (isThisScreenExecuting) {
-            GenerationProgressBar(
-                progress = generationState.progress,
-                maxProgress = generationState.maxProgress,
+        if (isThisScreenExecuting && generationState.maxProgress > 0) {
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { generationState.progress.toFloat() / generationState.maxProgress.toFloat() },
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -533,20 +478,13 @@ fun ImageToImageScreen(
                 .background(MaterialTheme.colorScheme.surfaceContainer)
         ) { page ->
             val isThisPreviewPage = page == previewPageIndex
-            val sourcePageIndex = if (isThisPreviewPage) -1 else page
-            val sourceImage = when (sourcePageIndex) {
-                0 -> uiState.sourceImage
-                1 -> uiState.sourceImage2
-                2 -> uiState.sourceImage3
-                3 -> uiState.sourceImage4
+            val sourceSlot = imagePages.getOrNull(page)?.slot ?: 0
+            val sourceImage = when (sourceSlot) {
+                1 -> uiState.sourceImage
+                2 -> uiState.sourceImage2
+                3 -> uiState.sourceImage3
+                4 -> uiState.sourceImage4
                 else -> null
-            }
-            val sourceSlot = when (sourcePageIndex) {
-                0 -> 1
-                1 -> 2
-                2 -> 3
-                3 -> 4
-                else -> 0
             }
             val sourcePicker = when (sourceSlot) {
                 1 -> imagePickerLauncher
@@ -632,7 +570,7 @@ fun ImageToImageScreen(
                         Image(
                             painter = painterResource(R.drawable.ic_comfychair_foreground),
                             contentDescription = null,
-                            modifier = Modifier.size(Dimensions.PlaceholderLogoSize),
+                            modifier = Modifier.size(300.dp),
                             contentScale = ContentScale.Fit
                         )
                     }
@@ -642,6 +580,7 @@ fun ImageToImageScreen(
                         if (uiState.mode == ImageToImageMode.INPAINTING && sourceSlot == 1) {
                             // Inpainting: source image 1 shows mask overlay
                             Box(modifier = Modifier.fillMaxSize()) {
+
                                 MaskPreview(
                                     sourceImage = sourceImage,
                                     maskPaths = uiState.maskPaths,
@@ -851,7 +790,7 @@ fun ImageToImageScreen(
                             Image(
                                 painter = painterResource(R.drawable.ic_comfychair_foreground),
                                 contentDescription = null,
-                                modifier = Modifier.size(Dimensions.PlaceholderLogoSize),
+                                modifier = Modifier.size(300.dp),
                                 contentScale = ContentScale.Fit
                             )
                             Text(
@@ -885,41 +824,26 @@ fun ImageToImageScreen(
             }
         }
 
-        // Prompt Input        // Prompt Input
-        OutlinedTextField(
-            value = uiState.positivePrompt,
-            onValueChange = {
-                imageToImageViewModel.onPositivePromptChange(it)
-                presetViewModel.clearActivePreset()
-            },
-            label = { Text(stringResource(R.string.hint_prompt)) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            minLines = 2,
-            maxLines = 4,
-            leadingIcon = {
-                PromptPresetDropdown(
-                    favorites = presetUiState.favorites,
-                    activePresetId = presetUiState.activePresetId,
-                    currentPromptIsEmpty = uiState.positivePrompt.isEmpty(),
-                    onPresetSelected = { presetViewModel.onPresetSelected(it) },
-                    onOpenLibrary = { presetViewModel.showLibrary() },
-                    onSaveCurrentPrompt = { presetViewModel.showSaveDialog(uiState.positivePrompt) },
-                    onResetPrompt = { presetViewModel.resetPrompt() }
-                )
-            },
-            trailingIcon = {
-                if (uiState.positivePrompt.isNotEmpty()) {
-                    IconButton(onClick = { imageToImageViewModel.onPositivePromptChange("") }) {
-                        Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.content_description_clear))
-                    }
-                }
-            }
+        // The prompt; tapping it opens the full-screen editor (absent for workflows without prompts)
+        PromptDock(
+            state = uiState,
+            onPositiveChange = imageToImageViewModel::onPositivePromptChange,
+            onNegativeChange = imageToImageViewModel::onNegativePromptChange,
+            preview = uiState.previewImage ?: sourceImage,
+            presetViewModel = presetViewModel,
+            presetUiState = presetUiState,
+            spellCheckEnabled = promptInput.spellCheckEnabled,
+            generateEnabled = imageToImageViewModel.hasValidConfiguration(),
+            onGenerate = { submitJob(false) }
         )
 
-
-        // Generate and Options buttons
+        RecipeChips(
+            state = uiState,
+            viewModel = imageToImageViewModel,
+            icon = uiState.workflowIcon,
+            groups = uiState.workflowGroups(imageToImageViewModel::onModeChange, imageToImageViewModel::onWorkflowChange)
+        )
+        // Generate and options: the fork's batch count, upload progress and queue actions on the upstream button
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -927,11 +851,10 @@ fun ImageToImageScreen(
                 .padding(bottom = 16.dp)
         ) {
             GenerationButton(
+                canCancelOwnJob = queueState.executingOwnerId == ownerId &&
+                    queueState.executingPromptId in queueState.ownJobs,
                 batchCount = batchCount,
-                queueSize = queueState.totalQueueSize,
-                isExecuting = queueState.isExecuting,
-                isEnabled = imageToImageViewModel.hasValidConfiguration() &&
-                    uiState.sourceImage != null,
+                isEnabled = imageToImageViewModel.hasValidConfiguration() && uiState.sourceImage != null,
                 isOfflineMode = isOfflineMode,
                 isUploading = uiState.isUploading,
                 isFetching = uiState.isFetching,
@@ -939,127 +862,26 @@ fun ImageToImageScreen(
                 uploadTotalBytes = uiState.uploadTotalBytes,
                 uploadProgressBytes = uiState.uploadProgressBytes,
                 uploadLabel = uiState.uploadLabel,
-                onGenerate = {
-                    scope.launch {
-                        // In inpainting mode, require mask
-                        if (uiState.mode == ImageToImageMode.INPAINTING && !imageToImageViewModel.hasMask()) {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.hint_paint_mask),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            return@launch
-                        }
-                        val workflowJson = imageToImageViewModel.prepareWorkflow()
-                        pendingWorkflowJson = workflowJson
-                        pendingPlaceholders = workflowJson?.unresolved.orEmpty()
-                        showPlaceholderDialog = pendingPlaceholders.isNotEmpty()
-                        if (workflowJson != null) {
-                            if (pendingPlaceholders.isEmpty()) {
-                            if (batchCount > 1) {
-                                AppSettings.setBatchCount(context, batchCount)
-                                var completed = 0
-                                val total = batchCount
-                                scope.launch {
-                                    suspend fun generateNext() {
-                                        if (completed >= total) return
-                                        val json = imageToImageViewModel.prepareWorkflow() ?: return
-                                        if (json.unresolved.isNotEmpty()) {
-                                            pendingWorkflowJson = json
-                                            pendingPlaceholders = json.unresolved
-                                            showPlaceholderDialog = true
-                                            return
-                                        }
-                                        imageToImageViewModel.submitPreparedWorkflow(generationViewModel, json) { success, _, errorMessage ->
-                                            completed++
-                                            if (!success && errorMessage != null) {
-                                                errorDialogMessage = errorMessage
-                                                showErrorDialog = true
-                                            }
-                                            if (completed < total) {
-                                                scope.launch { delay(300L); generateNext() }
-                                            }
-                                        }
-                                    }
-                                    generateNext()
-                                }
-                            } else {
-                                    imageToImageViewModel.submitPreparedWorkflow(
-                                        generationViewModel, workflowJson
-                                    ) { success, _, errorMessage ->
-                                        if (!success) {
-                                            errorDialogMessage = errorMessage ?: context.getString(R.string.error_generation_failed)
-                                            showErrorDialog = true
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            Toast.makeText(context, context.getString(R.string.error_generation_failed), Toast.LENGTH_SHORT).show()
-                        }
-                    }
+                onGenerate = { submitJob(false) },
+                onCancelOwnJob = {
+                    val running = JobRegistry.queueState.value.executingPromptId
+                    if (running != null) generationViewModel.cancelGeneration(running) { }
                 },
                 onBatchCountChange = { newCount ->
                     batchCount = newCount
                     AppSettings.setBatchCount(context, newCount)
                 },
-                onCancelCurrent = { generationViewModel.cancelGeneration { } },
-                onAddToFrontOfQueue = {
-                    scope.launch {
-                        // In inpainting mode, require mask
-                        if (uiState.mode == ImageToImageMode.INPAINTING && !imageToImageViewModel.hasMask()) {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.hint_paint_mask),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            return@launch
-                        }
-                        val workflowJson = imageToImageViewModel.prepareWorkflow()
-                        // Capture for potential placeholder confirmation dialog
-                        pendingWorkflowJson = workflowJson
-                        pendingPlaceholders = workflowJson?.unresolved.orEmpty()
-                        showPlaceholderDialog = pendingPlaceholders.isNotEmpty()
-                        if (workflowJson != null) {
-                            if (pendingPlaceholders.isEmpty()) {
-                                imageToImageViewModel.submitPreparedWorkflow(
-                                    generationViewModel, workflowJson,
-                                    front = true
-                                ) { success, _, errorMessage ->
-                                    if (!success) {
-                                        Toast.makeText(
-                                            context,
-                                            errorMessage ?: context.getString(R.string.error_generation_failed),
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                    }
-                                }
-                            }
-                        } else {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.error_generation_failed),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }
-                },
-                onClearQueue = {
-                    generationViewModel.getClient()?.clearQueue { success ->
-                        val messageRes = if (success) R.string.msg_queue_cleared_success
-                                       else R.string.error_queue_clear
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            Toast.makeText(context, context.getString(messageRes), Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
+                onAddToFrontOfQueue = { submitJob(true) },
+                ownJobs = queueState.ownActiveJobCount,
+                otherJobs = queueState.otherJobCount,
+                onShowQueue = { sh.hnet.comfychair.ui.components.generation.QueueSheetController.visible = true },
                 modifier = Modifier.weight(1f)
             )
 
             Spacer(modifier = Modifier.width(8.dp))
 
             // Animate gear icon rotation when options sheet is shown
-            val optionsIconRotation by animateFloatAsState(
+            val optionsIconRotation by androidx.compose.animation.core.animateFloatAsState(
                 targetValue = if (showOptionsSheet) 90f else 0f,
                 label = "options icon rotation"
             )
@@ -1075,7 +897,24 @@ fun ImageToImageScreen(
                 )
             }
         }
-    } // End of outer Column
+    }
+
+    GenerationOptionsSheet(
+        visible = showOptionsSheet,
+        onDismiss = { showOptionsSheet = false },
+        viewModel = imageToImageViewModel,
+        state = uiState,
+        // Mode and reference images; the ViewModel applies every other change to the current mode
+        extraCallbacks = { callbacks ->
+            callbacks.copy(
+                onModeChange = imageToImageViewModel::onModeChange,
+                onReferenceImage1Change = { uri -> imageToImageViewModel.onReferenceImage1Change(context, uri) },
+                onClearReferenceImage1 = imageToImageViewModel::onClearReferenceImage1,
+                onReferenceImage2Change = { uri -> imageToImageViewModel.onReferenceImage2Change(context, uri) },
+                onClearReferenceImage2 = imageToImageViewModel::onClearReferenceImage2
+            )
+        }
+    ) { callbacks -> uiState.toBottomSheetConfig(callbacks) }
 
     // Gallery picker bottom sheet
     if (showGalleryPicker) {
@@ -1116,172 +955,6 @@ fun ImageToImageScreen(
             },
             onDismiss = { showMaterialPicker = false },
             sheetState = materialPickerSheetState
-        )
-    }
-
-    // Options bottom sheet
-    if (showOptionsSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showOptionsSheet = false },
-            sheetState = optionsSheetState,
-            contentWindowInsets = { WindowInsets(0, 0, 0, 0) }
-        ) {
-            val callbacks = remember(imageToImageViewModel) {
-                UnifiedCallbacks(
-                    // Mode selection
-                    onModeChange = imageToImageViewModel::onModeChange,
-                    // Reference image callbacks (editing mode)
-                    onReferenceImage1Change = { uri -> imageToImageViewModel.onReferenceImage1Change(context, uri) },
-                    onClearReferenceImage1 = imageToImageViewModel::onClearReferenceImage1,
-                    onReferenceImage2Change = { uri -> imageToImageViewModel.onReferenceImage2Change(context, uri) },
-                    onClearReferenceImage2 = imageToImageViewModel::onClearReferenceImage2,
-                    // Inpainting workflow callback
-                    onWorkflowChange = imageToImageViewModel::onWorkflowChange,
-                    onViewWorkflow = {
-                        val workflowId = uiState.availableWorkflows
-                            .find { it.name == uiState.selectedWorkflow }?.id
-                        if (workflowId != null) {
-                            context.startActivity(
-                                WorkflowEditorActivity.createIntent(context, workflowId)
-                            )
-                        }
-                    },
-                    // Editing workflow callback
-                    onEditingWorkflowChange = imageToImageViewModel::onEditingWorkflowChange,
-                    onViewEditingWorkflow = {
-                        val workflowId = uiState.editingWorkflows
-                            .find { it.name == uiState.selectedEditingWorkflow }?.id
-                        if (workflowId != null) {
-                            context.startActivity(
-                                WorkflowEditorActivity.createIntent(context, workflowId)
-                            )
-                        }
-                    },
-                    // Negative prompt
-                    onNegativePromptChange = imageToImageViewModel::onNegativePromptChange,
-                    // Inpainting model selection callbacks
-                    onCheckpointChange = imageToImageViewModel::onCheckpointChange,
-                    onUnetChange = imageToImageViewModel::onUnetChange,
-                    onVaeChange = imageToImageViewModel::onVaeChange,
-                    onClipChange = imageToImageViewModel::onClipChange,
-                    onClip1Change = imageToImageViewModel::onClip1Change,
-                    onClip2Change = imageToImageViewModel::onClip2Change,
-                    onClip3Change = imageToImageViewModel::onClip3Change,
-                    onClip4Change = imageToImageViewModel::onClip4Change,
-                    onTextEncoderChange = imageToImageViewModel::onTextEncoderChange,
-                    onLatentUpscaleModelChange = imageToImageViewModel::onLatentUpscaleModelChange,
-                    // Editing model selection callbacks
-                    onEditingUnetChange = imageToImageViewModel::onEditingUnetChange,
-                    onEditingLoraChange = imageToImageViewModel::onEditingLoraChange,
-                    onEditingVaeChange = imageToImageViewModel::onEditingVaeChange,
-                    onEditingClipChange = imageToImageViewModel::onEditingClipChange,
-                    onEditingClip1Change = imageToImageViewModel::onEditingClip1Change,
-                    onEditingClip2Change = imageToImageViewModel::onEditingClip2Change,
-                    onEditingClip3Change = imageToImageViewModel::onEditingClip3Change,
-                    onEditingClip4Change = imageToImageViewModel::onEditingClip4Change,
-                    onEditingTextEncoderChange = imageToImageViewModel::onEditingTextEncoderChange,
-                    onEditingLatentUpscaleModelChange = imageToImageViewModel::onEditingLatentUpscaleModelChange,
-                    // Inpainting parameter callbacks
-                    onMegapixelsChange = imageToImageViewModel::onMegapixelsChange,
-                    onStepsChange = imageToImageViewModel::onStepsChange,
-                    onCfgChange = imageToImageViewModel::onCfgChange,
-                    onSamplerChange = imageToImageViewModel::onSamplerChange,
-                    onSchedulerChange = imageToImageViewModel::onSchedulerChange,
-                    onRandomSeedToggle = imageToImageViewModel::onRandomSeedToggle,
-                    onSeedChange = imageToImageViewModel::onSeedChange,
-                    onRandomizeSeed = imageToImageViewModel::onRandomizeSeed,
-                    onDenoiseChange = imageToImageViewModel::onDenoiseChange,
-                    onBatchSizeChange = imageToImageViewModel::onBatchSizeChange,
-                    onUpscaleMethodChange = imageToImageViewModel::onUpscaleMethodChange,
-                    onScaleByChange = imageToImageViewModel::onScaleByChange,
-                    onStopAtClipLayerChange = imageToImageViewModel::onStopAtClipLayerChange,
-                    // Editing parameter callbacks
-                    onEditingWidthChange = imageToImageViewModel::onEditingWidthChange,
-                    onEditingHeightChange = imageToImageViewModel::onEditingHeightChange,
-                    onEditingMegapixelsChange = imageToImageViewModel::onEditingMegapixelsChange,
-                    onEditingStepsChange = imageToImageViewModel::onEditingStepsChange,
-                    onEditingCfgChange = imageToImageViewModel::onEditingCfgChange,
-                    onEditingSamplerChange = imageToImageViewModel::onEditingSamplerChange,
-                    onEditingSchedulerChange = imageToImageViewModel::onEditingSchedulerChange,
-                    onEditingRandomSeedToggle = imageToImageViewModel::onEditingRandomSeedToggle,
-                    onEditingSeedChange = imageToImageViewModel::onEditingSeedChange,
-                    onEditingRandomizeSeed = imageToImageViewModel::onEditingRandomizeSeed,
-                    onEditingDenoiseChange = imageToImageViewModel::onEditingDenoiseChange,
-                    onEditingBatchSizeChange = imageToImageViewModel::onEditingBatchSizeChange,
-                    onEditingUpscaleMethodChange = imageToImageViewModel::onEditingUpscaleMethodChange,
-                    onEditingScaleByChange = imageToImageViewModel::onEditingScaleByChange,
-                    onEditingStopAtClipLayerChange = imageToImageViewModel::onEditingStopAtClipLayerChange,
-                    // Inpainting LoRA chain callbacks
-                    onAddLora = imageToImageViewModel::onAddLora,
-                    onRemoveLora = imageToImageViewModel::onRemoveLora,
-                    onLoraNameChange = imageToImageViewModel::onLoraNameChange,
-                    onLoraStrengthChange = imageToImageViewModel::onLoraStrengthChange,
-                    // Editing LoRA chain callbacks
-                    onAddEditingLora = imageToImageViewModel::onAddEditingLora,
-                    onRemoveEditingLora = imageToImageViewModel::onRemoveEditingLora,
-                    onEditingLoraNameChange = imageToImageViewModel::onEditingLoraNameChange,
-                    onEditingLoraStrengthChange = imageToImageViewModel::onEditingLoraStrengthChange,
-                    // Editing mode checkpoint (for checkpoint-based workflows)
-                    onEditingCheckpointChange = imageToImageViewModel::onEditingCheckpointChange,
-                    // Editing mode dual-model patterns (for video-style workflows)
-                    onEditingHighnoiseUnetChange = imageToImageViewModel::onEditingHighnoiseUnetChange,
-                    onEditingLownoiseUnetChange = imageToImageViewModel::onEditingLownoiseUnetChange,
-                    onEditingHighnoiseLoraChange = imageToImageViewModel::onEditingHighnoiseLoraChange,
-                    onEditingLownoiseLoraChange = imageToImageViewModel::onEditingLownoiseLoraChange,
-                    // Editing mode dual LoRA chain callbacks
-                    onAddEditingHighnoiseLora = imageToImageViewModel::onAddEditingHighnoiseLora,
-                    onRemoveEditingHighnoiseLora = imageToImageViewModel::onRemoveEditingHighnoiseLora,
-                    onEditingHighnoiseLoraNameChange = imageToImageViewModel::onEditingHighnoiseLoraNameChange,
-                    onEditingHighnoiseLoraStrengthChange = imageToImageViewModel::onEditingHighnoiseLoraStrengthChange,
-                    onAddEditingLownoiseLora = imageToImageViewModel::onAddEditingLownoiseLora,
-                    onRemoveEditingLownoiseLora = imageToImageViewModel::onRemoveEditingLownoiseLora,
-                    onEditingLownoiseLoraNameChange = imageToImageViewModel::onEditingLownoiseLoraNameChange,
-                    onEditingLownoiseLoraStrengthChange = imageToImageViewModel::onEditingLownoiseLoraStrengthChange,
-                    // Model refresh
-                    onRefreshModels = imageToImageViewModel::fetchModels
-                )
-            }
-            val bottomSheetConfig = remember(uiState, callbacks) {
-                uiState.toBottomSheetConfig(callbacks)
-            }
-            ConfigBottomSheetContent(
-                config = bottomSheetConfig,
-                workflowName = if (uiState.mode == ImageToImageMode.EDITING)
-                    uiState.selectedEditingWorkflow else uiState.selectedWorkflow
-            )
-        }
-    }
-
-    // Prompt Library Dialog
-    if (presetUiState.showLibrarySideSheet) {
-        PromptLibraryDialog(
-            presets = presetViewModel.getFilteredPresets(),
-            availableTags = presetUiState.availableTags,
-            searchQuery = presetUiState.searchQuery,
-            selectedTags = presetUiState.selectedTags,
-            filterFavoritesOnly = presetUiState.filterFavoritesOnly,
-            activePresetId = presetUiState.activePresetId,
-            onSearchQueryChange = { presetViewModel.onSearchQueryChange(it) },
-            onTagToggle = { presetViewModel.onTagToggle(it) },
-            onToggleFavoritesFilter = { presetViewModel.onToggleFavoritesFilter() },
-            onPresetSelected = { presetViewModel.onPresetSelected(it) },
-            onToggleFavorite = { presetViewModel.onToggleFavorite(it) },
-            onEditPreset = { presetViewModel.showEditDialog(it) },
-            onDuplicatePreset = { presetViewModel.onDuplicatePreset(it) },
-            onDeletePreset = { presetViewModel.onDeletePreset(it) },
-            onDismiss = { presetViewModel.dismissLibrary() }
-        )
-    }
-
-    // Prompt Preset Save/Edit Dialog
-    if (presetUiState.showSaveDialog) {
-        PromptPresetDialog(
-            editingPreset = presetUiState.editingPreset,
-            currentPrompt = presetUiState.currentPromptForSave,
-            existingTags = presetUiState.availableTags,
-            isNameTaken = { name, excludeId -> presetViewModel.isNameTaken(name, excludeId) },
-            onDismiss = { presetViewModel.dismissSaveDialog() },
-            onSave = { name, prompt, tags -> presetViewModel.onSavePreset(name, prompt, tags) }
         )
     }
 
@@ -1365,4 +1038,10 @@ fun ImageToImageScreen(
             }
         )
     }
+
+    PromptPresetDialogs(presetViewModel, presetUiState)
 }
+
+/** Media origins of this screen's single result and its source in the preview. */
+private const val RESULT_ORIGIN = "iti_result"
+private const val SOURCE_ORIGIN = "iti_source"

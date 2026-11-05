@@ -1,16 +1,17 @@
 package sh.hnet.comfychair.viewmodel
 
-import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
-import android.os.Environment
-import android.provider.MediaStore
-import androidx.core.content.FileProvider
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -18,22 +19,19 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import sh.hnet.comfychair.R
+import sh.hnet.comfychair.ui.components.mediaOriginKey
 import sh.hnet.comfychair.cache.MediaCache
 import sh.hnet.comfychair.cache.MediaCacheKey
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.materials.MaterialLibrary
 import sh.hnet.comfychair.repository.GalleryRepository
+import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.util.GenerationMetadata
-import sh.hnet.comfychair.util.MetadataParser
-import sh.hnet.comfychair.util.Mp4MetadataExtractor
-import sh.hnet.comfychair.util.PngMetadataExtractor
-import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.Stable
-import java.io.File
+import sh.hnet.comfychair.util.GenerationMetadataLoader
+import sh.hnet.comfychair.util.MediaExport
 
 /**
  * Viewer mode
@@ -91,6 +89,7 @@ data class MediaViewerItem(
                     fromJson(array.getJSONObject(i))
                 }
             } catch (e: Exception) {
+                DebugLogger.w("MediaViewer", "Item list could not be read: ${e.javaClass.simpleName}")
                 emptyList()
             }
         }
@@ -131,6 +130,8 @@ data class MediaViewerUiState(
 sealed class MediaViewerEvent {
     data class ShowToast(val messageResId: Int) : MediaViewerEvent()
     data object ItemDeleted : MediaViewerEvent()
+    /** Items left the viewer; the server deletes them unless [id] is undone (see [MediaViewerViewModel.undoDeletion]). */
+    data class DeletionPending(val id: Long, val count: Int) : MediaViewerEvent()
     data object Close : MediaViewerEvent()
 }
 
@@ -156,14 +157,72 @@ class MediaViewerViewModel : ViewModel() {
     private val _isLoadingMetadata = MutableStateFlow(false)
     val isLoadingMetadata: StateFlow<Boolean> = _isLoadingMetadata.asStateFlow()
 
+    /** A deletion shown with Undo, sent to the server once the snackbar is gone or the viewer closes. */
+    private class PendingDeletion(
+        val id: Long,
+        val promptId: String,
+        val removed: List<IndexedValue<MediaViewerItem>>,
+        val previousIndex: Int
+    )
+    private var pendingDeletion: PendingDeletion? = null
+    private var nextDeletionId = 0L
+
     // Track whether any items were deleted during this session
     private val _hasDeletedItems = MutableStateFlow(false)
     val hasDeletedItems: StateFlow<Boolean> = _hasDeletedItems.asStateFlow()
 
-    fun initialize(
+    /** Whether the viewer is shown over the main activity. */
+    private val _isOpen = MutableStateFlow(false)
+    val isOpen: StateFlow<Boolean> = _isOpen.asStateFlow()
+    private var onClosed: ((String?) -> Unit)? = null
+    /** Where a single item was opened from (its media origin), for the flight back. */
+    private var singleOriginKey: String? = null
+
+    /**
+     * Open the viewer over the main activity.
+     *
+     * @param onClosed Called on close with the file name of the item shown last (the list shrinks on deletion)
+     */
+    fun open(
         context: Context,
-        hostname: String,
-        port: Int,
+        mode: ViewerMode,
+        items: List<MediaViewerItem>,
+        initialIndex: Int,
+        singleBitmap: Bitmap? = null,
+        singleVideoUri: Uri? = null,
+        originKey: String? = null,
+        onClosed: (String?) -> Unit = {}
+    ) {
+        // A new session: nothing from the previous one carries over
+        commitPendingDeletion()
+        cachedMetadata.clear()
+        _currentMetadata.value = null
+        _isLoadingMetadata.value = false
+        _hasDeletedItems.value = false
+        this.onClosed = onClosed
+        singleOriginKey = originKey
+        initialize(context, mode, items, initialIndex, singleBitmap, singleVideoUri)
+        _isOpen.value = true
+    }
+
+    /** Close the viewer: a deletion waiting for Undo goes to the server, and the opener learns what was shown last. */
+    fun close() {
+        if (!_isOpen.value) return
+        commitPendingDeletion()
+        val lastShown = _uiState.value.currentItem?.filename
+        val deleted = _hasDeletedItems.value
+        _isOpen.value = false
+        _uiState.value = MediaViewerUiState()
+        cachedMetadata.clear()
+        _currentMetadata.value = null
+        onClosed?.invoke(lastShown)
+        onClosed = null
+        // The gallery already dropped the deleted jobs; refresh to match the server
+        if (deleted) GalleryRepository.getInstance().refresh()
+    }
+
+    internal fun initialize(
+        context: Context,
         mode: ViewerMode,
         items: List<MediaViewerItem>,
         initialIndex: Int,
@@ -430,42 +489,12 @@ class MediaViewerViewModel : ViewModel() {
         val state = _uiState.value
         val item = state.items.getOrNull(index) ?: return null
         val context = applicationContext ?: return null
-
-        return withContext(Dispatchers.IO) {
-            val bytes: ByteArray? = when {
-                // For SINGLE mode videos, try to read from local file first
-                state.mode == ViewerMode.SINGLE && item.isVideo && state.currentVideoUri != null -> {
-                    try {
-                        context.contentResolver.openInputStream(state.currentVideoUri)?.use {
-                            it.readBytes()
-                        }
-                    } catch (e: Exception) {
-                        null
-                    }
-                }
-                // For items with server file info and a client, fetch from server
-                item.filename.isNotEmpty() && ConnectionManager.clientOrNull != null -> {
-                    kotlin.coroutines.suspendCoroutine { continuation ->
-                        ConnectionManager.clientOrNull!!.fetchRawBytes(item.filename, item.subfolder, item.type) { rawBytes, _ ->
-                            continuation.resumeWith(Result.success(rawBytes))
-                        }
-                    }
-                }
-                // No source available
-                else -> null
-            }
-
-            if (bytes == null) return@withContext null
-
-            // Extract metadata based on file type
-            val jsonString = if (item.isVideo) {
-                Mp4MetadataExtractor.extractPromptMetadata(bytes)
-            } else {
-                PngMetadataExtractor.extractPromptMetadata(bytes)
-            }
-
-            // Parse the workflow JSON
-            jsonString?.let { MetadataParser.parseWorkflowJson(it) }
+        val videoUri = state.currentVideoUri
+        return when {
+            // A single video is read from where it plays (RAM or a stored file)
+            state.mode == ViewerMode.SINGLE && item.isVideo && videoUri != null ->
+                GenerationMetadataLoader.fromVideo(context, videoUri)
+            else -> GenerationMetadataLoader.fromServerFile(item.filename, item.subfolder, item.type, item.isVideo)
         }
     }
 
@@ -497,100 +526,151 @@ class MediaViewerViewModel : ViewModel() {
                     val metadata = fetchMetadataForIndex(idx)
                     cachedMetadata[idx] = metadata
                 } catch (e: Exception) {
-                    // Silently fail - metadata will load on-demand if needed
+                    // Metadata is loaded again when the sheet is opened
+                    DebugLogger.w("MediaViewer", "Metadata preload failed: ${e.javaClass.simpleName}")
                 }
             }
         }
     }
 
+    /**
+     * Delete the item shown. The server deletes whole jobs, so every item of its job leaves the viewer; they come back
+     * on Undo. Nothing reaches the server until [commitDeletion] (or the viewer closes). The last item is deleted at
+     * once and closes the viewer, as there is nothing left to show.
+     */
     fun deleteCurrentItem() {
         val state = _uiState.value
         val item = state.currentItem ?: return
+        if (ConnectionManager.clientOrNull == null) return
+        // One Undo at a time
+        commitPendingDeletion()
+
+        val removed = state.items.withIndex().filter { it.value.promptId == item.promptId }
+        val remaining = state.items.filter { it.promptId != item.promptId }
+        val deletion = PendingDeletion(++nextDeletionId, item.promptId, removed, state.currentIndex)
+        pendingDeletion = deletion
+
+        if (remaining.isEmpty()) {
+            commitPendingDeletion()
+            viewModelScope.launch { _events.emit(MediaViewerEvent.Close) }
+            return
+        }
+        // The item that took the deleted one's place
+        val removedBefore = removed.count { it.index < state.currentIndex }
+        showItems(remaining, (state.currentIndex - removedBefore).coerceIn(0, remaining.size - 1))
+        viewModelScope.launch { _events.emit(MediaViewerEvent.DeletionPending(deletion.id, removed.size)) }
+    }
+
+    /** Bring back the items of a deletion that hasn't reached the server yet. */
+    fun undoDeletion(id: Long) {
+        val deletion = pendingDeletion?.takeIf { it.id == id } ?: return
+        pendingDeletion = null
+        val items = _uiState.value.items.toMutableList()
+        // In ascending order, each goes back to its old position
+        deletion.removed.forEach { items.add(it.index.coerceAtMost(items.size), it.value) }
+        showItems(items, deletion.previousIndex.coerceIn(0, items.size - 1))
+    }
+
+    /** Send a deletion to the server: its Undo is over. */
+    fun commitDeletion(id: Long) {
+        if (pendingDeletion?.id == id) commitPendingDeletion()
+    }
+
+    /** Send the waiting deletion, if any, to the server (also when the viewer closes). */
+    fun commitPendingDeletion() {
+        val deletion = pendingDeletion ?: return
+        pendingDeletion = null
         val client = ConnectionManager.clientOrNull ?: return
-
-        viewModelScope.launch {
-            val success = withContext(Dispatchers.IO) {
-                kotlin.coroutines.suspendCoroutine<Boolean> { continuation ->
-                    client.deleteHistoryItem(item.promptId) { success ->
-                        continuation.resumeWith(Result.success(success))
-                    }
+        _hasDeletedItems.value = true
+        deletion.removed.forEach { MediaCache.evict(it.value.toCacheKey()) }
+        // Sync deletion to GalleryRepository so Gallery UI updates immediately
+        GalleryRepository.getInstance().removeItemLocally(deletion.promptId)
+        val context = applicationContext
+        // The viewer may be closed by the time the server answers
+        client.deleteHistoryItem(deletion.promptId) { success ->
+            if (!success && context != null) {
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(context, R.string.error_history_item_delete, Toast.LENGTH_SHORT).show()
                 }
-            }
-
-            if (success) {
-                _events.emit(MediaViewerEvent.ShowToast(R.string.msg_history_item_deleted_success))
-
-                // Mark that items were deleted (for result reporting)
-                _hasDeletedItems.value = true
-
-                // Evict from MediaCache (uses stable key, not index)
-                MediaCache.evict(item.toCacheKey())
-
-                // Sync deletion to GalleryRepository so Gallery UI updates immediately
-                GalleryRepository.getInstance().removeItemLocally(item.promptId)
-
-                // Get fresh state after async operation
-                val currentState = _uiState.value
-                val currentItems = currentState.items.toMutableList()
-
-                // Make sure we're removing the correct item
-                val actualIndexToRemove = currentItems.indexOfFirst {
-                    it.promptId == item.promptId && it.filename == item.filename
-                }
-
-                if (actualIndexToRemove >= 0) {
-                    currentItems.removeAt(actualIndexToRemove)
-                }
-
-                if (currentItems.isEmpty()) {
-                    // No more items, close viewer
-                    _events.emit(MediaViewerEvent.ItemDeleted)
-                    _events.emit(MediaViewerEvent.Close)
-                } else {
-                    // Adjust index and show next/previous item
-                    val newIndex = actualIndexToRemove.coerceIn(0, currentItems.size - 1)
-
-                    // Clear metadata cache (still uses indices)
-                    cachedMetadata.clear()
-                    _currentMetadata.value = null
-
-                    _uiState.value = currentState.copy(
-                        items = currentItems,
-                        currentIndex = newIndex,
-                        currentBitmap = null,
-                        currentVideoUri = null,
-                        isLoading = true
-                    )
-                    _events.emit(MediaViewerEvent.ItemDeleted)
-                    loadCurrentItem()
-                }
-            } else {
-                _events.emit(MediaViewerEvent.ShowToast(R.string.error_history_item_delete))
             }
         }
     }
+
+    private fun showItems(items: List<MediaViewerItem>, index: Int) {
+        // Metadata is cached by index
+        cachedMetadata.clear()
+        _currentMetadata.value = null
+        _uiState.value = _uiState.value.copy(
+            items = items,
+            currentIndex = index,
+            currentBitmap = null,
+            currentVideoUri = null,
+            isLoading = true
+        )
+        viewModelScope.launch { _events.emit(MediaViewerEvent.ItemDeleted) }
+        loadCurrentItem()
+    }
+
+    /** Media origin of the item shown: where it flies back to on close. */
+    fun currentOriginKey(): String? {
+        val state = _uiState.value
+        val item = state.currentItem ?: return null
+        return if (state.mode == ViewerMode.SINGLE) singleOriginKey else mediaOriginKey(item.promptId, item.filename)
+    }
+
+    /** A still of the item shown, already in memory (a video's frame where cached), for the flight; null if none. */
+    fun currentStill(): Bitmap? {
+        val state = _uiState.value
+        val item = state.currentItem ?: return null
+        if (state.mode == ViewerMode.SINGLE) return state.currentBitmap
+        return state.currentBitmap?.takeIf { !item.isVideo } ?: MediaCache.getBitmap(item.toCacheKey())
+    }
+
+    /** The image shown, for "Use as source", fetched if it hasn't loaded yet (RAM only); null for a video. */
+    suspend fun currentImage(): Bitmap? {
+        val state = _uiState.value
+        val item = state.currentItem ?: return null
+        if (state.showsVideo()) return null
+        val key = item.toCacheKey()
+        return state.currentBitmap
+            ?: MediaCache.getBitmap(key)
+            ?: if (state.mode == ViewerMode.GALLERY) MediaCache.fetchImage(key, item.subfolder, item.type) else null
+    }
+
+    override fun onCleared() {
+        commitPendingDeletion()
+        super.onCleared()
+    }
+
+    /** Whether the item shown is a video (single mode: also a video passed as URI). */
+    private fun MediaViewerUiState.showsVideo(): Boolean =
+        if (mode == ViewerMode.SINGLE) currentItem?.isVideo == true || currentVideoUri != null
+        else currentItem?.isVideo == true
 
     fun saveCurrentItem() {
         val context = applicationContext ?: return
         val state = _uiState.value
+        val isVideo = state.showsVideo()
 
         viewModelScope.launch {
-            if (state.mode == ViewerMode.SINGLE) {
-                // Save from current bitmap/video
-                if (state.currentItem?.isVideo == true || state.currentVideoUri != null) {
-                    saveVideoFromUri(context, state.currentVideoUri)
-                } else {
-                    saveBitmapToGallery(context, state.currentBitmap)
-                }
+            val saved = if (state.mode == ViewerMode.SINGLE) {
+                if (isVideo) state.currentVideoUri?.let { MediaExport.saveVideo(context, it) } ?: false
+                else state.currentBitmap?.let { MediaExport.saveImage(context, it) } ?: false
             } else {
-                // Gallery mode - fetch and save
+                // Gallery mode - from the cache, else fetched from the server
                 val item = state.currentItem ?: return@launch
-                if (item.isVideo) {
-                    saveVideoFromServer(context, item)
-                } else {
-                    saveImageFromServer(context, item)
-                }
+                val key = item.toCacheKey()
+                if (isVideo) MediaCache.fetchVideoBytes(key, item.subfolder, item.type)?.let { MediaExport.saveVideo(context, it) } ?: false
+                else MediaCache.fetchImage(key, item.subfolder, item.type)?.let { MediaExport.saveImage(context, it) } ?: false
             }
+            _events.emit(MediaViewerEvent.ShowToast(
+                when {
+                    isVideo && saved -> R.string.msg_video_saved_to_gallery
+                    isVideo -> R.string.error_save_video
+                    saved -> R.string.msg_image_saved_to_gallery
+                    else -> R.string.error_save_image
+                }
+            ))
         }
     }
 
@@ -630,284 +710,31 @@ class MediaViewerViewModel : ViewModel() {
         }
     }
 
-    private suspend fun saveBitmapToGallery(context: Context, bitmap: Bitmap?) {
-        if (bitmap == null) {
-            _events.emit(MediaViewerEvent.ShowToast(R.string.error_save_image))
-            return
-        }
-
-        withContext(Dispatchers.IO) {
-            try {
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.Images.Media.DISPLAY_NAME, "ComfyChair_${System.currentTimeMillis()}.png")
-                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/ComfyChair")
-                }
-
-                val resolver = context.contentResolver
-                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-
-                uri?.let { outputUri ->
-                    resolver.openOutputStream(outputUri)?.use { outputStream ->
-                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-                    }
-                }
-
-                _events.emit(MediaViewerEvent.ShowToast(R.string.msg_image_saved_to_gallery))
-            } catch (e: Exception) {
-                _events.emit(MediaViewerEvent.ShowToast(R.string.error_save_image))
-            }
-        }
-    }
-
-    private suspend fun saveVideoFromUri(context: Context, videoUri: Uri?) {
-        if (videoUri == null) {
-            _events.emit(MediaViewerEvent.ShowToast(R.string.error_save_video))
-            return
-        }
-
-        withContext(Dispatchers.IO) {
-            try {
-                val videoBytes = context.contentResolver.openInputStream(videoUri)?.use {
-                    it.readBytes()
-                } ?: run {
-                    _events.emit(MediaViewerEvent.ShowToast(R.string.error_save_video))
-                    return@withContext
-                }
-
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.Video.Media.DISPLAY_NAME, "ComfyChair_${System.currentTimeMillis()}.mp4")
-                    put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-                    put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/ComfyChair")
-                }
-
-                val resolver = context.contentResolver
-                val uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
-
-                uri?.let { outputUri ->
-                    resolver.openOutputStream(outputUri)?.use { outputStream ->
-                        outputStream.write(videoBytes)
-                    }
-                }
-
-                _events.emit(MediaViewerEvent.ShowToast(R.string.msg_video_saved_to_gallery))
-            } catch (e: Exception) {
-                _events.emit(MediaViewerEvent.ShowToast(R.string.error_save_video))
-            }
-        }
-    }
-
-    private suspend fun saveImageFromServer(context: Context, item: MediaViewerItem) {
-        val key = item.toCacheKey()
-
-        withContext(Dispatchers.IO) {
-            // Try cache first, then fetch if needed
-            val bitmap = MediaCache.getBitmap(key)
-                ?: MediaCache.fetchImage(key, item.subfolder, item.type)
-
-            if (bitmap == null) {
-                _events.emit(MediaViewerEvent.ShowToast(R.string.error_save_image))
-                return@withContext
-            }
-
-            try {
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.Images.Media.DISPLAY_NAME, "ComfyChair_${System.currentTimeMillis()}.png")
-                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/ComfyChair")
-                }
-
-                val resolver = context.contentResolver
-                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-
-                uri?.let { outputUri ->
-                    resolver.openOutputStream(outputUri)?.use { outputStream ->
-                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-                    }
-                }
-
-                _events.emit(MediaViewerEvent.ShowToast(R.string.msg_image_saved_to_gallery))
-            } catch (e: Exception) {
-                _events.emit(MediaViewerEvent.ShowToast(R.string.error_save_image))
-            }
-        }
-    }
-
-    private suspend fun saveVideoFromServer(context: Context, item: MediaViewerItem) {
-        val key = item.toCacheKey()
-
-        withContext(Dispatchers.IO) {
-            // Try cache first, then fetch if needed
-            val videoBytes = MediaCache.getVideoBytes(key)
-                ?: MediaCache.fetchVideoBytes(key, item.subfolder, item.type)
-
-            if (videoBytes == null) {
-                _events.emit(MediaViewerEvent.ShowToast(R.string.error_save_video))
-                return@withContext
-            }
-
-            try {
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.Video.Media.DISPLAY_NAME, "ComfyChair_${System.currentTimeMillis()}.mp4")
-                    put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-                    put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/ComfyChair")
-                }
-
-                val resolver = context.contentResolver
-                val uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
-
-                uri?.let { outputUri ->
-                    resolver.openOutputStream(outputUri)?.use { outputStream ->
-                        outputStream.write(videoBytes)
-                    }
-                }
-
-                _events.emit(MediaViewerEvent.ShowToast(R.string.msg_video_saved_to_gallery))
-            } catch (e: Exception) {
-                _events.emit(MediaViewerEvent.ShowToast(R.string.error_save_video))
-            }
-        }
-    }
-
     fun shareCurrentItem() {
         val context = applicationContext ?: return
         val state = _uiState.value
+        val isVideo = state.showsVideo()
 
         viewModelScope.launch {
-            if (state.mode == ViewerMode.SINGLE) {
-                if (state.currentItem?.isVideo == true || state.currentVideoUri != null) {
-                    shareVideoFromUri(context, state.currentVideoUri)
-                } else {
-                    shareBitmap(context, state.currentBitmap)
-                }
+            val uri = if (state.mode == ViewerMode.SINGLE) {
+                if (isVideo) state.currentVideoUri?.let { MediaExport.shareFile(context, it) }
+                else state.currentBitmap?.let { MediaExport.shareFile(context, it) }
             } else {
                 val item = state.currentItem ?: return@launch
-                if (item.isVideo) {
-                    shareVideoFromServer(context, item)
-                } else {
-                    shareImageFromServer(context, item)
-                }
+                val key = item.toCacheKey()
+                if (isVideo) MediaCache.fetchVideoBytes(key, item.subfolder, item.type)?.let { MediaExport.shareFile(context, it) }
+                else MediaCache.fetchImage(key, item.subfolder, item.type)?.let { MediaExport.shareFile(context, it) }
             }
-        }
-    }
-
-    private suspend fun shareBitmap(context: Context, bitmap: Bitmap?) {
-        if (bitmap == null) {
-            _events.emit(MediaViewerEvent.ShowToast(R.string.error_share_image))
-            return
-        }
-
-        withContext(Dispatchers.IO) {
-            try {
-                val shareFile = File(context.cacheDir, "share_image.png")
-                shareFile.outputStream().use { outputStream ->
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-                }
-
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    shareFile
-                )
-
-                withContext(Dispatchers.Main) {
-                    val shareIntent = Intent().apply {
-                        action = Intent.ACTION_SEND
-                        putExtra(Intent.EXTRA_STREAM, uri)
-                        type = "image/png"
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-
-                    context.startActivity(
-                        Intent.createChooser(shareIntent, context.getString(R.string.share_image))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
-            } catch (e: Exception) {
-                _events.emit(MediaViewerEvent.ShowToast(R.string.error_share_image))
+            if (uri == null) {
+                _events.emit(MediaViewerEvent.ShowToast(if (isVideo) R.string.error_share_video else R.string.error_share_image))
+                return@launch
             }
+            val kind = if (isVideo) MediaExport.Kind.VIDEO else MediaExport.Kind.IMAGE
+            MediaExport.startShare(
+                context, listOf(uri), kind.mimeType,
+                context.getString(if (isVideo) R.string.share_video else R.string.share_image)
+            )
         }
     }
 
-    private suspend fun shareVideoFromUri(context: Context, videoUri: Uri?) {
-        if (videoUri == null) {
-            _events.emit(MediaViewerEvent.ShowToast(R.string.error_share_video))
-            return
-        }
-
-        withContext(Dispatchers.Main) {
-            try {
-                val shareIntent = Intent().apply {
-                    action = Intent.ACTION_SEND
-                    putExtra(Intent.EXTRA_STREAM, videoUri)
-                    type = "video/mp4"
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-
-                context.startActivity(
-                    Intent.createChooser(shareIntent, context.getString(R.string.share_video))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-            } catch (e: Exception) {
-                _events.emit(MediaViewerEvent.ShowToast(R.string.error_share_video))
-            }
-        }
-    }
-
-    private suspend fun shareImageFromServer(context: Context, item: MediaViewerItem) {
-        val key = item.toCacheKey()
-
-        // Try cache first, then fetch if needed
-        val bitmap = MediaCache.getBitmap(key)
-            ?: MediaCache.fetchImage(key, item.subfolder, item.type)
-
-        if (bitmap == null) {
-            _events.emit(MediaViewerEvent.ShowToast(R.string.error_share_image))
-            return
-        }
-
-        shareBitmap(context, bitmap)
-    }
-
-    private suspend fun shareVideoFromServer(context: Context, item: MediaViewerItem) {
-        val key = item.toCacheKey()
-
-        // Try cache first, then fetch if needed
-        val videoBytes = MediaCache.getVideoBytes(key)
-            ?: MediaCache.fetchVideoBytes(key, item.subfolder, item.type)
-
-        if (videoBytes == null) {
-            _events.emit(MediaViewerEvent.ShowToast(R.string.error_share_video))
-            return
-        }
-
-        withContext(Dispatchers.IO) {
-            try {
-                val shareFile = File(context.cacheDir, "share_video.mp4")
-                shareFile.writeBytes(videoBytes)
-
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    shareFile
-                )
-
-                withContext(Dispatchers.Main) {
-                    val shareIntent = Intent().apply {
-                        action = Intent.ACTION_SEND
-                        putExtra(Intent.EXTRA_STREAM, uri)
-                        type = "video/mp4"
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-
-                    context.startActivity(
-                        Intent.createChooser(shareIntent, context.getString(R.string.share_video))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }
-            } catch (e: Exception) {
-                _events.emit(MediaViewerEvent.ShowToast(R.string.error_share_video))
-            }
-        }
-    }
 }

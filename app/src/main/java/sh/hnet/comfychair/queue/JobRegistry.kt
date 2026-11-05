@@ -1,5 +1,8 @@
 package sh.hnet.comfychair.queue
 
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +35,12 @@ data class TrackedJob(
 )
 
 /**
+ * What the queue sheet shows about one of our jobs. Kept in memory only, never saved with the tracked jobs: the
+ * prompt is private, and after a restart the sheet simply shows less.
+ */
+data class JobDescription(val prompt: String, val workflow: String)
+
+/**
  * Represents the current state of the queue system.
  * This state is observable and updates in real-time based on WebSocket events.
  */
@@ -54,6 +63,22 @@ data class QueueState(
     val ownActiveJobCount: Int get() = ownJobs.values.count {
         it.status == JobStatus.PENDING || it.status == JobStatus.EXECUTING
     }
+
+    /**
+     * Jobs of other clients in the server queue. The total and our own jobs arrive by different paths and may briefly
+     * disagree, so this never goes below zero.
+     */
+    val otherJobCount: Int get() = (totalQueueSize - ownActiveJobCount).coerceAtLeast(0)
+
+    /**
+     * Whether a job of this screen waits in the queue. Only waiting jobs count: finished ones stay tracked until they
+     * are cleaned up (also across an app restart) and must not make the screen look busy.
+     */
+    /** Our own jobs waiting in the queue (not running yet). */
+    val ownWaitingJobCount: Int get() = ownJobs.values.count { it.status == JobStatus.PENDING }
+
+    fun hasWaitingJob(ownerId: String): Boolean =
+        ownJobs.values.any { it.ownerId == ownerId && it.status == JobStatus.PENDING }
 }
 
 /**
@@ -77,6 +102,50 @@ object JobRegistry {
 
     private val _queueState = MutableStateFlow(QueueState())
     val queueState: StateFlow<QueueState> = _queueState.asStateFlow()
+
+    // Owners (screens) of our jobs that finished with results, for the "ready" notice and tab badges
+    private val _readyOwners = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val readyOwners: SharedFlow<String> = _readyOwners.asSharedFlow()
+
+    /**
+     * One of our jobs finished successfully. Call before [markCompleted], which stops tracking it: completion alone
+     * also follows errors and interruptions, so it can't tell a ready result.
+     */
+    fun notifyReady(promptId: String) {
+        _queueState.value.ownJobs[promptId]?.let { _readyOwners.tryEmit(it.ownerId) }
+    }
+
+    // When each running job started (elapsed realtime), so the status card's timer survives leaving the screen
+    private val startTimes = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** When a running job started; first asked counts as the start if the server's start wasn't seen. */
+    fun executionStartedAt(promptId: String): Long =
+        startTimes.getOrPut(promptId) { android.os.SystemClock.elapsedRealtime() }
+
+    // Descriptions of our jobs for the queue sheet, in memory only (see JobDescription)
+    private val descriptions = java.util.concurrent.ConcurrentHashMap<String, JobDescription>()
+
+    fun describeJob(promptId: String, description: JobDescription) {
+        descriptions[promptId] = description
+    }
+
+    fun description(promptId: String): JobDescription? = descriptions[promptId]
+
+    /**
+     * Track a job under a new id, e.g. after it was submitted again and the server assigned one. Keeps its owner,
+     * status and description.
+     */
+    @Synchronized
+    fun rekeyJob(oldPromptId: String, newPromptId: String) {
+        if (oldPromptId == newPromptId) return
+        val currentState = _queueState.value
+        val job = currentState.ownJobs[oldPromptId] ?: return
+        DebugLogger.d(TAG, "Job ${Obfuscator.promptId(oldPromptId)} now tracked as ${Obfuscator.promptId(newPromptId)}")
+        _queueState.value = currentState.copy(
+            ownJobs = currentState.ownJobs - oldPromptId + (newPromptId to job.copy(promptId = newPromptId))
+        )
+        descriptions.remove(oldPromptId)?.let { descriptions[newPromptId] = it }
+    }
 
     /**
      * Register a new job when a workflow is submitted.
@@ -146,6 +215,7 @@ object JobRegistry {
      */
     @Synchronized
     fun markExecuting(promptId: String) {
+        startTimes.putIfAbsent(promptId, android.os.SystemClock.elapsedRealtime())
         val currentState = _queueState.value
         val job = currentState.ownJobs[promptId]
 
@@ -194,6 +264,8 @@ object JobRegistry {
 
         // Remove the job from tracking
         val newJobs = currentState.ownJobs - promptId
+        descriptions.remove(promptId)
+        startTimes.remove(promptId)
 
         _queueState.value = currentState.copy(
             executingPromptId = if (isCurrentlyExecuting) null else currentState.executingPromptId,
@@ -249,6 +321,7 @@ object JobRegistry {
             val newJobs = currentState.ownJobs - promptId
             _queueState.value = currentState.copy(ownJobs = newJobs)
         }
+        descriptions.remove(promptId)
     }
 
     /**

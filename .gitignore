@@ -15,6 +15,7 @@ captures/
 .kotlin/
 *.aab
 *.apk
+*.idsig
 output-metadata.json
 
 # IntelliJ
@@ -53,3 +54,5 @@ log_uploads_public/
 
 # Local tools/uploads
 uploads/
+# Local release tooling (signing), not published
+tools/

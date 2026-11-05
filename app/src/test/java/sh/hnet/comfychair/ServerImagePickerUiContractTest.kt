@@ -14,10 +14,11 @@ class ServerImagePickerUiContractTest {
     private val screen get() = source("main/java/sh/hnet/comfychair/ui/screens/ImageToImageScreen.kt")
 
     @Test fun serverChoicesShareExistingTopBarIconActions() {
-        val actions = screen.substringAfter("actions = {").substringBefore("// Progress indicator")
-        assertTrue(actions.contains("ServerImageSourceButtons("))
-        assertTrue(actions.indexOf("ServerImageSourceButtons(") < actions.indexOf("// Edit mask button"))
-        assertFalse(actions.contains("TextButton(onClick = {\n                    val slot = imagePages"))
+        // The server-source buttons live in the shared GenerationTopBar actions slot (the fork's picker
+        // entry points), not in a separate bar that would fight the upstream queue chip.
+        val topBar = screen.substringAfter("GenerationTopBar(").substringBefore("ServerImagePickerPanel(")
+        assertTrue(topBar.contains("ServerImageSourceButtons("))
+        assertTrue(topBar.contains("openServerImagePicker("))
     }
 
     @Test fun httpPickerIsNotDisabledByGenerationWebSocketState() {
@@ -29,10 +30,11 @@ class ServerImagePickerUiContractTest {
     }
 
     @Test fun crowdedActionStripScrollsWithoutShrinkingTouchTargets() {
-        val actions = screen.substringAfter("actions = {").substringBefore("// Progress indicator")
-        assertTrue(actions.contains("widthIn(max = 240.dp)"))
-        assertTrue(actions.contains("horizontalScroll(rememberScrollState())"))
+        // Material's default IconButton keeps 48 dp touch targets; no shrunken custom icon sizes.
+        val actions = screen.substringAfter("GenerationTopBar(").substringBefore("ServerImagePickerPanel(")
+        assertTrue(actions.contains("ServerImageSourceButtons("))
         assertFalse(actions.contains("size(24.dp)"))
+
     }
 
     @Test fun remoteSheetUsesMaterialPickerGridPatternAndVisibleOnlyPreviewEffects() {

@@ -1,8 +1,9 @@
 package sh.hnet.comfychair.navigation
 
+import android.net.Uri
+
 /**
- * Navigation routes for the main container (generation screens).
- * FAB: Gallery
+ * Navigation routes of the main activity: the generation screens and the Gallery and Settings tabs.
  */
 sealed class MainRoute(val route: String) {
     data object TextToImage : MainRoute("text_to_image")
@@ -11,15 +12,42 @@ sealed class MainRoute(val route: String) {
     data object ImageToVideo : MainRoute("image_to_video")
     data object Gallery : MainRoute("gallery")
     data object Materials : MainRoute("materials")
+    data object Settings : MainRoute("settings")
 }
 
 /**
- * Navigation routes for the settings container.
- * FAB: Back to Generation
+ * Settings pages, opened from the Settings tab's list.
  */
 sealed class SettingsRoute(val route: String) {
-    data object Workflows : SettingsRoute("workflows_settings")
-    data object Application : SettingsRoute("application_settings")
+    // Server
     data object Server : SettingsRoute("server_settings")
+    data object Workflows : SettingsRoute("workflows_settings")
+    /** A workflow's details, from the Workflows page. */
+    data object WorkflowDetail : SettingsRoute("workflow_detail/{workflowId}") {
+        const val ARG = "workflowId"
+        fun of(workflowId: String): String = "workflow_detail/${Uri.encode(workflowId)}"
+    }
+
+    // App
+    data object Connection : SettingsRoute("connection_settings")
+    data object Generation : SettingsRoute("generation_settings")
+    data object MediaPrivacy : SettingsRoute("media_privacy_settings")
+    data object Language : SettingsRoute("language_settings")
+    data object WorkflowEditor : SettingsRoute("workflow_editor_settings")
+
+    // Data
+    data object Backup : SettingsRoute("backup_settings")
+    data object Cache : SettingsRoute("cache_settings")
+    data object DebugLog : SettingsRoute("debug_log_settings")
+    data object Reset : SettingsRoute("reset_settings")
+
     data object About : SettingsRoute("about_settings")
+
+    companion object {
+        val all: List<SettingsRoute>
+            get() = listOf(
+                Server, Workflows, WorkflowDetail, Connection, Generation, MediaPrivacy, Language, WorkflowEditor,
+                Backup, Cache, DebugLog, Reset, About
+            )
+    }
 }

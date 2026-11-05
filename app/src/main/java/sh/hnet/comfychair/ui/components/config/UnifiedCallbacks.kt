@@ -21,7 +21,6 @@ data class UnifiedCallbacks(
     // === Core (required for ALL screens) ===
     val onWorkflowChange: (String) -> Unit,
     val onViewWorkflow: () -> Unit,
-    val onNegativePromptChange: (String) -> Unit,
 
     // === Model Callbacks (common to all) ===
     val onCheckpointChange: ((String) -> Unit)? = null,
@@ -36,7 +35,7 @@ data class UnifiedCallbacks(
     val onLatentUpscaleModelChange: ((String) -> Unit)? = null,
     val onMandatoryLoraChange: ((String) -> Unit)? = null,
 
-    // === Dual-Model Patterns (TTV/ITV only) ===
+    // === Dual-Model Patterns (e.g. Wan 2.2) ===
     val onHighnoiseUnetChange: ((String) -> Unit)? = null,
     val onLownoiseUnetChange: ((String) -> Unit)? = null,
     val onHighnoiseLoraChange: ((String) -> Unit)? = null,
@@ -67,7 +66,7 @@ data class UnifiedCallbacks(
     val onLoraNameChange: ((Int, String) -> Unit)? = null,
     val onLoraStrengthChange: ((Int, Float) -> Unit)? = null,
 
-    // === Dual-Model LoRA Chains (TTV/ITV) ===
+    // === Dual-Model LoRA Chains (e.g. Wan 2.2) ===
     val onAddHighnoiseLora: (() -> Unit)? = null,
     val onRemoveHighnoiseLora: ((Int) -> Unit)? = null,
     val onHighnoiseLoraNameChange: ((Int, String) -> Unit)? = null,

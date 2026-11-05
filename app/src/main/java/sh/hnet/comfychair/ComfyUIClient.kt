@@ -3,6 +3,7 @@ package sh.hnet.comfychair
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.JsonReader
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -15,20 +16,29 @@ import okhttp3.WebSocketListener
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONArray
 import org.json.JSONObject
+import sh.hnet.comfychair.connection.CertificateIssue
 import sh.hnet.comfychair.connection.ConnectionFailure
+import sh.hnet.comfychair.connection.PendingCertificate
+import sh.hnet.comfychair.connection.ServerTrust
+import sh.hnet.comfychair.connection.ServerTrustStore
 import sh.hnet.comfychair.model.AuthCredentials
 import sh.hnet.comfychair.util.DebugLogger
+import sh.hnet.comfychair.util.NodeErrors
 import sh.hnet.comfychair.util.Obfuscator
 import sh.hnet.comfychair.util.ProgressTrackingRequestBody
 import sh.hnet.comfychair.util.ProgressTrackingResponseBody
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -59,13 +69,28 @@ class ComfyUIClient(
         private const val STALL_CHECK_INTERVAL_MS = 5_000L    // Check every 5 seconds
     }
 
-    // Auth interceptor for adding Authorization headers
-    private val authInterceptor = AuthInterceptor(credentials)
+    // Auth interceptor for adding auth headers and detecting session expiry
+    private val authInterceptor = AuthInterceptor(credentials, hostname)
+
+    // Trust decisions for this endpoint (accepted certificate fingerprint, last working protocol)
+    private val trustStore = context?.let { ServerTrustStore(it) }
+
+    // Owns background jobs of this client (transfer stall watchdogs); cancelled in shutdown()
+    private val clientScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // TLS trust shared by all three OkHttp clients
+    private val serverTrust = ServerTrust(hostname, port, trustStore)
+
+    /**
+     * Certificate rejected by the last connection test, waiting for the user's decision.
+     */
+    val pendingCertificate: PendingCertificate? get() = serverTrust.pendingCertificate
 
     // OkHttpClient for HTTP requests - short timeouts are fine
-    private val httpClient = SelfSignedCertHelper.configureToAcceptSelfSigned(
+    private val httpClient = serverTrust.configure(
         OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
+            .followRedirects(false).followSslRedirects(false)
             .connectTimeout(10, TimeUnit.SECONDS)  // Max time to establish connection
             .readTimeout(10, TimeUnit.SECONDS)     // Max time to read response
             .writeTimeout(10, TimeUnit.SECONDS)    // Max time to write request
@@ -74,9 +99,10 @@ class ComfyUIClient(
     // Separate OkHttpClient for WebSocket connections
     // WebSockets need longer timeouts since data may not arrive for extended periods
     // pingInterval keeps the connection alive during long operations
-    private val webSocketClient = SelfSignedCertHelper.configureToAcceptSelfSigned(
+    private val webSocketClient = serverTrust.configure(
         OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
+            .followRedirects(false).followSslRedirects(false)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.SECONDS)      // No read timeout for WebSocket
             .writeTimeout(10, TimeUnit.SECONDS)
@@ -85,9 +111,10 @@ class ComfyUIClient(
 
     // Client for large transfers (uploads/downloads) - timeouts disabled, stall detection handles them
     // This allows slow but progressing transfers to complete while detecting truly stalled connections
-    private val transferClient = SelfSignedCertHelper.configureToAcceptSelfSigned(
+    private val transferClient = serverTrust.configure(
         OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
+            .followRedirects(false).followSslRedirects(false)
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.SECONDS)      // Disabled - stall detection handles this
             .writeTimeout(0, TimeUnit.SECONDS)     // Disabled - stall detection handles this
@@ -148,14 +175,25 @@ class ComfyUIClient(
     private fun imageReuseSession(): sh.hnet.comfychair.connection.ImageUploadReuse = imageReuse ?: run {
         val base = getBaseUrl()?.toHttpUrl() ?: throw IOException("Not connected")
         // Freeze authentication for this epoch; an in-flight request cannot migrate credentials.
-        val client = SelfSignedCertHelper.configureToAcceptSelfSigned(OkHttpClient.Builder()
-            .addInterceptor(AuthInterceptor(getCredentials()))
+        val epochCredentials = getCredentials()
+        var owner: sh.hnet.comfychair.connection.ImageUploadReuse? = null
+        val frozenAuth = AuthInterceptor(epochCredentials, hostname).also {
+            it.onSessionExpired = {
+                synchronized(this) {
+                    if (owner != null && imageReuse === owner) {
+                        authInterceptor.onSessionExpired?.invoke()
+                    }
+                }
+            }
+        }
+        val client = serverTrust.configure(OkHttpClient.Builder()
+            .addInterceptor(frozenAuth)
             .followRedirects(false).followSslRedirects(false)
             .connectTimeout(10, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)).build()
         val storage = imageCacheStorage()
         sh.hnet.comfychair.connection.ImageUploadReuse(client, base, disk = storage?.first,
-            namespace = storage?.second.orEmpty()).also { imageReuse = it }
+            namespace = storage?.second.orEmpty()).also { owner = it; imageReuse = it }
     }
 
     fun imageUploadIdentity(): Any = imageReuseSession()
@@ -172,7 +210,8 @@ class ComfyUIClient(
         val auth = when (val value = getCredentials()) {
             is AuthCredentials.Basic -> listOf("basic", value.username, value.password)
             is AuthCredentials.Bearer -> listOf("bearer", value.token)
-            else -> listOf("none")
+            is AuthCredentials.Cookie -> listOf("cookie", value.cookies)
+            AuthCredentials.None -> listOf("none")
         }
         return disk to disk.namespace(listOf(base) + auth)
     }
@@ -209,6 +248,21 @@ class ComfyUIClient(
         return result
     }
 
+    /**
+     * Register a callback to be invoked when a Cookie-authenticated session expires.
+     * Called at most once per session; re-armed by [resetSessionExpiredFlag].
+     */
+    fun setOnSessionExpired(callback: () -> Unit) {
+        authInterceptor.onSessionExpired = callback
+    }
+
+    /**
+     * Re-arm session-expiry detection after a successful re-authentication.
+     */
+    fun resetSessionExpiredFlag() {
+        authInterceptor.resetSessionExpiredFlag()
+    }
+
     // Store the active WebSocket connection
     private var webSocket: WebSocket? = null
 
@@ -240,10 +294,31 @@ class ComfyUIClient(
      */
     fun testConnection(callback: (success: Boolean, errorMessage: String?, certIssue: CertificateIssue, failureType: ConnectionFailure) -> Unit) {
         DebugLogger.i(TAG, "Testing connection to ${Obfuscator.hostname(hostname)}")
-        // Reset the certificate issue detection
-        SelfSignedCertHelper.reset()
-        // Try HTTPS first (more secure)
-        tryConnection("https", callback)
+        serverTrust.clearPending()
+        // Always try HTTPS first. Once HTTPS has worked for this endpoint, falling back to HTTP needs the user's consent.
+        val knownProtocol = workingProtocol ?: trustStore?.getProtocol(hostname, port)
+        tryConnection("https", httpsRequired = knownProtocol == "https", callback = callback)
+    }
+
+    /**
+     * Remember that the user agreed to use HTTP for this endpoint, although HTTPS worked before.
+     */
+    @Synchronized
+    fun allowHttp() {
+        trustStore?.setProtocol(hostname, port, "http")
+        imageReuse?.invalidate()
+        imageReuse = null
+        workingProtocol = null
+    }
+
+    @Synchronized
+    private fun onProtocolWorks(protocol: String) {
+        if (workingProtocol != protocol) {
+            imageReuse?.invalidate()
+            imageReuse = null
+        }
+        workingProtocol = protocol
+        trustStore?.setProtocol(hostname, port, protocol)
     }
 
     /**
@@ -254,6 +329,7 @@ class ComfyUIClient(
      */
     private fun tryConnection(
         protocol: String,
+        httpsRequired: Boolean = false,
         callback: (success: Boolean, errorMessage: String?, certIssue: CertificateIssue, failureType: ConnectionFailure) -> Unit
     ) {
         // Build the URL to test
@@ -270,10 +346,13 @@ class ComfyUIClient(
         // We use enqueue instead of execute to avoid blocking the UI thread
         httpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
-                // Connection failed with this protocol
-                if (protocol == "https") {
-                    // HTTPS failed, try HTTP as fallback
-                    tryConnection("http", callback)
+                val pending = serverTrust.pendingCertificate
+                if (protocol == "https" && pending != null) {
+                    // TLS works, but the certificate needs the user's decision - never fall back to HTTP here
+                    DebugLogger.w(TAG, "Certificate not trusted (${pending.issue})")
+                    callback(false, e.message, pending.issue, ConnectionFailure.CERTIFICATE)
+                } else if (protocol == "https") {
+                    tryHttpFallback(httpsRequired, callback)
                 } else {
                     // HTTP also failed - both protocols don't work
                     callback(false, "Connection failed: ${e.message}", CertificateIssue.NONE, ConnectionFailure.NETWORK)
@@ -291,15 +370,14 @@ class ComfyUIClient(
                             val system = json.optJSONObject("system")
                             if (system != null && system.has("os")) {
                                 // Valid ComfyUI server
-                                workingProtocol = protocol
-                                val certIssue = SelfSignedCertHelper.certificateIssue
+                                onProtocolWorks(protocol)
                                 DebugLogger.i(TAG, "Connection successful (protocol: $protocol)")
-                                callback(true, null, certIssue, ConnectionFailure.NONE)
+                                callback(true, null, CertificateIssue.NONE, ConnectionFailure.NONE)
                             } else {
                                 // Response doesn't match ComfyUI format
                                 DebugLogger.w(TAG, "Invalid response: not a ComfyUI server")
                                 if (protocol == "https") {
-                                    tryConnection("http", callback)
+                                    tryHttpFallback(httpsRequired, callback)
                                 } else {
                                     callback(false, context?.getString(R.string.error_not_comfyui_server)
                                         ?: "Not a ComfyUI server", CertificateIssue.NONE, ConnectionFailure.INVALID_SERVER)
@@ -309,7 +387,7 @@ class ComfyUIClient(
                             // Response is not valid JSON - not a ComfyUI server
                             DebugLogger.w(TAG, "Invalid response: ${e.message}")
                             if (protocol == "https") {
-                                tryConnection("http", callback)
+                                tryHttpFallback(httpsRequired, callback)
                             } else {
                                 callback(false, context?.getString(R.string.error_invalid_server_response)
                                     ?: "Invalid server response", CertificateIssue.NONE, ConnectionFailure.INVALID_SERVER)
@@ -322,24 +400,73 @@ class ComfyUIClient(
                         // Check for authentication errors - these should not fallback to HTTP
                         // since authentication is protocol-independent
                         if (code == 401 || code == 403) {
-                            workingProtocol = protocol  // Protocol works, auth doesn't
+                            onProtocolWorks(protocol)  // Protocol works, auth doesn't
                             DebugLogger.w(TAG, "Authentication failed (protocol: $protocol, code: $code)")
                             callback(
                                 false,
                                 context?.getString(R.string.error_auth_unauthorized)
                                     ?: "Authentication failed. Please check your credentials.",
-                                SelfSignedCertHelper.certificateIssue,
+                                CertificateIssue.NONE,
                                 ConnectionFailure.AUTHENTICATION
                             )
                         } else if (protocol == "https") {
                             // Try HTTP as fallback for other errors
-                            tryConnection("http", callback)
+                            tryHttpFallback(httpsRequired, callback)
                         } else {
                             // Both protocols failed
                             DebugLogger.w(TAG, "Connection failed: server error $code")
                             callback(false, "Server returned error: $code", CertificateIssue.NONE, ConnectionFailure.NETWORK)
                         }
                     }
+                }
+            }
+        })
+    }
+
+    /**
+     * HTTPS did not work. If this endpoint never had working HTTPS, try HTTP as before.
+     * If it had, check whether HTTP works and report [ConnectionFailure.INSECURE_FALLBACK] instead of connecting,
+     * so credentials and prompts are never sent unencrypted without the user's consent.
+     */
+    private fun tryHttpFallback(
+        httpsRequired: Boolean,
+        callback: (success: Boolean, errorMessage: String?, certIssue: CertificateIssue, failureType: ConnectionFailure) -> Unit
+    ) {
+        if (!httpsRequired) {
+            tryConnection("http", callback = callback)
+            return
+        }
+        val request = Request.Builder().url("http://$hostname:$port/system_stats").get().build()
+        // Probe with a bare client: no auth interceptor, so credentials never go over HTTP before the user agrees
+        OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .followRedirects(false)
+            .build()
+            .newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                callback(false, "Connection failed: ${e.message}", CertificateIssue.NONE, ConnectionFailure.NETWORK)
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+                // Only a ComfyUI answer counts (or an auth challenge, since the probe carries no credentials);
+                // a redirect back to HTTPS or an unrelated page is an ordinary network failure.
+                val comfyOverHttp = response.use {
+                    when {
+                        it.code == 401 || it.code == 403 -> true
+                        it.isSuccessful -> try {
+                            JSONObject(it.body?.string() ?: "{}").optJSONObject("system")?.has("os") == true
+                        } catch (e: Exception) {
+                            false
+                        }
+                        else -> false
+                    }
+                }
+                if (comfyOverHttp) {
+                    DebugLogger.w(TAG, "HTTPS failed for an endpoint that used HTTPS before; HTTP responds")
+                    callback(false, null, CertificateIssue.NONE, ConnectionFailure.INSECURE_FALLBACK)
+                } else {
+                    callback(false, "Connection failed: HTTPS unavailable", CertificateIssue.NONE, ConnectionFailure.NETWORK)
                 }
             }
         })
@@ -626,28 +753,36 @@ class ComfyUIClient(
 
         httpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
+                DebugLogger.w(TAG, "Failed to fetch node types: ${e.message}")
                 callback(null)
             }
 
             override fun onResponse(call: okhttp3.Call, response: Response) {
                 response.use {
-                    if (response.isSuccessful) {
-                        try {
-                            val responseBody = response.body?.string() ?: "{}"
-                            val json = JSONObject(responseBody)
-                            // The keys of the object are the available node class_types
-                            val nodeTypes = mutableSetOf<String>()
-                            val keys = json.keys()
-                            while (keys.hasNext()) {
-                                nodeTypes.add(keys.next())
-                            }
-                            callback(nodeTypes)
-                        } catch (e: Exception) {
-                            callback(null)
-                        }
-                    } else {
+                    val body = response.body
+                    if (!response.isSuccessful || body == null) {
+                        DebugLogger.w(TAG, "Node types request failed: ${response.code}")
                         callback(null)
+                        return
                     }
+                    // The keys of the object are the available node class_types; read only those
+                    // and skip the definitions, which can amount to tens of MB
+                    val nodeTypes = try {
+                        val result = mutableSetOf<String>()
+                        val reader = JsonReader(body.charStream())
+                        reader.isLenient = true
+                        reader.beginObject()
+                        while (reader.hasNext()) {
+                            result.add(reader.nextName())
+                            reader.skipValue()
+                        }
+                        reader.endObject()
+                        result
+                    } catch (e: Exception) {
+                        DebugLogger.w(TAG, "Failed to parse node types: ${e.message}")
+                        null
+                    }
+                    callback(nodeTypes)
                 }
             }
         })
@@ -658,13 +793,14 @@ class ComfyUIClient(
      * Returns the complete node type information including inputs/outputs.
      * Used for resolving slot types for edge coloring in workflow editor.
      *
-     * Uses transferClient (no read timeout, stall detection) because /object_info
-     * returns ~5MB and routinely takes 10–15s on WiFi, exceeding httpClient's 10s readTimeout.
+     * The body is handed over as a stream because it can reach tens of MB; it must be consumed
+     * synchronously inside the callback, as the response is closed when the callback returns.
      *
-     * @param callback Called with the result:
-     *                 - objectInfo: The full JSON object, or null on error
+     * @param callback Called on the OkHttp dispatcher thread with the result:
+     *                 - objectInfo: The response body stream, or null on error
+
      */
-    fun fetchFullObjectInfo(callback: (objectInfo: JSONObject?) -> Unit) {
+    fun fetchFullObjectInfo(callback: (objectInfo: InputStream?) -> Unit) {
         val baseUrl = getBaseUrl() ?: run {
             callback(null)
             return
@@ -685,15 +821,9 @@ class ComfyUIClient(
 
             override fun onResponse(call: okhttp3.Call, response: Response) {
                 response.use {
-                    if (response.isSuccessful) {
-                        try {
-                            val responseBody = response.body?.string() ?: "{}"
-                            val json = JSONObject(responseBody)
-                            callback(json)
-                        } catch (e: Exception) {
-                            DebugLogger.w(TAG, "Failed to parse object_info: ${e.message}")
-                            callback(null)
-                        }
+                    val body = response.body
+                    if (response.isSuccessful && body != null) {
+                        callback(body.byteStream())
                     } else {
                         DebugLogger.w(TAG, "object_info request failed: ${response.code}")
                         callback(null)
@@ -1033,16 +1163,18 @@ class ComfyUIClient(
      *                 - promptId: The prompt ID assigned by the server (for tracking)
      *                 - errorMessage: error message if failed
      *                 - failureType: type of failure (NONE for success, AUTHENTICATION for 401/403, NETWORK for other errors)
+     *                 - skippedOutputs: on success, descriptions of nodes that failed validation; ComfyUI
+     *                   still queues the job and runs the outputs that don't depend on them
      */
     fun submitPrompt(
         workflowJson: String,
         front: Boolean = false,
-        callback: (success: Boolean, promptId: String?, errorMessage: String?, failureType: ConnectionFailure) -> Unit
+        callback: (success: Boolean, promptId: String?, errorMessage: String?, failureType: ConnectionFailure, skippedOutputs: List<String>) -> Unit
     ) {
         DebugLogger.i(TAG, "Submitting prompt${if (front) " (front of queue)" else ""}")
         val baseUrl = getBaseUrl() ?: run {
             DebugLogger.w(TAG, "Submit failed: no connection")
-            callback(false, null, context?.getString(R.string.error_no_connection) ?: "No connection to server", ConnectionFailure.NETWORK)
+            callback(false, null, context?.getString(R.string.error_no_connection) ?: "No connection to server", ConnectionFailure.NETWORK, emptyList())
             return
         }
 
@@ -1081,7 +1213,7 @@ class ComfyUIClient(
         httpClient.newCall(request).enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
                 DebugLogger.e(TAG, "Submit failed: ${e.message}")
-                callback(false, null, "Failed to submit prompt: ${e.message}", ConnectionFailure.NETWORK)
+                callback(false, null, "Failed to submit prompt: ${e.message}", ConnectionFailure.NETWORK, emptyList())
             }
 
             override fun onResponse(call: okhttp3.Call, response: Response) {
@@ -1092,28 +1224,33 @@ class ComfyUIClient(
                             val json = JSONObject(responseBody)
                             val promptId = json.optString("prompt_id")
                             DebugLogger.i(TAG, "Prompt submitted (promptId: ${Obfuscator.promptId(promptId)})")
-                            callback(true, promptId, null, ConnectionFailure.NONE)
+                            val skippedOutputs = NodeErrors.describe(json.optJSONObject("node_errors"))
+                            skippedOutputs.forEach { DebugLogger.w(TAG, "Skipped by validation: $it") }
+                            callback(true, promptId, null, ConnectionFailure.NONE, skippedOutputs)
                         } catch (e: Exception) {
                             DebugLogger.e(TAG, "Failed to parse submit response: ${e.message}")
-                            callback(false, null, "Failed to parse response: ${e.message}", ConnectionFailure.NETWORK)
+                            callback(false, null, "Failed to parse response: ${e.message}", ConnectionFailure.NETWORK, emptyList())
                         }
                     } else {
                         // Handle authentication errors with clean messages (avoid raw HTML)
                         if (response.code == 401 || response.code == 403) {
                             DebugLogger.e(TAG, "Authentication error ${response.code}")
                             callback(false, null, context?.getString(R.string.error_auth_unauthorized)
-                                ?: "Authentication failed", ConnectionFailure.AUTHENTICATION)
+                                ?: "Authentication failed", ConnectionFailure.AUTHENTICATION, emptyList())
                         } else {
                             // Try to extract error details from response body
                             val errorDetail = try {
                                 val errorJson = JSONObject(responseBody)
-                                errorJson.optString("error", "") +
-                                    (errorJson.optJSONObject("node_errors")?.toString() ?: "")
+                                val message = errorJson.optJSONObject("error")?.optString("message")
+                                    ?: errorJson.optString("error", "")
+                                val nodes = NodeErrors.describe(errorJson.optJSONObject("node_errors"))
+                                DebugLogger.e(TAG, "Validation errors: $responseBody")
+                                listOf(message).plus(nodes).filter { it.isNotEmpty() }.joinToString("\n")
                             } catch (e: Exception) {
                                 responseBody.take(500) // Truncate long responses
                             }
                             DebugLogger.e(TAG, "Server error ${response.code}")
-                            callback(false, null, "Server error ${response.code}: $errorDetail", ConnectionFailure.NETWORK)
+                            callback(false, null, "Server error ${response.code}: $errorDetail", ConnectionFailure.NETWORK, emptyList())
                         }
                     }
                 }
@@ -1216,8 +1353,8 @@ class ComfyUIClient(
 
     fun mediaDeletion(secret: String, allowLan: Boolean = false): sh.hnet.comfychair.connection.ServerMediaDelete {
         val base = getBaseUrl()?.toHttpUrl() ?: throw IOException("Not connected")
-        val frozen = SelfSignedCertHelper.configureToAcceptSelfSigned(OkHttpClient.Builder()
-            .addInterceptor(AuthInterceptor(getCredentials()))).build()
+        val frozen = serverTrust.configure(OkHttpClient.Builder()
+            .addInterceptor(AuthInterceptor(getCredentials(), hostname))).build()
         return sh.hnet.comfychair.connection.ServerMediaDelete(frozen, base, secret, allowLan)
     }
 
@@ -1462,14 +1599,14 @@ class ComfyUIClient(
         logTag: String
     ): DownloadResult {
         val trackedBody = ProgressTrackingResponseBody(body)
-        var wasStalled = false
+        val wasStalled = AtomicBoolean(false)
 
-        val watchdogJob = CoroutineScope(Dispatchers.IO).launch {
+        val watchdogJob = clientScope.launch {
             while (isActive) {
                 delay(STALL_CHECK_INTERVAL_MS)
                 if (System.currentTimeMillis() - trackedBody.lastProgressTime > STALL_TIMEOUT_MS) {
                     DebugLogger.w(TAG, "$logTag download stalled - cancelling")
-                    wasStalled = true
+                    wasStalled.set(true)
                     call.cancel()
                     break
                 }
@@ -1487,7 +1624,7 @@ class ComfyUIClient(
 
         val failureType = when {
             bytes != null -> ConnectionFailure.NONE
-            wasStalled -> ConnectionFailure.STALLED
+            wasStalled.get() -> ConnectionFailure.STALLED
             else -> ConnectionFailure.NETWORK
         }
 
@@ -1666,9 +1803,11 @@ class ComfyUIClient(
      * Interrupt/cancel the currently running execution
      * Posts to the /interrupt endpoint to stop the current generation
      *
+     * @param promptId Interrupt only this job: the server then leaves another client's running job alone. Servers
+     *   that don't know the field ignore it and interrupt whatever runs, as without it.
      * @param callback Called with the result: success true/false
      */
-    fun interruptExecution(callback: (success: Boolean) -> Unit) {
+    fun interruptExecution(promptId: String? = null, callback: (success: Boolean) -> Unit) {
         DebugLogger.i(TAG, "Interrupting execution")
         val baseUrl = getBaseUrl() ?: run {
             DebugLogger.w(TAG, "Cannot interrupt: no connection")
@@ -1680,7 +1819,10 @@ class ComfyUIClient(
 
         val request = Request.Builder()
             .url(url)
-            .post("{}".toRequestBody("application/json".toMediaType()))
+            .post(
+                (if (promptId != null) JSONObject().put("prompt_id", promptId).toString() else "{}")
+                    .toRequestBody("application/json".toMediaType())
+            )
             .build()
 
         httpClient.newCall(request).enqueue(object : okhttp3.Callback {
@@ -1781,6 +1923,78 @@ class ComfyUIClient(
     }
 
     /**
+     * Remove waiting jobs from the server queue. A job that already runs is not affected (see [interruptExecution]).
+     *
+     * @param callback Called with the result: success true/false
+     */
+    fun deleteFromQueue(promptIds: List<String>, callback: (success: Boolean) -> Unit) {
+        val baseUrl = getBaseUrl() ?: run {
+            callback(false)
+            return
+        }
+        val requestBody = JSONObject().put("delete", JSONArray(promptIds)).toString()
+            .toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url("$baseUrl/queue").post(requestBody).build()
+        httpClient.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                DebugLogger.w(TAG, "Removing from queue failed: ${e.javaClass.simpleName}")
+                callback(false)
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+                response.use { callback(response.isSuccessful) }
+            }
+        })
+    }
+
+    /**
+     * Submit a workflow taken from the queue again, under the same job id, e.g. at the front after removing it.
+     * Servers that don't accept a client-chosen id assign a new one, which is passed to [callback].
+     *
+     * @param prompt The workflow as /queue lists it (API format)
+     */
+    fun resubmitPrompt(
+        prompt: JSONObject,
+        promptId: String,
+        front: Boolean,
+        callback: (success: Boolean, promptId: String?) -> Unit
+    ) {
+        val baseUrl = getBaseUrl() ?: run {
+            callback(false, null)
+            return
+        }
+        val requestBody = JSONObject().apply {
+            put("prompt", prompt)
+            put("client_id", clientId)
+            put("prompt_id", promptId)
+            if (front) put("front", true)
+        }.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url("$baseUrl/prompt").post(requestBody).build()
+        httpClient.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                DebugLogger.w(TAG, "Resubmitting failed: ${e.javaClass.simpleName}")
+                callback(false, null)
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+                response.use {
+                    val newId = if (response.isSuccessful) {
+                        try {
+                            JSONObject(response.body?.string() ?: "").optString("prompt_id").takeIf { it.isNotEmpty() }
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } else {
+                        DebugLogger.w(TAG, "Resubmitting failed: ${response.code}")
+                        null
+                    }
+                    callback(newId != null, newId)
+                }
+            }
+        })
+    }
+
+    /**
      * Clear the history of generated images
      * Removes all history entries
      *
@@ -1812,6 +2026,39 @@ class ComfyUIClient(
                 response.use {
                     callback(response.isSuccessful)
                 }
+            }
+        })
+    }
+
+    /**
+     * Free memory on the server (POST /free): unload the models only, or also free the memory ComfyUI keeps cached
+     * (which unloads the models too).
+     *
+     * @param unloadModelsOnly Unload the models but keep the other caches
+     * @param callback Called with the result: success true/false
+     */
+    fun freeMemory(unloadModelsOnly: Boolean, callback: (success: Boolean) -> Unit) {
+        val baseUrl = getBaseUrl() ?: run {
+            callback(false)
+            return
+        }
+
+        val requestBody = JSONObject().apply {
+            if (unloadModelsOnly) put("unload_models", true) else put("free_memory", true)
+        }.toString().toRequestBody("application/json".toMediaType())
+
+        val request = Request.Builder()
+            .url("$baseUrl/free")
+            .post(requestBody)
+            .build()
+
+        httpClient.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                callback(false)
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: Response) {
+                response.use { callback(response.isSuccessful) }
             }
         })
     }
@@ -1908,7 +2155,7 @@ class ComfyUIClient(
         val call = transferClient.newCall(request)
 
         // Watchdog coroutine to detect stalls
-        val watchdogJob = CoroutineScope(Dispatchers.IO).launch {
+        val watchdogJob = clientScope.launch {
             while (isActive) {
                 delay(STALL_CHECK_INTERVAL_MS)
                 if (System.currentTimeMillis() - progressBody.lastProgressTime > STALL_TIMEOUT_MS) {
@@ -1971,6 +2218,7 @@ class ComfyUIClient(
         imageReuse?.invalidate()
         imageReuse = null
         closeWebSocket()
+        clientScope.cancel()
         // Note: We don't shutdown the httpClient here as it might be reused
         // In a real app, you might want to manage the client lifecycle differently
     }

@@ -108,13 +108,13 @@ class ServerGalleryDeleteTest {
     }
     @Test fun settingsRouteViewerSourceAndSecureStorageWiring() {
         fun source(p: String) = File("src/main/java/sh/hnet/comfychair/$p").readText()
-        assertTrue(source("ui/navigation/SettingsNavHost.kt").contains("composable(\"server_gallery\")"))
+        assertTrue(source("ui/navigation/MainNavHost.kt").contains("composable(\"server_gallery\")"))
         val screen = source("ui/screens/ServerGalleryScreen.kt")
-        for (s in listOf("ImageViewer(", "encodedSize", "saveBitmap", "ServerGallerySourceTransfer.offer", "MediaStore.Images", "ServerImageSource.entries", "standalone = true")) assertTrue(s, screen.contains(s))
+        for (s in listOf("ImageViewer(", "encodedSize", "saveBitmap", "onUseAsSource", "MediaStore.Images", "ServerImageSource.entries", "standalone = true")) assertTrue(s, screen.contains(s))
         val storage = source("storage/DeletionCredentialStorage.kt")
         assertTrue(storage.contains("EncryptedSharedPreferences")); assertFalse(storage.contains("getSharedPreferences("))
         assertFalse(screen.contains("rememberSaveable("))
-        assertTrue(source("MainContainerActivity.kt").contains("ServerGallerySourceTransfer.take"))
-        assertTrue(source("ui/navigation/MainNavHost.kt").contains("LaunchedEffect(sourceNavigation)"))
+        // The standalone gallery hands its picked image to ImageToImage through MainNavHost's callback
+        assertTrue(source("ui/navigation/MainNavHost.kt").contains("acceptStandaloneGallerySource"))
     }
 }

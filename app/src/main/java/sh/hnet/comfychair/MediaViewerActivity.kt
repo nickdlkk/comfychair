@@ -280,8 +280,6 @@ class MediaViewerActivity : ComponentActivity() {
 
         viewModel.initialize(
             context = this,
-            hostname = hostname,
-            port = port,
             mode = ViewerMode.GALLERY,
             items = items,
             initialIndex = initialIndex
@@ -319,8 +317,6 @@ class MediaViewerActivity : ComponentActivity() {
 
             viewModel.initialize(
                 context = this,
-                hostname = hostname,
-                port = port,
                 mode = ViewerMode.SINGLE,
                 items = listOf(item),
                 initialIndex = 0,
@@ -352,8 +348,6 @@ class MediaViewerActivity : ComponentActivity() {
 
             viewModel.initialize(
                 context = this,
-                hostname = hostname,
-                port = port,
                 mode = ViewerMode.SINGLE,
                 items = listOf(item),
                 initialIndex = 0,

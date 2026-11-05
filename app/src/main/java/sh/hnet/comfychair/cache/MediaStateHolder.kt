@@ -5,13 +5,26 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import sh.hnet.comfychair.storage.MediaStorageMode
 import sh.hnet.comfychair.util.DebugLogger
+import sh.hnet.comfychair.util.Obfuscator
+import sh.hnet.comfychair.util.GenerationOutput
+import sh.hnet.comfychair.util.GenerationOutputs
 import sh.hnet.comfychair.util.VideoUtils
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -30,8 +43,11 @@ import java.util.concurrent.ConcurrentHashMap
 object MediaStateHolder {
 
     private const val TAG = "MediaState"
+    private const val OUTPUTS_FILE_SUFFIX = "_last_outputs.json"
+    private const val TEMP_FILE_SUFFIX = ".tmp"
 
     // Current server ID for per-server file scoping
+    @Volatile
     private var currentServerId: String? = null
 
     /**
@@ -64,6 +80,14 @@ object MediaStateHolder {
          * Get the full filename including server ID prefix.
          */
         fun filename(serverId: String): String = "${serverId}_$baseFilename"
+
+        /** Name for the debug log: video keys carry a prompt ID, which is shortened. */
+        val logName: String
+            get() = when (this) {
+                is TtvVideo -> "${VideoUtils.FilePrefix.TEXT_TO_VIDEO}${Obfuscator.promptId(promptId)}"
+                is ItvVideo -> "${VideoUtils.FilePrefix.IMAGE_TO_VIDEO}${Obfuscator.promptId(promptId)}"
+                else -> baseFilename
+            }
     }
 
     /**
@@ -83,6 +107,7 @@ object MediaStateHolder {
     fun getCurrentServerId(): String? = currentServerId
 
     // Caching mode - true for memory-first (default), false for disk-first
+    @Volatile
     private var isMemoryFirstMode = true
 
     // In-memory storage (used in memory-first mode)
@@ -94,32 +119,77 @@ object MediaStateHolder {
     private val dirtyVideos = ConcurrentHashMap.newKeySet<MediaKey>()
 
     // Track current video prompt IDs for persistence
+    @Volatile
     private var currentTtvPromptId: String? = null
+    @Volatile
     private var currentItvPromptId: String? = null
+
+    // Serializes everything that reads, writes or deletes media files, so a background persist
+    // never overlaps a load, a mode switch or the memory-only cleanup
+    private val diskMutex = Mutex()
+
+    // Outlives activities: persisting on onStop must not block the main thread or be cancelled with the activity
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val _storedMediaVersion = MutableStateFlow(0L)
+
+    /**
+     * Increases each time media stored on the device has been brought into reach for the current
+     * server (loaded into RAM, or found on disk). Screens restore their previews when it changes,
+     * filling only what they don't show yet.
+     */
+    val storedMediaVersion: StateFlow<Long> = _storedMediaVersion.asStateFlow()
+
+    /**
+     * Apply the media storage mode at startup without blocking the caller: the flags take effect now,
+     * the disk work (memory-only cleanup, loading saved media, mode migration) runs in the background,
+     * and [storedMediaVersion] announces when it is done.
+     */
+    fun prepareForStorageMode(context: Context, mode: MediaStorageMode) {
+        val appContext = context.applicationContext
+        isMemoryOnly = mode == MediaStorageMode.MEMORY_ONLY
+        backgroundScope.launch {
+            when (mode) {
+                // Nothing may stay on the device, including files left by other modes or older versions;
+                // the cleanup moves the stored media into RAM first
+                MediaStorageMode.MEMORY_ONLY -> enforceMemoryOnly(appContext)
+                MediaStorageMode.MEMORY_PERSISTED -> {
+                    setMemoryFirstMode(true, appContext)
+                    loadFromDisk(appContext)
+                }
+                MediaStorageMode.DEVICE -> {
+                    setMemoryFirstMode(false, appContext)
+                    // Disk-first: just discover video promptIds (bytes read on demand)
+                    discoverVideoPromptIds(appContext)
+                }
+            }
+            DebugLogger.d(TAG, "Stored media ready ($mode)")
+            _storedMediaVersion.update { it + 1 }
+        }
+    }
 
     /**
      * Set the caching mode.
      * @param enabled true for memory-first (default), false for disk-first
      * @param context Required for content migration when switching modes
      */
-    fun setMemoryFirstMode(enabled: Boolean, context: Context? = null) {
+    suspend fun setMemoryFirstMode(enabled: Boolean, context: Context? = null) =
+        diskMutex.withLock { setMemoryFirstModeLocked(enabled, context) }
+
+    private suspend fun setMemoryFirstModeLocked(enabled: Boolean, context: Context?) {
         if (isMemoryFirstMode == enabled) return  // No change
 
         DebugLogger.i(TAG, "Switching to ${if (enabled) "memory-first" else "disk-first"} mode")
         if (enabled) {
             // Switching TO memory-first: load disk content into memory
             context?.let { ctx ->
-                runBlocking {
-                    loadFromDisk(ctx)
-                }
+                loadFromDiskLocked(ctx)
                 // Disk files remain as backup - don't clear them
             }
         } else {
             // Switching TO disk-first: persist memory content to disk first
             context?.let { ctx ->
-                runBlocking {
-                    persistToDisk(ctx)
-                }
+                persistToDiskLocked(ctx)
             }
             // Now safe to clear in-memory caches
             bitmaps.clear()
@@ -129,6 +199,98 @@ object MediaStateHolder {
         }
 
         isMemoryFirstMode = enabled
+    }
+
+    /**
+     * Memory-only storage (the default): media must never be written to the device. Set from the
+     * user's MediaStorageMode together with [setMemoryFirstMode].
+     */
+    @Volatile
+    var isMemoryOnly: Boolean = true
+
+    /** Media files of all servers in filesDir: previews, videos and result lists. */
+    private fun diskMediaFiles(context: Context): List<File> =
+        context.filesDir.listFiles()?.filter { file ->
+            val name = file.name
+            val serverId = name.substringBefore('_', missingDelimiterValue = "")
+            // Server-scoped files start with the server UUID
+            serverId.length == 36 && serverId.count { it == '-' } == 4 &&
+                    (name.endsWith(".png") || name.endsWith(".mp4") || name.endsWith(OUTPUTS_FILE_SUFFIX) ||
+                            name.endsWith(TEMP_FILE_SUFFIX))
+        }.orEmpty()
+
+    /** Whether any generated media of any server is stored on the device. */
+    fun hasDiskMedia(context: Context): Boolean = diskMediaFiles(context).isNotEmpty()
+
+    /**
+     * Enforce memory-only storage: load the current server's stored media into RAM, so the
+     * results on screen stay available, then delete all media files of all servers. Also removes
+     * files left by other modes or by older versions that kept disk copies.
+     */
+    suspend fun enforceMemoryOnly(context: Context) = diskMutex.withLock {
+        isMemoryOnly = true
+        setMemoryFirstModeLocked(true, context)
+        val files = withContext(Dispatchers.IO) { diskMediaFiles(context) }
+        if (files.isEmpty()) return@withLock
+        loadFromDiskLocked(context)
+        withContext(Dispatchers.IO) {
+            files.forEach { it.delete() }
+        }
+        DebugLogger.i(TAG, "Memory-only storage: deleted ${files.size} media files from the device")
+    }
+
+    /**
+     * File with the result list of a screen's last job: filenames only, no media.
+     */
+    private fun outputsFile(context: Context, serverId: String, owner: String): File =
+        File(context.filesDir, "${serverId}_${owner.lowercase()}$OUTPUTS_FILE_SUFFIX")
+
+    /**
+     * Keep the result list of a screen's last job, so the results strip survives process death.
+     * Like the previews, it's written to the device unless storage is memory-only; then any file
+     * left from another mode is removed, so an outdated list can't come back later.
+     *
+     * @param owner Screen owner ID, e.g. TextToImageViewModel.OWNER_ID
+     */
+    fun saveGenerationOutputs(context: Context?, owner: String, outputs: List<GenerationOutput>, currentIndex: Int) {
+        val ctx = context ?: return
+        val serverId = currentServerId ?: return
+        val file = outputsFile(ctx, serverId, owner)
+        try {
+            if (isMemoryOnly || outputs.isEmpty()) {
+                file.delete()
+                return
+            }
+            file.writeText(
+                JSONObject()
+                    .put("currentIndex", currentIndex)
+                    .put("outputs", GenerationOutputs.toJson(outputs))
+                    .toString()
+            )
+        } catch (e: Exception) {
+            DebugLogger.w(TAG, "Failed to save result list: ${e.message}")
+        }
+    }
+
+    /**
+     * Read the result list kept by [saveGenerationOutputs] (not in memory-only storage).
+     * @return The results and the current index, or null if nothing is stored
+     */
+    fun loadGenerationOutputs(context: Context?, owner: String): Pair<List<GenerationOutput>, Int>? {
+        if (isMemoryOnly) return null
+        val ctx = context ?: return null
+        val serverId = currentServerId ?: return null
+        val file = outputsFile(ctx, serverId, owner)
+        if (!file.exists()) return null
+        return try {
+            val json = JSONObject(file.readText())
+            val outputs = GenerationOutputs.fromJson(json.optJSONArray("outputs"))
+            if (outputs.isEmpty()) null
+            else outputs to json.optInt("currentIndex").coerceIn(0, outputs.size - 1)
+        } catch (e: Exception) {
+            DebugLogger.w(TAG, "Failed to load result list: ${e.message}")
+            null
+        }
     }
 
     /**
@@ -168,7 +330,8 @@ object MediaStateHolder {
             context.filesDir.listFiles()?.filter { file ->
                 file.name.startsWith(prefix) && (
                     file.name.contains(VideoUtils.FilePrefix.TEXT_TO_VIDEO) ||
-                    file.name.contains(VideoUtils.FilePrefix.IMAGE_TO_VIDEO)
+                    file.name.contains(VideoUtils.FilePrefix.IMAGE_TO_VIDEO) ||
+                    file.name.endsWith(OUTPUTS_FILE_SUFFIX)
                 )
             }?.forEach { file ->
                 file.delete()
@@ -202,11 +365,11 @@ object MediaStateHolder {
     fun putBitmap(key: MediaKey, bitmap: Bitmap, context: Context? = null) {
         val serverId = currentServerId
         if (serverId == null) {
-            DebugLogger.w(TAG, "putBitmap SKIPPED - currentServerId is null (key: ${key.baseFilename})")
+            DebugLogger.w(TAG, "putBitmap SKIPPED - currentServerId is null (key: ${key.logName})")
             return
         }
 
-        DebugLogger.d(TAG, "putBitmap: ${key.baseFilename} (server: ${serverId.take(8)}..., mode: ${if (isMemoryFirstMode) "memory" else "disk"})")
+        DebugLogger.d(TAG, "putBitmap: ${key.logName} (server: ${serverId.take(8)}..., mode: ${if (isMemoryFirstMode) "memory" else "disk"})")
 
         if (isMemoryFirstMode) {
             // Memory-first: store in memory, mark as dirty for later persistence
@@ -235,14 +398,14 @@ object MediaStateHolder {
     fun getBitmap(key: MediaKey, context: Context? = null): Bitmap? {
         val serverId = currentServerId
         if (serverId == null) {
-            DebugLogger.w(TAG, "getBitmap SKIPPED - currentServerId is null (key: ${key.baseFilename})")
+            DebugLogger.w(TAG, "getBitmap SKIPPED - currentServerId is null (key: ${key.logName})")
             return null
         }
 
         return if (isMemoryFirstMode) {
             // Memory-first: return from RAM
             val bitmap = bitmaps[key]
-            DebugLogger.d(TAG, "getBitmap: ${key.baseFilename} from memory -> ${if (bitmap != null) "FOUND" else "NOT FOUND"}")
+            DebugLogger.d(TAG, "getBitmap: ${key.logName} from memory -> ${if (bitmap != null) "FOUND" else "NOT FOUND"}")
             bitmap
         } else {
             // Disk-first: read from disk each time
@@ -251,14 +414,14 @@ object MediaStateHolder {
                     val file = ctx.getFileStreamPath(key.filename(serverId))
                     if (file.exists()) {
                         val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                        DebugLogger.d(TAG, "getBitmap: ${key.baseFilename} from disk -> ${if (bitmap != null) "FOUND" else "DECODE FAILED"}")
+                        DebugLogger.d(TAG, "getBitmap: ${key.logName} from disk -> ${if (bitmap != null) "FOUND" else "DECODE FAILED"}")
                         bitmap
                     } else {
-                        DebugLogger.d(TAG, "getBitmap: ${key.baseFilename} from disk -> FILE NOT FOUND")
+                        DebugLogger.d(TAG, "getBitmap: ${key.logName} from disk -> FILE NOT FOUND")
                         null
                     }
                 } catch (e: Exception) {
-                    DebugLogger.e(TAG, "getBitmap: ${key.baseFilename} disk read FAILED - ${e.message}")
+                    DebugLogger.e(TAG, "getBitmap: ${key.logName} disk read FAILED - ${e.message}")
                     null
                 }
             }
@@ -277,6 +440,24 @@ object MediaStateHolder {
             is MediaKey.TtvVideo -> currentTtvPromptId = key.promptId
             is MediaKey.ItvVideo -> currentItvPromptId = key.promptId
             else -> { }
+        }
+
+        // Each screen shows only its latest video; earlier ones would otherwise pile up in RAM
+        // for the whole session, or on the device for good
+        val prefix = when (key) {
+            is MediaKey.TtvVideo -> VideoUtils.FilePrefix.TEXT_TO_VIDEO
+            is MediaKey.ItvVideo -> VideoUtils.FilePrefix.IMAGE_TO_VIDEO
+            else -> null
+        }
+        if (prefix != null) {
+            videoBytes.keys.filter { it::class == key::class && it != key }.forEach {
+                videoBytes.remove(it)
+                dirtyVideos.remove(it)
+            }
+            val ownFile = key.filename(serverId)
+            context?.filesDir?.listFiles()?.forEach { file ->
+                if (file.name.startsWith("${serverId}_$prefix") && file.name != ownFile) file.delete()
+            }
         }
 
         if (isMemoryFirstMode) {
@@ -322,7 +503,7 @@ object MediaStateHolder {
 
     /**
      * Get a video URI for ExoPlayer playback.
-     * In memory-first mode, creates a temp file from in-memory bytes.
+     * In memory-first mode, returns an in-memory URI (see InMemoryVideo), nothing is written to disk.
      * In disk-first mode, returns URI directly to the stored file.
      */
     suspend fun getVideoUri(context: Context, key: MediaKey): Uri? {
@@ -331,15 +512,9 @@ object MediaStateHolder {
         return withContext(Dispatchers.IO) {
             try {
                 if (isMemoryFirstMode) {
-                    // Memory-first: create temp file from in-memory bytes
-                    val bytes = videoBytes[key] ?: return@withContext null
-                    val tempFile = File(context.cacheDir, "playback_${key.baseFilename.hashCode()}.mp4")
-                    tempFile.writeBytes(bytes)
-                    FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        tempFile
-                    )
+                    // Memory-first: play straight from RAM
+                    if (!videoBytes.containsKey(key)) return@withContext null
+                    InMemoryVideo.uriFor("state_${key.filename(serverId)}") { videoBytes[key] }
                 } else {
                     // Disk-first: return URI to the stored file directly
                     val file = File(context.filesDir, key.filename(serverId))
@@ -359,9 +534,35 @@ object MediaStateHolder {
 
     /**
      * Persist all dirty items to disk using parallel writes for speed.
-     * Called from MainContainerActivity.onStop().
      */
-    suspend fun persistToDisk(context: Context) {
+    suspend fun persistToDisk(context: Context) = diskMutex.withLock { persistToDiskLocked(context) }
+
+    /**
+     * Persist dirty items without blocking the caller (MainContainerActivity.onStop()).
+     */
+    fun persistToDiskInBackground(context: Context) {
+        val appContext = context.applicationContext
+        backgroundScope.launch { persistToDisk(appContext) }
+    }
+
+    /**
+     * Write a file atomically: a process killed mid-write leaves the previous version, not a truncated file.
+     */
+    private fun writeAtomically(target: File, write: (java.io.OutputStream) -> Unit) {
+        val temp = File(target.parentFile, target.name + TEMP_FILE_SUFFIX)
+        temp.outputStream().use(write)
+        if (!temp.renameTo(target)) {
+            temp.delete()
+            throw java.io.IOException("Cannot replace ${Obfuscator.filename(target.name)}")
+        }
+    }
+
+    private suspend fun persistToDiskLocked(context: Context) {
+        // The mode may have changed to memory-only while this persist was queued
+        if (isMemoryOnly) {
+            DebugLogger.d(TAG, "persistToDisk SKIPPED - memory-only storage")
+            return
+        }
         val serverId = currentServerId
         if (serverId == null) {
             DebugLogger.w(TAG, "persistToDisk SKIPPED - currentServerId is null! (dirty: ${dirtyBitmaps.size} bitmaps, ${dirtyVideos.size} videos)")
@@ -387,19 +588,20 @@ object MediaStateHolder {
                 async {
                     val bitmap = bitmaps[key]
                     if (bitmap == null) {
-                        DebugLogger.w(TAG, "persistToDisk: bitmap ${key.baseFilename} is dirty but not in memory!")
+                        DebugLogger.w(TAG, "persistToDisk: bitmap ${key.logName} is dirty but not in memory!")
                         dirtyBitmaps.remove(key)
                         return@async false
                     }
                     try {
-                        context.openFileOutput(key.filename(serverId), Context.MODE_PRIVATE).use { out ->
+                        writeAtomically(File(context.filesDir, key.filename(serverId))) { out ->
                             bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
                         }
-                        dirtyBitmaps.remove(key)
-                        DebugLogger.d(TAG, "persistToDisk: ${key.baseFilename} -> OK")
+                        // A newer bitmap stored meanwhile stays dirty (putBitmap stores before marking)
+                        if (bitmaps[key] === bitmap) dirtyBitmaps.remove(key)
+                        DebugLogger.d(TAG, "persistToDisk: ${key.logName} -> OK")
                         true
                     } catch (e: Exception) {
-                        DebugLogger.e(TAG, "persistToDisk: ${key.baseFilename} -> FAILED: ${e.message}")
+                        DebugLogger.e(TAG, "persistToDisk: ${key.logName} -> FAILED: ${e.message}")
                         false
                     }
                 }
@@ -409,17 +611,23 @@ object MediaStateHolder {
                 async {
                     val bytes = videoBytes[key]
                     if (bytes == null) {
-                        DebugLogger.w(TAG, "persistToDisk: video ${key.baseFilename} is dirty but not in memory!")
+                        DebugLogger.w(TAG, "persistToDisk: video ${key.logName} is dirty but not in memory!")
                         dirtyVideos.remove(key)
                         return@async false
                     }
                     try {
-                        File(context.filesDir, key.filename(serverId)).writeBytes(bytes)
-                        dirtyVideos.remove(key)
-                        DebugLogger.d(TAG, "persistToDisk: ${key.baseFilename} -> OK")
+                        val file = File(context.filesDir, key.filename(serverId))
+                        writeAtomically(file) { out -> out.write(bytes) }
+                        if (videoBytes[key] === bytes) {
+                            dirtyVideos.remove(key)
+                        } else if (!videoBytes.containsKey(key)) {
+                            // Replaced by a newer video meanwhile: don't leave the old one on the device
+                            file.delete()
+                        }
+                        DebugLogger.d(TAG, "persistToDisk: ${key.logName} -> OK")
                         true
                     } catch (e: Exception) {
-                        DebugLogger.e(TAG, "persistToDisk: ${key.baseFilename} -> FAILED: ${e.message}")
+                        DebugLogger.e(TAG, "persistToDisk: ${key.logName} -> FAILED: ${e.message}")
                         false
                     }
                 }
@@ -442,7 +650,9 @@ object MediaStateHolder {
      * Load persisted media from disk into memory for the current server.
      * Called from MainContainerActivity.onCreate().
      */
-    suspend fun loadFromDisk(context: Context) {
+    suspend fun loadFromDisk(context: Context) = diskMutex.withLock { loadFromDiskLocked(context) }
+
+    private suspend fun loadFromDiskLocked(context: Context) {
         val serverId = currentServerId
         if (serverId == null) {
             DebugLogger.w(TAG, "loadFromDisk SKIPPED - currentServerId is null!")
@@ -470,6 +680,8 @@ object MediaStateHolder {
             var bitmapsLoaded = 0
             var bitmapsNotFound = 0
             for (key in bitmapKeys) {
+                // Never replace a newer in-memory result that has not been saved yet
+                if (key in dirtyBitmaps) continue
                 try {
                     val file = context.getFileStreamPath(key.filename(serverId))
                     if (file.exists()) {
@@ -477,29 +689,30 @@ object MediaStateHolder {
                         if (bitmap != null) {
                             bitmaps[key] = bitmap
                             bitmapsLoaded++
-                            DebugLogger.d(TAG, "loadFromDisk: ${key.baseFilename} -> LOADED")
+                            DebugLogger.d(TAG, "loadFromDisk: ${key.logName} -> LOADED")
                             // NOT dirty - already on disk
                         } else {
-                            DebugLogger.w(TAG, "loadFromDisk: ${key.baseFilename} -> DECODE FAILED")
+                            DebugLogger.w(TAG, "loadFromDisk: ${key.logName} -> DECODE FAILED")
                         }
                     } else {
                         bitmapsNotFound++
                     }
                 } catch (e: Exception) {
-                    DebugLogger.e(TAG, "loadFromDisk: ${key.baseFilename} -> ERROR: ${e.message}")
+                    DebugLogger.e(TAG, "loadFromDisk: ${key.logName} -> ERROR: ${e.message}")
                 }
             }
 
             // Load latest video files for this server
             val serverPrefix = "${serverId}_"
-            loadLatestVideoFile(context, serverPrefix, VideoUtils.FilePrefix.TEXT_TO_VIDEO) { promptId, bytes ->
+            // As with bitmaps, an unsaved newer video in memory wins over the file
+            if (dirtyVideos.none { it is MediaKey.TtvVideo }) loadLatestVideoFile(context, serverPrefix, VideoUtils.FilePrefix.TEXT_TO_VIDEO) { promptId, bytes ->
                 val key = MediaKey.TtvVideo(promptId)
                 videoBytes[key] = bytes
                 currentTtvPromptId = promptId
                 DebugLogger.d(TAG, "loadFromDisk: TTV video -> LOADED (promptId: ${promptId.take(8)}...)")
             }
 
-            loadLatestVideoFile(context, serverPrefix, VideoUtils.FilePrefix.IMAGE_TO_VIDEO) { promptId, bytes ->
+            if (dirtyVideos.none { it is MediaKey.ItvVideo }) loadLatestVideoFile(context, serverPrefix, VideoUtils.FilePrefix.IMAGE_TO_VIDEO) { promptId, bytes ->
                 val key = MediaKey.ItvVideo(promptId)
                 videoBytes[key] = bytes
                 currentItvPromptId = promptId
@@ -709,7 +922,7 @@ object MediaStateHolder {
                     // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (36 chars)
                     if (potentialServerId.length == 36 && potentialServerId.contains('-')) {
                         if (potentialServerId !in validServerIds) {
-                            DebugLogger.d(TAG, "Deleting orphaned file: $name")
+                            DebugLogger.d(TAG, "Deleting orphaned file: ${Obfuscator.filename(name)}")
                             file.delete()
                         }
                     }

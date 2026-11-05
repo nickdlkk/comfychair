@@ -2,7 +2,6 @@ package sh.hnet.comfychair.storage
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 import sh.hnet.comfychair.R
@@ -209,10 +208,14 @@ class BackupManager(private val context: Context) {
         return JSONObject().apply {
             put("autoConnectEnabled", prefs.getBoolean("autoConnect", true))
             put("livePreviewEnabled", prefs.getBoolean("live_preview_enabled", true))
-            put("memoryFirstCache", prefs.getBoolean("memory_first_cache", true))
-            put("mediaCacheDisabled", prefs.getBoolean("media_cache_disabled", false))
+            val storageMode = AppSettings.getMediaStorageMode(context)
+            put("mediaStorageMode", storageMode.key)
+            // Equivalent former switches, so older app versions restore the same behaviour
+            put("memoryFirstCache", storageMode != MediaStorageMode.DEVICE)
+            put("mediaCacheDisabled", storageMode == MediaStorageMode.MEMORY_ONLY)
             put("debugLoggingEnabled", prefs.getBoolean("debug_logging_enabled", false))
-            put("showBuiltInWorkflows", prefs.getBoolean("show_built_in_workflows", true))
+            put("disabledWorkflows", JSONArray(prefs.getStringSet("disabled_workflows", null).orEmpty().sorted()))
+            put("promptSpellCheckEnabled", prefs.getBoolean("prompt_spell_check", false))
         }
     }
 
@@ -347,17 +350,29 @@ class BackupManager(private val context: Context) {
         if (json.has("livePreviewEnabled")) {
             editor.putBoolean("live_preview_enabled", json.optBoolean("livePreviewEnabled", true))
         }
-        if (json.has("memoryFirstCache")) {
-            editor.putBoolean("memory_first_cache", json.optBoolean("memoryFirstCache", true))
-        }
-        if (json.has("mediaCacheDisabled")) {
-            editor.putBoolean("media_cache_disabled", json.optBoolean("mediaCacheDisabled", false))
+        // Media storage: the current setting, or migrated from the former switches of older backups
+        val storageMode = MediaStorageMode.fromKey(json.optString("mediaStorageMode").ifEmpty { null })
+            ?: if (json.has("memoryFirstCache")) MediaStorageMode.migrate(json.optBoolean("memoryFirstCache", true)) else null
+        if (storageMode != null) {
+            editor.putString("media_storage_mode", storageMode.key)
+            editor.remove("memory_first_cache")
+            editor.remove("media_cache_disabled")
         }
         if (json.has("debugLoggingEnabled")) {
             editor.putBoolean("debug_logging_enabled", json.optBoolean("debugLoggingEnabled", false))
         }
-        if (json.has("showBuiltInWorkflows")) {
+        // Workflows switched off one by one, or the former switch for all built-in workflows of
+        // older backups, which AppSettings migrates when the workflows are reloaded
+        val disabledWorkflows = json.optJSONArray("disabledWorkflows")
+        if (disabledWorkflows != null) {
+            editor.putStringSet("disabled_workflows", (0 until disabledWorkflows.length()).map { disabledWorkflows.optString(it) }.filter { it.isNotEmpty() }.toSet())
+            editor.remove("show_built_in_workflows")
+        } else if (json.has("showBuiltInWorkflows")) {
+            editor.remove("disabled_workflows")
             editor.putBoolean("show_built_in_workflows", json.optBoolean("showBuiltInWorkflows", true))
+        }
+        if (json.has("promptSpellCheckEnabled")) {
+            editor.putBoolean("prompt_spell_check", json.optBoolean("promptSpellCheckEnabled", false))
         }
 
         editor.apply()
@@ -779,15 +794,10 @@ class BackupManager(private val context: Context) {
 
     private fun getAppVersionName(): String {
         return try {
-            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.packageManager.getPackageInfo(
-                    context.packageName,
-                    PackageManager.PackageInfoFlags.of(0)
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                context.packageManager.getPackageInfo(context.packageName, 0)
-            }
+            val packageInfo = context.packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.PackageInfoFlags.of(0)
+            )
             packageInfo.versionName ?: "unknown"
         } catch (e: PackageManager.NameNotFoundException) {
             "unknown"

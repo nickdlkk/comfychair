@@ -16,6 +16,10 @@ data class LoraSelection(
     companion object {
         const val DEFAULT_STRENGTH = 1.0f
         const val MAX_CHAIN_LENGTH = 5
+        // Bounds of the unified strength control (upstream). Values outside are clamped when edited;
+        // stored strengths still round-trip unchanged.
+        const val MIN_STRENGTH = -100.0f
+        const val MAX_STRENGTH = 100.0f
 
         /**
          * Deserialize a LoRA chain from JSON array string.

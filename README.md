@@ -1,5 +1,7 @@
 # Stable v0.8.26 / code63
 
+> Integration branch: upstream migration is in progress; features described below are not yet verified in this working tree.
+
 [Download stable release](https://github.com/nickdlkk/comfychair/releases/tag/v0.8.26) · [Release notes and verification limits](docs/requirements/release-v0.8.26.md)
 
 Combines beta.1–beta.8: immutable content-addressed upload reuse, unchanged Input reuse for native LoadImage, private persistent caching and cleanup/statistics settings, continuous Input/Output pagination, an independent server gallery, dedicated-key confirmed trusted-LAN deletion, compact fullscreen layout/scroll anchors, and original graphical loading/cancel feedback. The companion extension is disabled until separately configured by an administrator; HTTP is trusted-LAN only. Beta handoffs remain historical evidence, not current deployment instructions.
@@ -38,18 +40,19 @@ ComfyChair provides a streamlined mobile interface for interacting with ComfyUI 
 ### General
 
 - **Multi-server support**: Save and manage multiple ComfyUI server connections with per-server settings and optional auto-login
-- **Server connection**: Connect to remote or local ComfyUI servers with automatic HTTP/HTTPS detection and self-signed certificate support
-- **Authentication**: HTTP Basic Auth and API key/Bearer token authentication for servers behind reverse proxies
+- **Server connection**: Connect to remote or local ComfyUI servers over HTTPS or HTTP, with HTTPS tried first
+- **Certificate trust**: Certificates trusted by Android are accepted as usual; self-signed or private-CA certificates are accepted after you confirm their SHA-256 fingerprint, and from then on only that certificate is accepted for the server. A server that used HTTPS is never switched to unencrypted HTTP without asking
+- **Authentication**: HTTP Basic Auth, API key/Bearer token, and browser-based SSO sign-in for servers behind reverse proxies
 - **Offline mode**: Browse cached data without network connection, with automatic offline prompt when server is unreachable
 - **Queue management**: Submit multiple jobs without waiting, view queue count, cancel current job, add to front of queue, or clear queue entirely
 - **Dual workflow support**:
   - **Checkpoint mode**: Traditional CheckpointLoaderSimple workflows
   - **UNET mode**: Modern diffusion workflows (Flux, Z-Image, etc.) with separate UNET, VAE, and CLIP model selection
 - **LoRA chain support**:
-  - Add up to 5 LoRAs per chain with individual strength control (0.0-2.0)
+  - Add up to 5 LoRAs per chain with individual strength from -100 to 100 (coarse stepper plus fine slider)
   - Text to Image and Image to Image: Separate LoRA chains for Checkpoint and UNET modes
   - Text to Video and Image to Video: Separate High Noise and Low Noise LoRA chains
-  - LoRAs are dynamically injected into workflows at generation time
+  - LoRAs are dynamically injected into workflows at generation time, including workflows with non-core model loaders such as GGUF
 - **Prompt Library**:
   - Save prompts as reusable presets with custom names and tags
   - Organize presets with favorites and tag-based filtering
@@ -59,6 +62,9 @@ ComfyChair provides a streamlined mobile interface for interacting with ComfyUI 
 - **Native Android experience**: Built with Kotlin and Jetpack Compose with Material Design 3
 
 ### Generation Modes
+
+- **Results preview** (all modes): jobs with several results show a pager with a thumbnail strip; videos play inline; any generated image can be sent to Image to Image or Image to Video with "Use as source"
+- **Validation feedback**: readable messages when ComfyUI rejects a workflow, and a warning when it skips outputs instead of silently delivering an incomplete result
 
 - **Text to Image**:
   - Mobile-optimized interface with live progress updates
@@ -146,6 +152,7 @@ Measured against beta.1 debug: **86,933,230 → 8,266,557 bytes (90.49% smaller)
   - Multi-select mode with dedicated button or long press to select items
   - Batch operations: save, share, or delete multiple items at once
 - **Media management**: Save to device gallery (Pictures/ComfyChair or Movies/ComfyChair) or share
+- **Media storage**: Generated media is kept in memory only by default and never written to the device; optionally it can be saved on exit or stored on the device. In memory-only mode the app is also hidden from the recents screen preview
 
 ### Workflows
 
@@ -195,7 +202,10 @@ Measured against beta.1 debug: **86,933,230 → 8,266,557 bytes (90.49% smaller)
     - ComfyChair JSON (import/export) - preserves field mappings and app settings
   - Dynamic workflow thumbnails showing mini graph previews
   - Context menus for edit, rename, duplicate, export, and delete
-  - Flexible field mapping: only Positive Prompt required (plus source image for image workflows)
+  - Flexible field mapping: no field is required except the source image for image workflows; workflows without a prompt (e.g. upscalers) are supported
+  - Prompts can be mapped to primitive String nodes, so one prompt can feed several text encoders
+  - Every workflow, built-in or custom, can be switched on or off, so the generation screens offer only the ones you use
+  - Built-in templates include SD, SDXL, Flux, HiDream, Qwen Image (generation and editing), Z-Image, Krea-2 (generation, editing, identity editing and LanPaint inpainting), SeedVR2 upscaling, Wan 2.2 and LTX-2
   - Dynamic parameter constraints based on workflow node definitions
   - Per-workflow generation settings persistence
   - Workflow Editor returns to view mode after saving for continued editing
@@ -273,9 +283,9 @@ To connect to your ComfyUI server, you'll need:
 
 ## Tech stack
 
-- **Language**: Kotlin 2.0.21
+- **Language**: Kotlin 2.2.10
 - **Min SDK**: Android 13 (API 33)
-- **Target SDK**: Android 15 (API 36)
+- **Target SDK**: Android 16 (API 36)
 - **UI Framework**: Jetpack Compose with Material Design 3 (including Expressive components)
 - **Video Playback**: Media3 ExoPlayer
 - **Architecture**: MVVM with ViewModels and StateFlow

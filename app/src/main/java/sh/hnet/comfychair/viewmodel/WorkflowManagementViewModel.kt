@@ -13,22 +13,25 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import sh.hnet.comfychair.ComfyUIClient
 import sh.hnet.comfychair.R
 import sh.hnet.comfychair.WorkflowManager
 import sh.hnet.comfychair.WorkflowType
 import sh.hnet.comfychair.WorkflowValidationResult
+import sh.hnet.comfychair.connection.ConnectionManager
+import sh.hnet.comfychair.util.DebugLogger
+import sh.hnet.comfychair.util.LiteGraphConverter
+import sh.hnet.comfychair.util.ValidationUtils
+import sh.hnet.comfychair.util.WorkflowJsonAnalyzer
 import sh.hnet.comfychair.workflow.FieldCandidate
 import sh.hnet.comfychair.workflow.FieldDisplayRegistry
 import sh.hnet.comfychair.workflow.FieldMappingState
 import sh.hnet.comfychair.workflow.PendingWorkflowUpload
 import sh.hnet.comfychair.workflow.TemplateKeyRegistry
 import sh.hnet.comfychair.workflow.WorkflowMappingState
-import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.storage.AppSettings
-import sh.hnet.comfychair.util.DebugLogger
-import sh.hnet.comfychair.util.ValidationUtils
 import sh.hnet.comfychair.util.WorkflowImportPreparation
 import sh.hnet.comfychair.util.ServerImportOrigin
 
@@ -38,6 +41,15 @@ import sh.hnet.comfychair.util.ServerImportOrigin
 enum class ExportFormat {
     INTERNAL,  // Full internal format with placeholders, groups, notes
     API        // Raw ComfyUI API format with placeholders replaced
+}
+
+/** Which types the workflows page shows; Image to Image covers both of its modes. */
+enum class WorkflowFilter(val types: Set<WorkflowType>) {
+    ALL(WorkflowType.entries.toSet()),
+    TTI(setOf(WorkflowType.TTI)),
+    ITI(setOf(WorkflowType.ITI_EDITING, WorkflowType.ITI_INPAINTING)),
+    TTV(setOf(WorkflowType.TTV)),
+    ITV(setOf(WorkflowType.ITV))
 }
 
 /**
@@ -50,6 +62,10 @@ data class WorkflowManagementUiState(
     val itiEditingWorkflows: List<WorkflowManager.Workflow> = emptyList(),
     val ttvWorkflows: List<WorkflowManager.Workflow> = emptyList(),
     val itvWorkflows: List<WorkflowManager.Workflow> = emptyList(),
+    // Workflows switched off by the user (not offered on the generation screens)
+    val disabledWorkflowIds: Set<String> = emptySet(),
+    // Types shown; kept while the app runs (the view model belongs to the activity), not saved
+    val filter: WorkflowFilter = WorkflowFilter.ALL,
 
     // Import dialog state
     val showImportDialog: Boolean = false,
@@ -89,10 +105,6 @@ data class WorkflowManagementUiState(
     val editNameError: String? = null,
     val editDescriptionError: String? = null,
 
-    // Delete confirmation dialog
-    val showDeleteDialog: Boolean = false,
-    val workflowToDelete: WorkflowManager.Workflow? = null,
-
     // Duplicate dialog state
     val showDuplicateDialog: Boolean = false,
     val duplicatingWorkflow: WorkflowManager.Workflow? = null,
@@ -118,6 +130,10 @@ sealed class WorkflowManagementEvent {
     data class LaunchEditor(val pendingUpload: PendingWorkflowUpload) : WorkflowManagementEvent()
     data class LaunchExportFilePicker(val suggestedFilename: String) : WorkflowManagementEvent()
     object WorkflowsChanged : WorkflowManagementEvent()
+    /** A copy was created; its details open. */
+    data class DuplicateCreated(val workflowId: String) : WorkflowManagementEvent()
+    /** The workflow shown was deleted; the page returns to the list. */
+    object WorkflowDeleted : WorkflowManagementEvent()
 }
 
 /**
@@ -250,21 +266,35 @@ class WorkflowManagementViewModel : ViewModel() {
      * Load all workflows and organize by type
      */
     fun loadWorkflows() {
-        val ctx = applicationContext ?: return
-        val showBuiltIn = AppSettings.isShowBuiltInWorkflows(ctx)
+        if (applicationContext == null) return
 
         _uiState.value = _uiState.value.copy(
-            ttiWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.TTI)
-                .filter { showBuiltIn || !it.isBuiltIn },
-            itiInpaintingWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.ITI_INPAINTING)
-                .filter { showBuiltIn || !it.isBuiltIn },
-            itiEditingWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.ITI_EDITING)
-                .filter { showBuiltIn || !it.isBuiltIn },
-            ttvWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.TTV)
-                .filter { showBuiltIn || !it.isBuiltIn },
+            disabledWorkflowIds = WorkflowManager.getDisabledWorkflowIds(),
+            ttiWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.TTI),
+            itiInpaintingWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.ITI_INPAINTING),
+            itiEditingWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.ITI_EDITING),
+            ttvWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.TTV),
             itvWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.ITV)
-                .filter { showBuiltIn || !it.isBuiltIn }
         )
+    }
+
+    /**
+     * Switch a workflow on or off; switched-off workflows stay in this list but are not offered
+     * on the generation screens.
+     */
+    fun onWorkflowEnabledChange(workflow: WorkflowManager.Workflow, enabled: Boolean) {
+        WorkflowManager.setWorkflowEnabled(workflow.id, enabled)
+        _uiState.value = _uiState.value.copy(disabledWorkflowIds = WorkflowManager.getDisabledWorkflowIds())
+    }
+
+    /** Switch all workflows of a type on or off (built-in and own). */
+    fun onSectionEnabledChange(type: WorkflowType, enabled: Boolean) {
+        WorkflowManager.setWorkflowsEnabled(WorkflowManager.getWorkflowsByType(type).map { it.id }, enabled)
+        _uiState.value = _uiState.value.copy(disabledWorkflowIds = WorkflowManager.getDisabledWorkflowIds())
+    }
+
+    fun onFilterChange(filter: WorkflowFilter) {
+        _uiState.value = _uiState.value.copy(filter = filter)
     }
 
     /**
@@ -631,42 +661,79 @@ class WorkflowManagementViewModel : ViewModel() {
             }
         }
 
+        // Primitive String nodes (node ID -> text input key), e.g. one "String (Multiline)" node
+        // feeding the same prompt to several text encoders
+        val primitiveTextNodes = mutableMapOf<String, String>()
+        for (nodeId in nodesJson.keys()) {
+            val node = nodesJson.optJSONObject(nodeId) ?: continue
+            val inputs = node.optJSONObject("inputs") ?: continue
+            val inputMap = inputs.keys().asSequence().associateWith { inputs.opt(it) }
+            TemplateKeyRegistry.primitiveTextKey(node.optString("class_type", ""), inputMap) { it is JSONArray }
+                ?.let { primitiveTextNodes[nodeId] = it }
+        }
+
+        fun candidateFor(nodeId: String, inputKey: String): FieldCandidate? {
+            val node = nodesJson.optJSONObject(nodeId) ?: return null
+            val classType = node.optString("class_type", "Unknown")
+            return FieldCandidate(
+                nodeId = nodeId,
+                nodeName = node.optJSONObject("_meta")?.optString("title") ?: classType,
+                classType = classType,
+                inputKey = inputKey,
+                currentValue = node.optJSONObject("inputs")?.opt(inputKey)
+            )
+        }
+
+        fun MutableList<FieldCandidate>.addUnique(candidate: FieldCandidate, first: Boolean = false) {
+            if (any { it.nodeId == candidate.nodeId && it.inputKey == candidate.inputKey }) return
+            if (first) add(0, candidate) else add(candidate)
+        }
+
         // For each text encoder, trace its output to find if it connects to positive or negative
         for ((nodeId, node, inputKey) in textEncoderNodes) {
             val inputs = node.optJSONObject("inputs") ?: continue
-            val meta = node.optJSONObject("_meta")
-            val classType = node.optString("class_type", "Unknown")
-            val title = meta?.optString("title") ?: classType
-            val currentValue = inputs.opt(inputKey)
+
+            // Text linked from a primitive String node: offer that node, so the prompt reaches
+            // every encoder it feeds instead of replacing this encoder's link
+            val sourceId = (inputs.opt(inputKey) as? JSONArray)?.optString(0, "")
+            val sourceKey = sourceId?.let { primitiveTextNodes[it] }
+            val candidate = (if (sourceId != null && sourceKey != null) {
+                candidateFor(sourceId, sourceKey)
+            } else {
+                candidateFor(nodeId, inputKey)
+            }) ?: continue
 
             // Determine if this node connects to positive or negative input
             val connectionType = traceClipTextEncodeConnection(nodesJson, nodeId)
 
-            val candidate = FieldCandidate(
-                nodeId = nodeId,
-                nodeName = title,
-                classType = classType,
-                inputKey = inputKey,
-                currentValue = currentValue
-            )
-
             when (connectionType) {
-                "positive" -> positiveTextCandidates.add(0, candidate) // Add traced match first
-                "negative" -> negativeTextCandidates.add(0, candidate) // Add traced match first
+                "positive" -> positiveTextCandidates.addUnique(candidate, first = true) // Traced match first
+                "negative" -> negativeTextCandidates.addUnique(candidate, first = true) // Traced match first
                 else -> {
                     // Unknown connection - use title-based classification
-                    val titleLower = title.lowercase()
+                    val titleLower = candidate.nodeName.lowercase()
                     when {
-                        titleLower.contains("positive") -> positiveTextCandidates.add(candidate)
-                        titleLower.contains("negative") -> negativeTextCandidates.add(candidate)
+                        titleLower.contains("positive") -> positiveTextCandidates.addUnique(candidate)
+                        titleLower.contains("negative") -> negativeTextCandidates.addUnique(candidate)
                         else -> {
                             // Add to both as fallback candidates
-                            positiveTextCandidates.add(candidate)
-                            negativeTextCandidates.add(candidate)
+                            positiveTextCandidates.addUnique(candidate)
+                            negativeTextCandidates.addUnique(candidate)
                         }
                     }
                 }
             }
+        }
+
+        // Primitive String nodes not feeding a text encoder (e.g. prompts of API nodes without
+        // CLIP encoding) as fallback candidates
+        for ((nodeId, inputKey) in primitiveTextNodes) {
+            val candidate = candidateFor(nodeId, inputKey) ?: continue
+            val alreadyOffered = (positiveTextCandidates + negativeTextCandidates).any { it.nodeId == nodeId }
+            if (alreadyOffered) continue
+            val titleLower = candidate.nodeName.lowercase()
+            if (!titleLower.contains("negative")) positiveTextCandidates.addUnique(candidate)
+            if (!titleLower.contains("positive")) negativeTextCandidates.addUnique(candidate)
         }
 
         return mapOf(
@@ -875,8 +942,9 @@ class WorkflowManagementViewModel : ViewModel() {
                 _events.emit(WorkflowManagementEvent.ShowToast(R.string.msg_workflow_import_success))
                 // Show conversion warnings if any
                 if (warnings.isNotEmpty()) {
-                    val warningMessage = applicationContext?.getString(
-                        R.string.msg_litegraph_conversion_notes,
+                    val warningMessage = applicationContext?.resources?.getQuantityString(
+                        R.plurals.msg_litegraph_conversion_notes,
+                        warnings.size,
                         warnings.size
                     ) ?: "Conversion completed with ${warnings.size} note(s)"
                     _events.emit(WorkflowManagementEvent.ShowToastMessage(warningMessage))
@@ -1007,42 +1075,21 @@ class WorkflowManagementViewModel : ViewModel() {
 
     // Delete flow
 
-    fun onDeleteWorkflow(workflow: WorkflowManager.Workflow) {
+    /**
+     * Delete an own workflow (the detail page confirms first). On success the page returns to the list
+     * ([WorkflowManagementEvent.WorkflowDeleted]).
+     */
+    fun deleteWorkflow(workflow: WorkflowManager.Workflow) {
         if (workflow.isBuiltIn) return
-
-        _uiState.value = _uiState.value.copy(
-            showDeleteDialog = true,
-            workflowToDelete = workflow
-        )
-    }
-
-    fun confirmDelete() {
-        val state = _uiState.value
-        val workflow = state.workflowToDelete ?: return
-
         viewModelScope.launch {
-            val success = WorkflowManager.deleteUserWorkflow(workflow.id)
-
-            if (success) {
-                _events.emit(WorkflowManagementEvent.ShowToast(R.string.msg_workflow_delete_success))
+            if (WorkflowManager.deleteUserWorkflow(workflow.id)) {
                 _events.emit(WorkflowManagementEvent.WorkflowsChanged)
                 loadWorkflows()
+                _events.emit(WorkflowManagementEvent.WorkflowDeleted)
             } else {
                 _events.emit(WorkflowManagementEvent.ShowToast(R.string.error_workflow_delete))
             }
-
-            _uiState.value = _uiState.value.copy(
-                showDeleteDialog = false,
-                workflowToDelete = null
-            )
         }
-    }
-
-    fun cancelDelete() {
-        _uiState.value = _uiState.value.copy(
-            showDeleteDialog = false,
-            workflowToDelete = null
-        )
     }
 
     // Duplicate flow
@@ -1114,10 +1161,12 @@ class WorkflowManagementViewModel : ViewModel() {
                 newDescription = description
             )
 
-            if (result.isSuccess) {
-                _events.emit(WorkflowManagementEvent.ShowToast(R.string.msg_workflow_duplicate_success))
+            val copy = result.getOrNull()
+            if (copy != null) {
                 _events.emit(WorkflowManagementEvent.WorkflowsChanged)
                 loadWorkflows()
+                // The detail page opens the copy's details
+                _events.emit(WorkflowManagementEvent.DuplicateCreated(copy.id))
             } else {
                 _events.emit(WorkflowManagementEvent.ShowToastMessage(
                     result.exceptionOrNull()?.message ?: "Duplicate failed"

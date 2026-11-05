@@ -4,14 +4,10 @@ import sh.hnet.comfychair.model.LoraSelection
 import sh.hnet.comfychair.model.WorkflowCapabilities
 
 /**
- * Interface for common generation state properties shared across all UiState types.
+ * Read-only view of the generation parameters every screen carries.
  *
- * This enables shared helper functions for BottomSheetConfig construction.
- * Each screen's UiState data class implements this interface.
- *
- * Note: Kotlin data classes automatically satisfy interface properties
- * if they have matching property names, so implementing this interface
- * requires no additional code in the UiState classes.
+ * Implemented by [sh.hnet.comfychair.viewmodel.base.GenerationParams]; each screen's UiState delegates to its
+ * params (`: CommonGenerationState by params`), so screens and the options sheet builder read these fields directly.
  */
 interface CommonGenerationState {
     // Workflow capabilities (controls field visibility)
@@ -39,6 +35,8 @@ interface CommonGenerationState {
     val availableTextEncoders: List<String>
     val availableLatentUpscaleModels: List<String>
     val availableUpscaleMethods: List<String>
+    val availableSamplers: List<String>
+    val availableSchedulers: List<String>
 
     // Workflow-filtered model options
     val filteredCheckpoints: List<String>?
@@ -52,6 +50,8 @@ interface CommonGenerationState {
     val filteredTextEncoders: List<String>?
     val filteredLatentUpscaleModels: List<String>?
     val filteredLoras: List<String>?
+    /** Options of the node that holds {{upscale_method}}; the server-wide list mixes in custom nodes' values */
+    val filteredUpscaleMethods: List<String>?
 
     // Generation parameters
     val steps: String
@@ -79,5 +79,29 @@ interface CommonGenerationState {
     val loraChain: List<LoraSelection>
 
     // Model refresh loading state
-    val isRefreshingModels: Boolean
+    val isRefreshingModels: Boolean get() = false
+    // Workflow, prompts, dimensions, video length and dual-model selections
+    val selectedWorkflow: String
+    val selectedWorkflowId: String
+    val workflowPlaceholders: Set<String>
+    val positivePrompt: String
+    val negativePrompt: String
+    val selectedHighnoiseUnet: String
+    val selectedLownoiseUnet: String
+    val selectedHighnoiseLora: String
+    val selectedLownoiseLora: String
+    val isLoadingModels: Boolean
+    val modelsLoaded: Boolean
+    val width: String
+    val height: String
+    val megapixels: String
+    val length: String
+    val fps: String
+    val widthError: String?
+    val heightError: String?
+    val megapixelsError: String?
+    val lengthError: String?
+    val fpsError: String?
+    val highnoiseLoraChain: List<LoraSelection>
+    val lownoiseLoraChain: List<LoraSelection>
 }

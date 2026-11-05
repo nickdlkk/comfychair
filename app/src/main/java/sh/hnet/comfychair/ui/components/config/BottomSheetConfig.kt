@@ -3,7 +3,9 @@ package sh.hnet.comfychair.ui.components.config
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.runtime.Stable
+import androidx.compose.ui.graphics.vector.ImageVector
 import sh.hnet.comfychair.model.LoraSelection
+import sh.hnet.comfychair.ui.components.generation.WorkflowGroup
 import sh.hnet.comfychair.ui.components.shared.WorkflowItemBase
 import sh.hnet.comfychair.viewmodel.ImageToImageMode
 
@@ -14,7 +16,6 @@ import sh.hnet.comfychair.viewmodel.ImageToImageMode
 @Stable
 data class BottomSheetConfig(
     val workflow: WorkflowConfig,
-    val prompts: PromptConfig,
     val itiConfig: ItiConfig? = null,
     val models: ModelConfig,
     val parameters: ParameterConfig,
@@ -29,17 +30,10 @@ data class WorkflowConfig(
     val selectedWorkflow: String,
     val availableWorkflows: List<WorkflowItemBase>,
     val onWorkflowChange: (String) -> Unit,
-    val onViewWorkflow: () -> Unit
-)
-
-/**
- * Prompt fields configuration
- */
-@Stable
-data class PromptConfig(
-    val negativePrompt: String,
-    val onNegativePromptChange: (String) -> Unit,
-    val hasNegativePrompt: Boolean = true
+    val onViewWorkflow: () -> Unit,
+    /** The workflow menu's groups (Image to Image: one per mode) */
+    val groups: List<WorkflowGroup>,
+    val icon: ImageVector
 )
 
 /**

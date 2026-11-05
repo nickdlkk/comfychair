@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,8 +40,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import sh.hnet.comfychair.R
 import sh.hnet.comfychair.model.LoraSelection
+import sh.hnet.comfychair.ui.components.shared.HierarchicalTreeItems
 import sh.hnet.comfychair.ui.components.shared.ModelPathText
-import java.util.Locale
+import sh.hnet.comfychair.ui.components.shared.buildModelTree
+import sh.hnet.comfychair.ui.components.shared.folderPathOf
+import sh.hnet.comfychair.ui.components.shared.modelTreeHasFolders
 
 /**
  * Reusable component for editing a LoRA chain (0-5 LoRAs with per-LoRA strength)
@@ -63,9 +67,11 @@ fun LoraChainEditor(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // The title wraps if needed; the button keeps its one-line width, so every chain's header looks the same
             Text(
                 text = title,
-                style = MaterialTheme.typography.labelLarge
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.weight(1f)
             )
 
             TextButton(
@@ -78,7 +84,7 @@ fun LoraChainEditor(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text(stringResource(R.string.button_add_lora))
+                Text(stringResource(R.string.button_add_lora), maxLines = 1, softWrap = false)
             }
         }
 
@@ -91,22 +97,35 @@ fun LoraChainEditor(
                 modifier = Modifier.padding(vertical = 8.dp)
             )
         } else {
-            // LoRA entries
-            loraChain.forEachIndexed { index, lora ->
-                key(lora.name, index) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    LoraEntryItem(
-                        index = index,
-                        lora = lora,
-                        availableLoras = availableLoras,
-                        onNameChange = { name -> onLoraNameChange(index, name) },
-                        onStrengthChange = { strength -> onLoraStrengthChange(index, strength) },
-                        onRemove = { onRemoveLora(index) }
-                    )
+            // LoRA entries as a segmented list
+            Spacer(modifier = Modifier.height(8.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                loraChain.forEachIndexed { index, lora ->
+                    key(lora.name, index) {
+                        LoraEntryItem(
+                            index = index,
+                            lora = lora,
+                            shape = entryShape(index, loraChain.size),
+                            availableLoras = availableLoras,
+                            onNameChange = { name -> onLoraNameChange(index, name) },
+                            onStrengthChange = { strength -> onLoraStrengthChange(index, strength) },
+                            onRemove = { onRemoveLora(index) }
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+/**
+ * Corner shape of an entry by its position, so the chain reads as one segmented group.
+ */
+private fun entryShape(index: Int, count: Int): RoundedCornerShape = when {
+    count == 1 -> RoundedCornerShape(16.dp)
+    index == 0 -> RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
+    index == count - 1 -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
+    else -> RoundedCornerShape(4.dp)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -114,6 +133,7 @@ fun LoraChainEditor(
 private fun LoraEntryItem(
     index: Int,
     lora: LoraSelection,
+    shape: RoundedCornerShape,
     availableLoras: List<String>,
     onNameChange: (String) -> Unit,
     onStrengthChange: (Float) -> Unit,
@@ -121,143 +141,102 @@ private fun LoraEntryItem(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Column(
+    val tree = remember(availableLoras) { buildModelTree(availableLoras) }
+    val hasFolders = remember(tree) { modelTreeHasFolders(tree) }
+    var expandedPath by remember(lora.name) { mutableStateOf(folderPathOf(lora.name)) }
+
+    // Label carries the position and folder, the field shows only the file name
+    val folder = folderPathOf(lora.name)
+    val entryLabel = if (folder.isEmpty()) {
+        stringResource(R.string.label_lora_entry, index + 1)
+    } else {
+        stringResource(R.string.label_lora_entry_folder, index + 1, folder)
+    }
+    val fileName = lora.name.replace('\\', '/').substringAfterLast('/').removeSuffix(".safetensors")
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = shape,
         modifier = Modifier.fillMaxWidth()
     ) {
-        // LoRA selection row with dropdown and remove button
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(start = 12.dp, top = 12.dp, end = 4.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Index indicator
-            Text(
-                text = "${index + 1}.",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.width(24.dp)
-            )
-
-            // LoRA dropdown
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = it },
-                modifier = Modifier.weight(1f)
+            // LoRA selection row with dropdown and remove button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                OutlinedTextField(
-                    value = lora.name,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text(stringResource(R.string.label_lora)) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                    modifier = Modifier
-                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                        .fillMaxWidth(),
-                    singleLine = true
-                )
-
-                ExposedDropdownMenu(
+                // LoRA dropdown
+                ExposedDropdownMenuBox(
                     expanded = expanded,
-                    onDismissRequest = { expanded = false }
+                    onExpandedChange = {
+                        expanded = it
+                        if (it) expandedPath = folderPathOf(lora.name)
+                    },
+                    modifier = Modifier.weight(1f)
                 ) {
-                    availableLoras.forEach { option ->
-                        DropdownMenuItem(
-                            text = { ModelPathText(option) },
-                            onClick = {
-                                onNameChange(option)
-                                expanded = false
-                            },
-                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
-                        )
+                    OutlinedTextField(
+                        value = fileName,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(entryLabel) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        if (!hasFolders) {
+                            availableLoras.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { ModelPathText(option) },
+                                    onClick = {
+                                        onNameChange(option)
+                                        expanded = false
+                                    },
+                                    contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                                )
+                            }
+                        } else {
+                            HierarchicalTreeItems(
+                                nodes = tree,
+                                expandedPath = expandedPath,
+                                selectedValue = lora.name,
+                                depth = 0,
+                                onExpandFolder = { expandedPath = it },
+                                onSelectModel = {
+                                    onNameChange(it)
+                                    expanded = false
+                                }
+                            )
+                        }
                     }
                 }
-            }
 
-            // Remove button
-            IconButton(onClick = onRemove) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = stringResource(R.string.button_remove_lora)
-                )
-            }
-        }
-
-        // Strength input row with +/- buttons
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 24.dp, end = 48.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.label_lora_strength),
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.width(64.dp)
-            )
-
-            OutlinedTextField(
-                value = String.format(Locale.US, "%.2f", lora.strength),
-                onValueChange = { text ->
-                    text.toFloatOrNull()?.let { onStrengthChange(it) }
-                },
-                modifier = Modifier.weight(1f),
-                textStyle = MaterialTheme.typography.bodySmall.copy(
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                ),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Decimal
-                ),
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp)
-            )
-
-            // Decrease button
-            IconButton(
-                onClick = {
-                    val step = 0.1f
-                    onStrengthChange(lora.strength - step)
-                },
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Remove,
-                    contentDescription = stringResource(R.string.content_description_decrease)
-                )
-            }
-
-            // Increase button
-            IconButton(
-                onClick = {
-                    val step = 0.1f
-                    onStrengthChange(lora.strength + step)
-                },
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = stringResource(R.string.content_description_increase)
-                )
-            }
-        }
-
-        // Preset strength chips
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            val presets = listOf(-1.0f, -0.5f, 0.5f, 1.0f, 1.5f)
-            presets.forEach { preset ->
-                TextButton(
-                    onClick = { onStrengthChange(preset) },
-                    modifier = Modifier.height(28.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                ) {
-                    Text(
-                        text = String.format(Locale.US, "%.1f", preset),
-                        style = MaterialTheme.typography.labelSmall
+                // Remove button
+                IconButton(onClick = onRemove) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = stringResource(R.string.button_remove_lora)
                     )
                 }
             }
+
+            // Strength rows end where the dropdown ends (4dp spacing + 48dp remove button)
+            LoraStrengthControl(
+                entryKey = "$index:${lora.name}",
+                strength = lora.strength,
+                onStrengthChange = onStrengthChange,
+                modifier = Modifier.padding(end = 52.dp)
+            )
         }
     }
 }

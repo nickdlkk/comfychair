@@ -9,13 +9,6 @@ import sh.hnet.comfychair.WorkflowType
  */
 object TemplateKeyRegistry {
 
-    /** Literal image markers in built-ins are managed just like placeholders, including slots 2–4. */
-    fun isAppManagedValue(value: Any?): Boolean {
-        val text = value as? String ?: return false
-        return (text.contains("{{") && text.contains("}}")) || text in setOf(
-            "uploaded_image.png [input]", "reference_image_1.png [input]", "reference_image_2.png [input]"
-        )
-    }
 
     /**
      * Map from placeholder name to the JSON input key it targets.
@@ -116,11 +109,11 @@ object TemplateKeyRegistry {
      * These are the minimum fields needed for a workflow to function.
      */
     private val REQUIRED_KEYS_BY_TYPE: Map<WorkflowType, Set<String>> = mapOf(
-        WorkflowType.TTI to setOf("positive_text"),
-        WorkflowType.ITI_INPAINTING to setOf("positive_text", "image"),
-        WorkflowType.ITI_EDITING to setOf("positive_text", "image"),
-        WorkflowType.TTV to setOf("positive_text"),
-        WorkflowType.ITV to setOf("positive_text", "image")
+        WorkflowType.TTI to emptySet(),
+        WorkflowType.ITI_INPAINTING to setOf("image"),
+        WorkflowType.ITI_EDITING to setOf("image"),
+        WorkflowType.TTV to emptySet(),
+        WorkflowType.ITV to setOf("image")
     )
 
     /**
@@ -128,7 +121,7 @@ object TemplateKeyRegistry {
      * Field visibility is determined by WorkflowDefaults capability flags at runtime.
      */
     private val UNIVERSAL_OPTIONAL_KEYS: Set<String> = setOf(
-        "negative_text", "ckpt_name", "unet_name", "vae_name",
+        "positive_text", "negative_text", "ckpt_name", "unet_name", "vae_name",
         "clip_name", "clip_name1", "clip_name2", "clip_name3", "clip_name4",
         "width", "height", "steps", "cfg", "sampler_name", "scheduler",
         "megapixels", "lora_name",
@@ -201,6 +194,45 @@ object TemplateKeyRegistry {
      */
     fun getJsonKeyForPlaceholder(placeholder: String): String {
         return PLACEHOLDER_TO_KEY[placeholder] ?: placeholder
+    }
+
+    /**
+     * Literal input values the app replaces at generation time, just like {{placeholders}}.
+     * Built-in inpainting and editing workflows use these instead of {{image_filename}}.
+     */
+    private val GENERATION_MARKERS = setOf(
+        "uploaded_image.png [input]",
+        "reference_image_1.png [input]",
+        "reference_image_2.png [input]"
+    )
+
+    /**
+     * Check if an input value is filled in by the app at generation time ({{placeholder}} or image
+     * marker). Such inputs must not be editable in the Workflow Editor, and saved node attribute
+     * edits must not override them, or e.g. a stale filename would replace every freshly uploaded image.
+     */
+    fun isAppManagedValue(value: Any?): Boolean {
+        val str = value as? String ?: return false
+        return (str.contains("{{") && str.contains("}}")) || str in GENERATION_MARKERS
+    }
+
+    // Input keys holding the text of primitive String nodes (e.g. PrimitiveStringMultiline "value")
+    private val PRIMITIVE_TEXT_KEYS = listOf("value", "string", "text")
+
+    /**
+     * Returns the input key holding the text if the node is a primitive String node, e.g.
+     * "String (Multiline)" feeding one prompt to several text encoders. A prompt mapped to it
+     * reaches all of them, instead of replacing the link of a single encoder.
+     *
+     * @param classType Node class type
+     * @param inputs Input values of the node; links are represented by [isLink]
+     * @param isLink Whether an input value is a link to another node
+     */
+    fun primitiveTextKey(classType: String, inputs: Map<String, Any?>, isLink: (Any?) -> Boolean): String? {
+        if (!classType.contains("String", ignoreCase = true)) return null
+        // A primitive only holds literals; nodes processing strings (concatenate, replace) have links
+        if (inputs.values.any(isLink)) return null
+        return PRIMITIVE_TEXT_KEYS.firstOrNull { inputs[it] is String }
     }
 
     /**

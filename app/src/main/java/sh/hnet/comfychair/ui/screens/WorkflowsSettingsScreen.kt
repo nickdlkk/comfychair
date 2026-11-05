@@ -1,14 +1,22 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package sh.hnet.comfychair.ui.screens
 
 import android.app.Activity
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -20,14 +28,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import sh.hnet.comfychair.ui.components.shared.NoOverscrollContainer
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Refresh
@@ -37,51 +48,108 @@ import java.text.DateFormat
 import java.util.Date
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.ArrowDropUp
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DataObject
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.OpenInFull
+import androidx.compose.material.icons.rounded.ToggleOff
+import androidx.compose.material.icons.rounded.ToggleOn
+import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenuGroup
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenuPopup
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FloatingActionButtonMenu
+import androidx.compose.material3.FloatingActionButtonMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItemShapes
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.MediumFlexibleTopAppBar
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleFloatingActionButton
+import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import sh.hnet.comfychair.ui.components.WorkflowThumbnail
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 import sh.hnet.comfychair.R
-import sh.hnet.comfychair.storage.AppSettings
-import sh.hnet.comfychair.ui.components.SettingsMenuDropdown
 import sh.hnet.comfychair.ui.components.shared.rememberLastPickedDocumentUri
 import sh.hnet.comfychair.ui.components.shared.rememberOpenDocumentWithInitialUri
-import sh.hnet.comfychair.connection.ConnectionManager
-import sh.hnet.comfychair.WorkflowManager
 import sh.hnet.comfychair.WorkflowEditorActivity
+import sh.hnet.comfychair.WorkflowManager
 import sh.hnet.comfychair.WorkflowType
-import sh.hnet.comfychair.WorkflowTypeDisplay
+import sh.hnet.comfychair.connection.ConnectionManager
+import sh.hnet.comfychair.storage.AppSettings
+import sh.hnet.comfychair.ui.components.LocalAppSnackbarHostState
+import sh.hnet.comfychair.ui.components.WorkflowThumbnail
+import sh.hnet.comfychair.ui.components.settings.ConfirmDestructiveDialog
+import sh.hnet.comfychair.ui.components.settings.SettingsActionRow
+import sh.hnet.comfychair.ui.components.settings.SettingsGroup
+import sh.hnet.comfychair.ui.components.settings.SettingsPage
+import sh.hnet.comfychair.ui.components.settings.SettingsSwitchRow
+import sh.hnet.comfychair.ui.components.shared.NoOverscrollContainer
+import sh.hnet.comfychair.ui.components.shared.TooltipIconButton
+import sh.hnet.comfychair.ui.components.workflow.DuplicateNameDialog
+import sh.hnet.comfychair.ui.components.workflow.MissingFieldsDialog
+import sh.hnet.comfychair.ui.components.workflow.MissingNodesDialog
+import sh.hnet.comfychair.ui.components.workflow.WorkflowDetailsDialog
 import sh.hnet.comfychair.viewmodel.ExportFormat
+import sh.hnet.comfychair.viewmodel.WorkflowFilter
 import sh.hnet.comfychair.viewmodel.WorkflowManagementEvent
 import sh.hnet.comfychair.viewmodel.WorkflowManagementViewModel
 import sh.hnet.comfychair.viewmodel.WorkflowManagementUiState
@@ -90,8 +158,8 @@ import sh.hnet.comfychair.viewmodel.WorkflowManagementUiState
 @Composable
 fun WorkflowsSettingsScreen(
     viewModel: WorkflowManagementViewModel,
-    onNavigateToGeneration: () -> Unit,
-    onLogout: () -> Unit
+    onNavigateBack: () -> Unit,
+    onOpenDetails: (workflowId: String) -> Unit
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
@@ -145,36 +213,16 @@ fun WorkflowsSettingsScreen(
         }
     }
 
-    // Editor launcher for editing existing workflow structure
-    val editExistingLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            // Reload from disk and refresh UI - workflow was updated by WorkflowEditorViewModel
-            viewModel.reloadAndRefreshWorkflows()
-        }
-    }
-
-    // Export file picker launcher
-    var exportFilename by remember { mutableStateOf("workflow.json") }
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        if (uri != null) {
-            viewModel.performExport(context, uri)
-        } else {
-            viewModel.cancelExport()
-        }
-    }
-
     // Initialize ViewModel
     LaunchedEffect(Unit) {
         viewModel.initialize(context)
     }
 
-    // Handle events
-    LaunchedEffect(Unit) {
-        viewModel.events.collect { event ->
+    // Handle events, only while this page is on top (the detail page handles its own)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+          viewModel.events.collect { event ->
             when (event) {
                 is WorkflowManagementEvent.ShowToast -> {
                     Toast.makeText(context, event.messageResId, Toast.LENGTH_SHORT).show()
@@ -196,157 +244,100 @@ fun WorkflowsSettingsScreen(
                         editorLauncher.launch(intent)
                     }
                 }
-                is WorkflowManagementEvent.LaunchExportFilePicker -> {
-                    exportFilename = event.suggestedFilename
-                    exportLauncher.launch(event.suggestedFilename)
-                }
+                // From the detail page
+                is WorkflowManagementEvent.LaunchExportFilePicker,
+                is WorkflowManagementEvent.DuplicateCreated,
+                is WorkflowManagementEvent.WorkflowDeleted -> Unit
                 is WorkflowManagementEvent.WorkflowsChanged -> {
-                    // Handled by SettingsContainerActivity to set result
+                    // Handled by MainContainerActivity (reload when leaving the Settings tab)
                 }
             }
+          }
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Top App Bar
-        TopAppBar(
-            title = { Text(stringResource(R.string.title_workflows_settings)) },
-            windowInsets = WindowInsets(0, 0, 0, 0),
-            actions = {
-                // New workflow button
-                IconButton(onClick = {
-                    createEditorLauncher.launch(
-                        WorkflowEditorActivity.createIntentForNewWorkflow(context)
-                    )
-                }) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.button_new_workflow))
-                }
-                // Import button
-                IconButton(onClick = { jsonPickerLauncher.launch(arrayOf("application/json")) }) {
-                    Icon(Icons.Default.UploadFile, contentDescription = stringResource(R.string.button_import))
-                }
-                IconButton(onClick = {
-                    if (uiState.showServerWorkflows) viewModel.closeServerWorkflows()
-                    else viewModel.openServerWorkflows()
-                }) {
-                    Icon(Icons.Default.CloudDownload, contentDescription = stringResource(R.string.server_workflow_import))
-                }
-                // Menu button
-                SettingsMenuDropdown(
-                    onGeneration = onNavigateToGeneration,
-                    onLogout = onLogout
-                )
-            }
-        )
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val listState = rememberLazyListState()
+    // Import and Create need the server: imports are checked against it, and the editor saves through it
+    val offline = remember { AppSettings.isOfflineMode(context) }
+    val allSections = listOf(
+        WorkflowSectionData(WorkflowType.TTI, R.string.workflow_section_tti, uiState.ttiWorkflows),
+        WorkflowSectionData(WorkflowType.ITI_EDITING, R.string.workflow_section_iti_editing, uiState.itiEditingWorkflows),
+        WorkflowSectionData(WorkflowType.ITI_INPAINTING, R.string.workflow_section_iti_inpainting, uiState.itiInpaintingWorkflows),
+        WorkflowSectionData(WorkflowType.TTV, R.string.workflow_section_ttv, uiState.ttvWorkflows),
+        WorkflowSectionData(WorkflowType.ITV, R.string.workflow_section_itv, uiState.itvWorkflows)
+    )
+    val allWorkflows = allSections.flatMap { it.workflows }
+    val enabledTotal = allWorkflows.count { it.id !in uiState.disabledWorkflowIds }
+    val openDetails: (WorkflowManager.Workflow) -> Unit = { onOpenDetails(it.id) }
 
-        if (uiState.showServerWorkflows) {
-            ServerWorkflowPanel(
-                state = uiState,
-                onSearch = viewModel::setServerSearch,
-                onRefresh = viewModel::refreshServerWorkflows,
-                onClose = viewModel::closeServerWorkflows,
-                onSelect = viewModel::selectServerWorkflow
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            MediumFlexibleTopAppBar(
+                title = { Text(stringResource(R.string.title_workflows_settings)) },
+                subtitle = { Text(stringResource(R.string.label_workflows_enabled_count, enabledTotal, allWorkflows.size)) },
+                navigationIcon = {
+                    TooltipIconButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.content_description_back), onNavigateBack)
+                },
+                windowInsets = WindowInsets(0, 0, 0, 0),
+                scrollBehavior = scrollBehavior,
+                actions = {
+                    IconButton(onClick = {
+                        if (uiState.showServerWorkflows) viewModel.closeServerWorkflows()
+                        else viewModel.openServerWorkflows()
+                    }, enabled = !offline) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = stringResource(R.string.server_workflow_import))
+                    }
+                }
             )
-        }
-
-        // Loading indicator
-        if (uiState.isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
+            if (uiState.showServerWorkflows) {
+                ServerWorkflowPanel(uiState, viewModel::setServerSearch, viewModel::refreshServerWorkflows,
+                    viewModel::closeServerWorkflows, viewModel::selectServerWorkflow)
             }
-        } else {
-            // Workflow list organized by type
-            NoOverscrollContainer(modifier = Modifier.fillMaxSize()) {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp)
-                ) {
-                // Text-to-Image
-                item {
-                    WorkflowSection(
-                        title = stringResource(R.string.workflow_section_tti),
-                        workflows = uiState.ttiWorkflows,
-                        onWorkflowClick = { context.startActivity(WorkflowEditorActivity.createIntent(context, it.id)) },
-                        onEditStructure = { editExistingLauncher.launch(WorkflowEditorActivity.createIntentForEditingExisting(context, it.id)) },
-                        onRename = { viewModel.onEditWorkflow(it) },
-                        onDuplicate = { viewModel.onDuplicateWorkflow(it) },
-                        onExport = { workflow, format -> viewModel.onExportWorkflow(workflow, format) },
-                        onDelete = { viewModel.onDeleteWorkflow(it) }
-                    )
-                }
 
-                // Image to Image: Inpainting
-                item {
-                    WorkflowSection(
-                        title = stringResource(R.string.workflow_section_iti_inpainting),
-                        workflows = uiState.itiInpaintingWorkflows,
-                        onWorkflowClick = { context.startActivity(WorkflowEditorActivity.createIntent(context, it.id)) },
-                        onEditStructure = { editExistingLauncher.launch(WorkflowEditorActivity.createIntentForEditingExisting(context, it.id)) },
-                        onRename = { viewModel.onEditWorkflow(it) },
-                        onDuplicate = { viewModel.onDuplicateWorkflow(it) },
-                        onExport = { workflow, format -> viewModel.onExportWorkflow(workflow, format) },
-                        onDelete = { viewModel.onDeleteWorkflow(it) }
-                    )
+            if (uiState.isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    LoadingIndicator()
                 }
-
-                // Image to Image: Editing
-                item {
-                    WorkflowSection(
-                        title = stringResource(R.string.workflow_section_iti_editing),
-                        workflows = uiState.itiEditingWorkflows,
-                        onWorkflowClick = { context.startActivity(WorkflowEditorActivity.createIntent(context, it.id)) },
-                        onEditStructure = { editExistingLauncher.launch(WorkflowEditorActivity.createIntentForEditingExisting(context, it.id)) },
-                        onRename = { viewModel.onEditWorkflow(it) },
-                        onDuplicate = { viewModel.onDuplicateWorkflow(it) },
-                        onExport = { workflow, format -> viewModel.onExportWorkflow(workflow, format) },
-                        onDelete = { viewModel.onDeleteWorkflow(it) }
-                    )
-                }
-
-                // Text-to-Video
-                item {
-                    WorkflowSection(
-                        title = stringResource(R.string.workflow_section_ttv),
-                        workflows = uiState.ttvWorkflows,
-                        onWorkflowClick = { context.startActivity(WorkflowEditorActivity.createIntent(context, it.id)) },
-                        onEditStructure = { editExistingLauncher.launch(WorkflowEditorActivity.createIntentForEditingExisting(context, it.id)) },
-                        onRename = { viewModel.onEditWorkflow(it) },
-                        onDuplicate = { viewModel.onDuplicateWorkflow(it) },
-                        onExport = { workflow, format -> viewModel.onExportWorkflow(workflow, format) },
-                        onDelete = { viewModel.onDeleteWorkflow(it) }
-                    )
-                }
-
-                // Image-to-Video
-                item {
-                    WorkflowSection(
-                        title = stringResource(R.string.workflow_section_itv),
-                        workflows = uiState.itvWorkflows,
-                        onWorkflowClick = { context.startActivity(WorkflowEditorActivity.createIntent(context, it.id)) },
-                        onEditStructure = { editExistingLauncher.launch(WorkflowEditorActivity.createIntentForEditingExisting(context, it.id)) },
-                        onRename = { viewModel.onEditWorkflow(it) },
-                        onDuplicate = { viewModel.onDuplicateWorkflow(it) },
-                        onExport = { workflow, format -> viewModel.onExportWorkflow(workflow, format) },
-                        onDelete = { viewModel.onDeleteWorkflow(it) }
-                    )
-                }
-
-                // Bottom padding
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
+            } else {
+                NoOverscrollContainer(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        // Room under the last row for Import
+                        contentPadding = PaddingValues(bottom = 96.dp),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .nestedScroll(scrollBehavior.nestedScrollConnection)
+                    ) {
+                        item(key = "filters") { WorkflowFilterChips(uiState.filter, viewModel::onFilterChange) }
+                        allSections.filter { it.type in uiState.filter.types }.forEach { section ->
+                            item(key = section.type.name) {
+                                WorkflowSection(
+                                    section = section,
+                                    disabledWorkflowIds = uiState.disabledWorkflowIds,
+                                    onOpen = openDetails,
+                                    onEnabledChange = { workflow, enabled -> viewModel.onWorkflowEnabledChange(workflow, enabled) },
+                                    onSectionEnabledChange = { enabled -> viewModel.onSectionEnabledChange(section.type, enabled) }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
+
+        // Add a workflow: build one in the editor, or import a file (exported from ComfyUI or from this app)
+        AddWorkflowMenu(
+            offline = offline,
+            onCreate = { createEditorLauncher.launch(WorkflowEditorActivity.createIntentForNewWorkflow(context)) },
+            onImport = { jsonPickerLauncher.launch(arrayOf("application/json")) }
+        )
     }
 
     // Import dialog
     if (uiState.showImportDialog) {
-        ImportWorkflowDialog(
+        WorkflowDetailsDialog(
+            titleRes = R.string.title_import_workflow,
             selectedType = uiState.importSelectedType,
             onTypeSelected = viewModel::onImportTypeSelected,
             isTypeDropdownExpanded = uiState.importTypeDropdownExpanded,
@@ -390,42 +381,6 @@ fun WorkflowsSettingsScreen(
         )
     }
 
-    // Edit dialog
-    if (uiState.showEditDialog) {
-        EditWorkflowDialog(
-            name = uiState.editName,
-            onNameChange = viewModel::onEditNameChange,
-            nameError = uiState.editNameError,
-            description = uiState.editDescription,
-            onDescriptionChange = viewModel::onEditDescriptionChange,
-            descriptionError = uiState.editDescriptionError,
-            onConfirm = viewModel::confirmEdit,
-            onDismiss = viewModel::cancelEdit
-        )
-    }
-
-    // Delete confirmation dialog
-    if (uiState.showDeleteDialog) {
-        DeleteWorkflowDialog(
-            workflowName = uiState.workflowToDelete?.name ?: "",
-            onConfirm = viewModel::confirmDelete,
-            onDismiss = viewModel::cancelDelete
-        )
-    }
-
-    // Duplicate dialog
-    if (uiState.showDuplicateDialog) {
-        DuplicateWorkflowDialog(
-            name = uiState.duplicateName,
-            onNameChange = viewModel::onDuplicateNameChange,
-            nameError = uiState.duplicateNameError,
-            description = uiState.duplicateDescription,
-            onDescriptionChange = viewModel::onDuplicateDescriptionChange,
-            descriptionError = uiState.duplicateDescriptionError,
-            onConfirm = viewModel::confirmDuplicate,
-            onDismiss = viewModel::cancelDuplicate
-        )
-    }
 }
 
 @Composable
@@ -520,429 +475,562 @@ private fun parseMappingsFromJson(jsonString: String): Map<String, Pair<String, 
     return mappings
 }
 
+/** A type's workflows on the page, with its title. */
+private class WorkflowSectionData(val type: WorkflowType, val titleRes: Int, val workflows: List<WorkflowManager.Workflow>)
+
+private val filterLabels = listOf(
+    WorkflowFilter.ALL to R.string.label_workflows_filter_all,
+    WorkflowFilter.TTI to R.string.workflow_section_tti,
+    WorkflowFilter.ITI to R.string.label_workflows_filter_iti,
+    WorkflowFilter.TTV to R.string.workflow_section_ttv,
+    WorkflowFilter.ITV to R.string.workflow_section_itv
+)
+
+/** Which types the page shows: one choice, scrolled into view when picked. */
+@Composable
+private fun WorkflowFilterChips(selected: WorkflowFilter, onSelect: (WorkflowFilter) -> Unit) {
+    val rowState = rememberLazyListState()
+    LaunchedEffect(selected) {
+        rowState.animateScrollToItem(filterLabels.indexOfFirst { it.first == selected }.coerceAtLeast(0))
+    }
+    val groupLabel = stringResource(R.string.content_description_workflows_filter)
+    LazyRow(
+        state = rowState,
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectableGroup()
+            .semantics { contentDescription = groupLabel }
+    ) {
+        items(filterLabels, key = { it.first.name }) { (filter, labelRes) ->
+            val isSelected = filter == selected
+            FilterChip(
+                selected = isSelected,
+                onClick = { onSelect(filter) },
+                label = { Text(stringResource(labelRes)) },
+                leadingIcon = if (isSelected) {
+                    { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
+                } else null,
+                modifier = Modifier.semantics { role = Role.RadioButton }
+            )
+        }
+    }
+}
+
 /**
- * A complete workflow section with header and segmented list card.
+ * A type's workflows: its heading with the count of those switched on (a menu switches all on or off), a warning when
+ * none is on, then your workflows (by name) and the built-in ones, each a segmented group of name-and-switch rows.
  */
 @Composable
 private fun WorkflowSection(
-    title: String,
-    workflows: List<WorkflowManager.Workflow>,
-    onWorkflowClick: (WorkflowManager.Workflow) -> Unit,
-    onEditStructure: (WorkflowManager.Workflow) -> Unit,
-    onRename: (WorkflowManager.Workflow) -> Unit,
-    onDuplicate: (WorkflowManager.Workflow) -> Unit,
-    onExport: (WorkflowManager.Workflow, ExportFormat) -> Unit,
-    onDelete: (WorkflowManager.Workflow) -> Unit
+    section: WorkflowSectionData,
+    disabledWorkflowIds: Set<String>,
+    onOpen: (WorkflowManager.Workflow) -> Unit,
+    onEnabledChange: (WorkflowManager.Workflow, Boolean) -> Unit,
+    onSectionEnabledChange: (Boolean) -> Unit
 ) {
-    Column {
-        // Section header
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-        )
+    val title = stringResource(section.titleRes)
+    val workflows = section.workflows
+    val enabledCount = workflows.count { it.id !in disabledWorkflowIds }
+    val own = workflows.filter { !it.isBuiltIn }.sortedBy { it.name.lowercase() }
+    val builtIn = workflows.filter { it.isBuiltIn }
 
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 16.dp)
+                    .semantics { heading() }
+            )
+            if (workflows.isNotEmpty()) {
+                SectionCountButton(enabledCount, workflows.size, onSectionEnabledChange)
+            }
+        }
         if (workflows.isEmpty()) {
-            // Empty state
             Text(
                 text = stringResource(R.string.workflow_section_empty),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 8.dp)
+                modifier = Modifier.padding(horizontal = 16.dp)
             )
-        } else {
-            // Card containing all workflows with dividers
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column {
-                    workflows.forEachIndexed { index, workflow ->
-                        key(workflow.id) {
-                            WorkflowListItemContent(
+        } else if (enabledCount == 0) {
+            NoneOnCard(title)
+        }
+        listOf(R.string.label_workflows_yours to own, R.string.label_workflows_builtin to builtIn).forEach { (labelRes, group) ->
+            if (group.isNotEmpty()) {
+                SettingsGroup(stringResource(labelRes), subordinate = true) {
+                    group.forEach { workflow ->
+                        row { shapes ->
+                            WorkflowRow(
+                                shapes = shapes,
                                 workflow = workflow,
-                                onClick = { onWorkflowClick(workflow) },
-                                onEditStructure = { onEditStructure(workflow) },
-                                onRename = { onRename(workflow) },
-                                onDuplicate = { onDuplicate(workflow) },
-                                onExport = { format -> onExport(workflow, format) },
-                                onDelete = { onDelete(workflow) }
+                                enabled = workflow.id !in disabledWorkflowIds,
+                                onOpen = { onOpen(workflow) },
+                                onEnabledChange = { onEnabledChange(workflow, it) }
                             )
-                            if (index < workflows.size - 1) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 16.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant
-                                )
-                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/** "n of m on" as a button opening Switch all on / Switch all off; in the error colour when none is on. */
+@Composable
+private fun SectionCountButton(enabledCount: Int, total: Int, onSectionEnabledChange: (Boolean) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val count = stringResource(R.string.label_workflows_enabled_count, enabledCount, total)
+    val description = stringResource(R.string.content_description_section_actions, count)
+    Box {
+        TextButton(
+            onClick = { expanded = true },
+            colors = ButtonDefaults.textButtonColors(
+                contentColor = if (enabledCount == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+            ),
+            modifier = Modifier.semantics { contentDescription = description }
+        ) {
+            Text(count, style = MaterialTheme.typography.labelLarge)
+            Icon(
+                if (expanded) Icons.Rounded.ArrowDropUp else Icons.Rounded.ArrowDropDown,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        DropdownMenuPopup(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 1)) {
+                // The one that would change nothing is disabled
+                listOf(
+                    Triple(R.string.menu_switch_all_on, Icons.Rounded.ToggleOn, enabledCount < total),
+                    Triple(R.string.menu_switch_all_off, Icons.Rounded.ToggleOff, enabledCount > 0)
+                ).forEachIndexed { index, (labelRes, icon, active) ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(labelRes)) },
+                        leadingIcon = { Icon(icon, contentDescription = null) },
+                        shape = MenuDefaults.itemShape(index, 2).shape,
+                        enabled = active,
+                        onClick = {
+                            expanded = false
+                            onSectionEnabledChange(labelRes == R.string.menu_switch_all_on)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** No workflow of this type is on: the screen can't generate. Switching all off is allowed; this is the warning. */
+@Composable
+private fun NoneOnCard(sectionTitle: String) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite }
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.Warning, contentDescription = null)
+            Text(stringResource(R.string.msg_workflows_none_on, sectionTitle), style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
 
 /**
- * Content for a single workflow item (without Card wrapper).
+ * A workflow: its name (opens its details) and, past a divider, its switch – two targets, so TalkBack reads them apart.
+ * A switched-off row looks like the others; the switch says it.
  */
 @Composable
-private fun WorkflowListItemContent(
+private fun WorkflowRow(
+    shapes: ListItemShapes,
     workflow: WorkflowManager.Workflow,
-    onClick: () -> Unit,
-    onEditStructure: () -> Unit,
-    onRename: () -> Unit,
-    onDuplicate: () -> Unit,
-    onExport: (ExportFormat) -> Unit,
-    onDelete: () -> Unit
+    enabled: Boolean,
+    onOpen: () -> Unit,
+    onEnabledChange: (Boolean) -> Unit
 ) {
-    var showContextMenu by remember { mutableStateOf(false) }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+    val details = stringResource(R.string.content_description_workflow_details, workflow.name)
+    Surface(
+        shape = shapes.shape,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        // Workflow graph thumbnail
-        WorkflowThumbnail(
-            jsonContent = workflow.jsonContent,
-            modifier = Modifier.size(48.dp)
-        )
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = workflow.name,
-                style = MaterialTheme.typography.titleSmall
-            )
-            if (workflow.description.isNotEmpty()) {
-                Text(
-                    text = workflow.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (workflow.isBuiltIn) {
-                Text(
-                    text = stringResource(R.string.label_workflow_built_in),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        // Context menu
-        Box {
-            IconButton(onClick = { showContextMenu = true }) {
-                Icon(
-                    Icons.Default.MoreVert,
-                    contentDescription = stringResource(R.string.content_description_menu),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            DropdownMenu(
-                expanded = showContextMenu,
-                onDismissRequest = { showContextMenu = false }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                contentAlignment = Alignment.CenterStart,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 56.dp)
+                    .clickable(role = Role.Button, onClick = onOpen)
+                    .semantics { contentDescription = details }
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                // Edit workflow (structure) - only for custom workflows
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.workflow_menu_edit_structure)) },
-                    onClick = {
-                        showContextMenu = false
-                        onEditStructure()
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.Tune, contentDescription = null)
-                    },
-                    enabled = !workflow.isBuiltIn
-                )
-
-                // Rename - only for custom workflows
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.workflow_menu_rename)) },
-                    onClick = {
-                        showContextMenu = false
-                        onRename()
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.Edit, contentDescription = null)
-                    },
-                    enabled = !workflow.isBuiltIn
-                )
-
-                // Duplicate - available for all workflows
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.workflow_menu_duplicate)) },
-                    onClick = {
-                        showContextMenu = false
-                        onDuplicate()
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.ContentCopy, contentDescription = null)
-                    }
-                )
-
-                // Export (Internal format) - available for all workflows
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.workflow_menu_export)) },
-                    onClick = {
-                        showContextMenu = false
-                        onExport(ExportFormat.INTERNAL)
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.SaveAlt, contentDescription = null)
-                    }
-                )
-
-                // Export (API Format) - available for all workflows
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.workflow_menu_export_api)) },
-                    onClick = {
-                        showContextMenu = false
-                        onExport(ExportFormat.API)
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.SaveAlt, contentDescription = null)
-                    }
-                )
-
-                // Divider above Delete
-                HorizontalDivider()
-
-                // Delete - only for custom workflows
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            stringResource(R.string.workflow_menu_delete),
-                            color = if (!workflow.isBuiltIn) MaterialTheme.colorScheme.error
-                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                        )
-                    },
-                    onClick = {
-                        showContextMenu = false
-                        onDelete()
-                    },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = null,
-                            tint = if (!workflow.isBuiltIn) MaterialTheme.colorScheme.error
-                                   else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                        )
-                    },
-                    enabled = !workflow.isBuiltIn
+                Text(
+                    workflow.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+            VerticalDivider(Modifier.height(32.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChange,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .semantics { contentDescription = workflow.name }
+            )
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Adding a workflow, as the result actions on the generation preview: a toggle FAB at the bottom end opening Create new
+ * and Import upward, over a scrim; tapping the scrim or Back closes it.
+ */
 @Composable
-private fun ImportWorkflowDialog(
-    selectedType: WorkflowType?,
-    onTypeSelected: (WorkflowType) -> Unit,
-    isTypeDropdownExpanded: Boolean,
-    onToggleTypeDropdown: () -> Unit,
-    name: String,
-    onNameChange: (String) -> Unit,
-    nameError: String?,
-    description: String,
-    onDescriptionChange: (String) -> Unit,
-    descriptionError: String?,
-    isValidating: Boolean,
-    warnings: List<String>,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val selectedTypeName = selectedType?.let { stringResource(WorkflowTypeDisplay.getDisplayNameResId(it)) } ?: ""
+private fun BoxScope.AddWorkflowMenu(offline: Boolean, onCreate: () -> Unit, onImport: () -> Unit) {
+    val context = LocalContext.current
+    val needsServer = stringResource(R.string.msg_needs_server)
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    // Both need the server (imports are checked against it, the editor saves through it): offline, they say why
+    fun act(action: () -> Unit) {
+        expanded = false
+        if (offline) Toast.makeText(context, needsServer, Toast.LENGTH_SHORT).show() else action()
+    }
+    BackHandler(enabled = expanded) { expanded = false }
 
-    AlertDialog(
-        onDismissRequest = { if (!isValidating) onDismiss() },
-        title = { Text(stringResource(R.string.title_import_workflow)) },
-        text = {
-            Column(modifier = Modifier.heightIn(max = 440.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
-                // Type dropdown
-                Text(
-                    text = stringResource(R.string.label_workflow_type),
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-                ExposedDropdownMenuBox(
-                    expanded = isTypeDropdownExpanded,
-                    onExpandedChange = { if (!isValidating) onToggleTypeDropdown() }
-                ) {
-                    OutlinedTextField(
-                        value = selectedTypeName,
-                        onValueChange = {},
-                        readOnly = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isTypeDropdownExpanded) },
-                        modifier = Modifier
-                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth(),
-                        enabled = !isValidating
-                    )
-                    ExposedDropdownMenu(
-                        expanded = isTypeDropdownExpanded,
-                        onDismissRequest = onToggleTypeDropdown
-                    ) {
-                        WorkflowTypeDisplay.allTypes.forEach { (type, displayNameResId) ->
-                            key(type) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(displayNameResId)) },
-                                    onClick = { onTypeSelected(type) }
-                                )
-                            }
-                        }
-                    }
-                }
+    // Standard M3 scrim, as under modal sheets
+    val scrimAlpha by animateFloatAsState(
+        targetValue = if (expanded) 0.32f else 0f,
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+        label = "add workflow scrim"
+    )
+    if (scrimAlpha > 0f) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha))
+                .pointerInput(Unit) { detectTapGestures { expanded = false } }
+        )
+    }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Name field
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = onNameChange,
-                    label = { Text(stringResource(R.string.label_workflow_name)) },
-                    singleLine = true,
-                    isError = nameError != null,
-                    supportingText = nameError?.let { { Text(it) } },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isValidating
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Description field
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = onDescriptionChange,
-                    label = { Text(stringResource(R.string.label_workflow_description)) },
-                    maxLines = 3,
-                    isError = descriptionError != null,
-                    supportingText = descriptionError?.let { { Text(it) } },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isValidating
-                )
-
-                if (warnings.isNotEmpty()) {
-                    Text(stringResource(R.string.server_workflow_conversion_notes),
-                        color = MaterialTheme.colorScheme.error)
-                    warnings.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
-                }
-                if (isValidating) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.msg_validating_workflow))
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                enabled = selectedType != null && name.isNotBlank() && !isValidating
+    val description = stringResource(R.string.content_description_add_workflow)
+    FloatingActionButtonMenu(
+        expanded = expanded,
+        horizontalAlignment = Alignment.End,
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(16.dp),
+        button = {
+            ToggleFloatingActionButton(
+                checked = expanded,
+                onCheckedChange = { expanded = it },
+                modifier = Modifier.semantics { contentDescription = description }
             ) {
-                Text(stringResource(R.string.button_continue))
-            }
-        },
-        dismissButton = {
-            OutlinedButton(onClick = onDismiss, enabled = !isValidating) {
-                Text(stringResource(R.string.button_cancel))
+                val icon by remember { derivedStateOf { if (checkedProgress > 0.5f) Icons.Rounded.Close else Icons.Rounded.Add } }
+                Icon(
+                    painter = rememberVectorPainter(icon),
+                    contentDescription = null,
+                    modifier = Modifier.animateIcon({ checkedProgress })
+                )
             }
         }
-    )
+    ) {
+        FloatingActionButtonMenuItem(
+            onClick = { act(onCreate) },
+            icon = { Icon(Icons.Rounded.AccountTree, contentDescription = null) },
+            text = { Text(stringResource(R.string.button_create_workflow)) },
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+        FloatingActionButtonMenuItem(
+            onClick = { act(onImport) },
+            icon = { Icon(Icons.Rounded.UploadFile, contentDescription = null) },
+            text = { Text(stringResource(R.string.button_import)) },
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+    }
 }
 
+/** The name of a workflow type, as its section on the list. */
+private fun WorkflowType.titleRes(): Int = when (this) {
+    WorkflowType.TTI -> R.string.workflow_section_tti
+    WorkflowType.ITI_EDITING -> R.string.workflow_section_iti_editing
+    WorkflowType.ITI_INPAINTING -> R.string.workflow_section_iti_inpainting
+    WorkflowType.TTV -> R.string.workflow_section_ttv
+    WorkflowType.ITV -> R.string.workflow_section_itv
+}
+
+/** The generation screen that offers workflows of a type. */
+private fun WorkflowType.screenRes(): Int = when (this) {
+    WorkflowType.TTI -> R.string.nav_text_to_image
+    WorkflowType.ITI_EDITING, WorkflowType.ITI_INPAINTING -> R.string.nav_image_to_image
+    WorkflowType.TTV -> R.string.nav_text_to_video
+    WorkflowType.ITV -> R.string.nav_image_to_video
+}
+
+/**
+ * A workflow's details: its graph (a card opening the editor: read-only for a built-in one, for editing for yours),
+ * description, whether the generation screens offer it, then what can be done with it and its export. Yours can also
+ * be renamed and deleted (confirmed, apart, at the end); rows that don't apply are left out.
+ *
+ * @param onOpenDetails Opens another workflow's details in place of this one (a copy just made)
+ */
 @Composable
-private fun MissingNodesDialog(
-    missingNodes: List<String>,
-    onDismiss: () -> Unit
+fun WorkflowDetailPage(
+    viewModel: WorkflowManagementViewModel,
+    workflowId: String,
+    onNavigateBack: () -> Unit,
+    onOpenDetails: (workflowId: String) -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.title_missing_nodes)) },
-        text = {
-            Column {
-                Text(stringResource(R.string.msg_missing_nodes))
-                Spacer(modifier = Modifier.height(8.dp))
-                NoOverscrollContainer(modifier = Modifier.heightIn(max = 200.dp)) {
-                    LazyColumn {
-                        items(missingNodes, key = { it }) { node ->
-                            Text(
-                                text = "- $node",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
+    val context = LocalContext.current
+    val resources = LocalResources.current
+    val uiState by viewModel.uiState.collectAsState()
+    val snackbar = LocalAppSnackbarHostState.current
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { viewModel.initialize(context) }
+    val workflow = remember(uiState, workflowId) {
+        listOf(uiState.ttiWorkflows, uiState.itiEditingWorkflows, uiState.itiInpaintingWorkflows, uiState.ttvWorkflows, uiState.itvWorkflows)
+            .flatten()
+            .firstOrNull { it.id == workflowId }
+    }
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    val editLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        // The editor saved the workflow's structure
+        if (result.resultCode == Activity.RESULT_OK) viewModel.reloadAndRefreshWorkflows()
+    }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) viewModel.performExport(context, uri) else viewModel.cancelExport()
+    }
+
+    // Only while this page is on top (the list handles its own)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.events.collect { event ->
+                when (event) {
+                    is WorkflowManagementEvent.ShowToast -> Toast.makeText(context, event.messageResId, Toast.LENGTH_SHORT).show()
+                    is WorkflowManagementEvent.ShowToastMessage -> Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
+                    is WorkflowManagementEvent.LaunchExportFilePicker -> exportLauncher.launch(event.suggestedFilename)
+                    is WorkflowManagementEvent.DuplicateCreated -> {
+                        onOpenDetails(event.workflowId)
+                        scope.launch { snackbar?.showSnackbar(resources.getString(R.string.msg_workflow_duplicate_success)) }
+                    }
+                    is WorkflowManagementEvent.WorkflowDeleted -> {
+                        onNavigateBack()
+                        scope.launch { snackbar?.showSnackbar(resources.getString(R.string.msg_workflow_delete_success)) }
+                    }
+                    is WorkflowManagementEvent.LaunchEditor, is WorkflowManagementEvent.WorkflowsChanged -> Unit
+                }
+            }
+        }
+    }
+
+    // Gone (deleted elsewhere): back to the list
+    if (workflow == null) {
+        LaunchedEffect(Unit) { if (!uiState.isLoading) onNavigateBack() }
+        return
+    }
+    val builtIn = workflow.isBuiltIn
+    val enabled = workflow.id !in uiState.disabledWorkflowIds
+    val graphLabel = stringResource(if (builtIn) R.string.button_view_graph else R.string.button_edit_graph)
+    val openGraph = {
+        if (builtIn) context.startActivity(WorkflowEditorActivity.createIntent(context, workflow.id))
+        else editLauncher.launch(WorkflowEditorActivity.createIntentForEditingExisting(context, workflow.id))
+    }
+
+    SettingsPage(
+        title = workflow.name,
+        onNavigateBack = onNavigateBack,
+        subtitle = stringResource(
+            R.string.label_workflow_subtitle,
+            stringResource(workflow.type.titleRes()),
+            stringResource(if (builtIn) R.string.label_workflow_kind_builtin else R.string.label_workflow_kind_yours)
+        )
+    ) {
+        // The graph, large; the whole card opens it
+        Surface(
+            onClick = openGraph,
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(188.dp)
+                .semantics { contentDescription = graphLabel }
+        ) {
+            Box {
+                WorkflowThumbnail(jsonContent = workflow.jsonContent, modifier = Modifier.fillMaxSize().padding(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Rounded.OpenInFull, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text(graphLabel, style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
-        },
-        confirmButton = {
-            Button(onClick = onDismiss) {
-                Text(stringResource(R.string.button_dismiss))
+        }
+
+        if (workflow.description.isNotBlank()) {
+            var expanded by remember(workflow.id) { mutableStateOf(false) }
+            Text(
+                text = workflow.description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (expanded) Int.MAX_VALUE else 4,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .clickable { expanded = !expanded }
+            )
+        }
+
+        SettingsGroup {
+            row { shapes ->
+                SettingsSwitchRow(
+                    shapes = shapes,
+                    title = stringResource(R.string.label_show_in_screens),
+                    supporting = stringResource(workflow.type.screenRes()),
+                    checked = enabled,
+                    onCheckedChange = { viewModel.onWorkflowEnabledChange(workflow, it) }
+                )
             }
         }
-    )
-}
 
-@Composable
-private fun MissingFieldsDialog(
-    missingFields: List<String>,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.title_missing_fields)) },
-        text = {
-            Column {
-                Text(stringResource(R.string.msg_missing_fields))
-                Spacer(modifier = Modifier.height(8.dp))
-                missingFields.forEach { field ->
-                    key(field) {
-                        Text(
-                            text = "- $field",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
+        SettingsGroup(stringResource(R.string.label_workflow)) {
+            row { shapes ->
+                SettingsActionRow(
+                    shapes = shapes,
+                    icon = if (builtIn) Icons.Rounded.AccountTree else Icons.Rounded.Edit,
+                    title = graphLabel,
+                    onClick = openGraph
+                )
+            }
+            if (!builtIn) {
+                row { shapes ->
+                    SettingsActionRow(
+                        shapes = shapes,
+                        icon = Icons.AutoMirrored.Rounded.Notes,
+                        title = stringResource(R.string.button_name_and_description),
+                        onClick = { viewModel.onEditWorkflow(workflow) }
+                    )
                 }
             }
-        },
-        confirmButton = {
-            Button(onClick = onDismiss) {
-                Text(stringResource(R.string.button_dismiss))
+            row { shapes ->
+                SettingsActionRow(
+                    shapes = shapes,
+                    icon = Icons.Rounded.ContentCopy,
+                    title = stringResource(R.string.workflow_menu_duplicate),
+                    supporting = if (builtIn) stringResource(R.string.desc_duplicate_builtin) else null,
+                    onClick = { viewModel.onDuplicateWorkflow(workflow) }
+                )
             }
         }
-    )
-}
 
-@Composable
-private fun DuplicateNameDialog(
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.title_duplicate_name)) },
-        text = { Text(stringResource(R.string.msg_duplicate_name)) },
-        confirmButton = {
-            Button(onClick = onDismiss) {
-                Text(stringResource(R.string.button_ok))
+        SettingsGroup(stringResource(R.string.title_workflow_export)) {
+            row { shapes ->
+                SettingsActionRow(
+                    shapes = shapes,
+                    icon = Icons.Rounded.Download,
+                    title = stringResource(R.string.button_export_app),
+                    onClick = { viewModel.onExportWorkflow(workflow, ExportFormat.INTERNAL) }
+                )
+            }
+            row { shapes ->
+                SettingsActionRow(
+                    shapes = shapes,
+                    icon = Icons.Rounded.DataObject,
+                    title = stringResource(R.string.button_export_api),
+                    onClick = { viewModel.onExportWorkflow(workflow, ExportFormat.API) }
+                )
             }
         }
-    )
+
+        // Apart, at the end, confirmed
+        if (!builtIn) {
+            Spacer(Modifier.height(8.dp))
+            SettingsGroup {
+                row { shapes ->
+                    SettingsActionRow(
+                        shapes = shapes,
+                        icon = Icons.Rounded.Delete,
+                        title = stringResource(R.string.button_delete_workflow),
+                        destructive = true,
+                        onClick = { confirmDelete = true }
+                    )
+                }
+            }
+        }
+    }
+
+    if (confirmDelete) {
+        ConfirmDestructiveDialog(
+            title = stringResource(R.string.title_delete_workflow_named, workflow.name),
+            text = stringResource(R.string.msg_delete_workflow_device),
+            confirmLabel = stringResource(R.string.button_delete),
+            onConfirm = { viewModel.deleteWorkflow(workflow) },
+            onDismiss = { confirmDelete = false }
+        )
+    }
+
+    // Edit dialog
+    if (uiState.showEditDialog) {
+        EditWorkflowDialog(
+            name = uiState.editName,
+            onNameChange = viewModel::onEditNameChange,
+            nameError = uiState.editNameError,
+            description = uiState.editDescription,
+            onDescriptionChange = viewModel::onEditDescriptionChange,
+            descriptionError = uiState.editDescriptionError,
+            onConfirm = viewModel::confirmEdit,
+            onDismiss = viewModel::cancelEdit
+        )
+    }
+
+
+    // Duplicate dialog
+    if (uiState.showDuplicateDialog) {
+        DuplicateWorkflowDialog(
+            name = uiState.duplicateName,
+            onNameChange = viewModel::onDuplicateNameChange,
+            nameError = uiState.duplicateNameError,
+            description = uiState.duplicateDescription,
+            onDescriptionChange = viewModel::onDuplicateDescriptionChange,
+            descriptionError = uiState.duplicateDescriptionError,
+            onConfirm = viewModel::confirmDuplicate,
+            onDismiss = viewModel::cancelDuplicate
+        )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditWorkflowDialog(
     name: String,
@@ -986,36 +1074,6 @@ private fun EditWorkflowDialog(
                 enabled = name.isNotBlank() && nameError == null && descriptionError == null
             ) {
                 Text(stringResource(R.string.button_save))
-            }
-        },
-        dismissButton = {
-            OutlinedButton(onClick = onDismiss) {
-                Text(stringResource(R.string.button_cancel))
-            }
-        }
-    )
-}
-
-@Composable
-private fun DeleteWorkflowDialog(
-    workflowName: String,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.title_delete_workflow)) },
-        text = {
-            Text(stringResource(R.string.msg_delete_workflow, workflowName))
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error
-                )
-            ) {
-                Text(stringResource(R.string.button_delete))
             }
         },
         dismissButton = {

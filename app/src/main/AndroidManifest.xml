@@ -14,9 +14,8 @@
 
     <application
         android:name=".DiagnosticsApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -43,20 +42,6 @@
             android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize" />
 
-        <!-- SettingsContainerActivity - Container for settings fragments -->
-        <activity
-            android:name=".SettingsContainerActivity"
-            android:exported="false"
-            android:screenOrientation="portrait"
-            android:windowSoftInputMode="adjustResize" />
-
-        <!-- GalleryContainerActivity - Container for gallery screen -->
-        <activity
-            android:name=".GalleryContainerActivity"
-            android:exported="false"
-            android:screenOrientation="portrait"
-            android:windowSoftInputMode="adjustResize" />
-
         <!-- MediaViewerActivity - Fullscreen media viewer -->
         <activity
             android:name=".MediaViewerActivity"
@@ -76,6 +61,9 @@
             android:name=".WorkflowEditorActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
+
+        <!-- Browser-based SSO authentication -->
+        <activity android:name=".BrowserAuthActivity" android:exported="false" android:screenOrientation="portrait" android:windowSoftInputMode="adjustResize" />
 
         <!-- FileProvider for sharing images -->
         <provider

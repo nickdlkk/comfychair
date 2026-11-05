@@ -26,7 +26,7 @@ import sh.hnet.comfychair.ui.components.*
 import sh.hnet.comfychair.viewmodel.ServerGalleryViewModel
 
 @Composable
-fun ServerGalleryScreen(onBack: () -> Unit, vm: ServerGalleryViewModel = viewModel()) {
+fun ServerGalleryScreen(onBack: () -> Unit, onUseAsSource: (ServerGalleryViewModel.FullImage) -> Unit, vm: ServerGalleryViewModel = viewModel()) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by vm.picker.state.collectAsState()
@@ -157,10 +157,7 @@ fun ServerGalleryScreen(onBack: () -> Unit, vm: ServerGalleryViewModel = viewMod
                     }
                 }) { Text(stringResource(R.string.server_gallery_material)) }
                 TextButton(enabled = shown.owner == owner, onClick = {
-                    val ticket = sh.hnet.comfychair.connection.ServerGallerySourceTransfer.offer(shown)
-                    (context as? Activity)?.let { activity ->
-                        activity.setResult(102, android.content.Intent().putExtra("server_gallery_source", ticket)); activity.finish()
-                    }
+                    onUseAsSource(shown)
                 }) { Text(stringResource(R.string.server_gallery_source)) }
             }
             }

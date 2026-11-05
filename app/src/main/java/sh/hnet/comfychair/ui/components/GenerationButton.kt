@@ -5,29 +5,30 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistAddCheck
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Queue
+import androidx.compose.material.icons.rounded.VerticalAlignTop
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenuPopup
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SplitButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,42 +39,51 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import java.util.Locale
 import sh.hnet.comfychair.R
 
 /**
  * Split button for generation screens with queue management dropdown.
  *
- * Leading button: Always submits to queue ("Generate" or "Add to queue (X)")
- * Trailing button: Dropdown menu with batch count stepper + queue management
+ * Leading button: always says "Generate" and always submits to the end of the queue; the queue's state is shown
+ * elsewhere, never in this label. Short transient states ("Connecting…", "Uploading…", "Fetching…") replace the label
+ * while they last, with a loading indicator instead of the icon.
+ * Trailing button: Dropdown menu with queue management actions
  *
- * Button text priority: Connecting > Uploading > Fetching > Queue size > Generate
- *
- * @param queueSize Total number of jobs in the server queue (all clients)
- * @param isExecuting Whether any job is currently executing on the server
+ * @param disabledReason Why the button is disabled, read by TalkBack as its state; null when enabled
+ * @param canCancelOwnJob Whether a job of this app is running (only then can it be cancelled from the menu)
  * @param isEnabled Whether the button should be enabled (valid input to submit)
  * @param isOfflineMode Whether the app is in offline mode (disables all generation)
  * @param isUploading Whether image upload is in progress (shows "Uploading...")
  * @param isFetching Whether result fetch is in progress (shows "Fetching...")
  * @param isConnecting Whether connection check is in progress (shows "Connecting...")
- * @param batchCount Current batch count (>= 1)
  * @param onGenerate Callback when Generate/Add to queue is clicked
- * @param onBatchCountChange Callback when batch count changes
- * @param onCancelCurrent Callback to cancel the currently executing job
+ * @param onCancelOwnJob Cancels this app's running job
  * @param onAddToFrontOfQueue Callback to add to front of queue
- * @param onClearQueue Callback to clear the server queue
+ * @param ownJobs Your jobs waiting or running, shown next to "Show queue"
+ * @param otherJobs Other clients' jobs, shown next to "Show queue"
+ * @param onShowQueue Opens the queue sheet (where the queue can also be cleared)
  * @param modifier Modifier for the button layout
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun GenerationButton(
-    queueSize: Int,
-    isExecuting: Boolean,
+    canCancelOwnJob: Boolean,
     isEnabled: Boolean,
     isOfflineMode: Boolean = false,
     isUploading: Boolean = false,
@@ -83,86 +93,84 @@ fun GenerationButton(
     uploadProgressBytes: Long? = null,
     uploadLabel: String? = null,
     batchCount: Int = 1,
+    onBatchCountChange: ((Int) -> Unit)? = null,
     onGenerate: () -> Unit,
-    onBatchCountChange: (Int) -> Unit = {},
-    onCancelCurrent: () -> Unit,
+    onCancelOwnJob: () -> Unit,
     onAddToFrontOfQueue: () -> Unit = {},
-    onClearQueue: () -> Unit,
-    modifier: Modifier = Modifier
+    ownJobs: Int,
+    otherJobs: Int,
+    onShowQueue: () -> Unit,
+    modifier: Modifier = Modifier,
+    disabledReason: String? = null
 ) {
+    val focusManager = LocalFocusManager.current
     var showMenu by remember { mutableStateOf(false) }
 
-    // Button always uses primary color
-    val containerColor = MaterialTheme.colorScheme.primary
-    val contentColor = MaterialTheme.colorScheme.onPrimary
-
-    // Button text changes based on connection/upload/fetch state and queue size
-    val buttonText = when {
-        isConnecting && queueSize > 0 -> stringResource(R.string.button_connecting_queue, queueSize)
+    val transientLabel = when {
         isConnecting -> stringResource(R.string.button_connecting)
-        isUploading && queueSize > 0 -> stringResource(R.string.button_uploading_queue, queueSize)
-        isUploading -> {
-            if (uploadTotalBytes != null && uploadProgressBytes != null) {
-                val progressText = if (uploadTotalBytes >= 1024 * 1024) {
-                    String.format(Locale.US, "%.1f / %.1f MB", uploadProgressBytes / (1024.0 * 1024.0), uploadTotalBytes / (1024.0 * 1024.0))
-                } else {
-                    String.format(Locale.US, "%d / %d KB", uploadProgressBytes / 1024, uploadTotalBytes / 1024)
-                }
-                stringResource(
-                    R.string.button_uploading_progress,
-                    if (uploadLabel.isNullOrBlank()) progressText else "$uploadLabel · $progressText"
-                )
-            } else {
-                stringResource(R.string.button_uploading)
-            }
-        }
-        isFetching && queueSize > 0 -> stringResource(R.string.button_fetching_queue, queueSize)
+        isUploading -> if (uploadTotalBytes != null && uploadProgressBytes != null) {
+            val progress = if (uploadTotalBytes >= 1024 * 1024)
+                String.format(Locale.US, "%.1f / %.1f MB", uploadProgressBytes / 1048576.0, uploadTotalBytes / 1048576.0)
+            else String.format(Locale.US, "%d / %d KB", uploadProgressBytes / 1024, uploadTotalBytes / 1024)
+            stringResource(R.string.button_uploading_progress, if (uploadLabel.isNullOrBlank()) progress else "$uploadLabel · $progress")
+        } else stringResource(R.string.button_uploading)
         isFetching -> stringResource(R.string.button_fetching)
-        queueSize > 0 -> stringResource(R.string.button_add_to_queue, queueSize)
-        else -> stringResource(R.string.button_generate)
+        else -> null
     }
-
-    // Arrow rotates 180° when menu is open (pointing up)
-    val iconRotation by animateFloatAsState(
-        targetValue = if (showMenu) 180f else 0f,
-        label = "dropdown icon rotation"
-    )
+    val enabled = isEnabled && !isOfflineMode
 
     Row(modifier = modifier) {
-        // Leading button - simple click, no gesture handling
-        SplitButtonDefaults.ElevatedLeadingButton(
+        // Leading button - fills available width, always submits to the end of the queue
+        SplitButtonDefaults.LeadingButton(
             onClick = {
+                focusManager.clearFocus()
                 onGenerate()
             },
-            enabled = isEnabled && !isOfflineMode,
-            colors = ButtonDefaults.elevatedButtonColors(
-                containerColor = containerColor,
-                contentColor = contentColor
-            ),
+            enabled = enabled,
+            shapes = SplitButtonDefaults.leadingButtonShapesFor(ButtonHeight),
+            contentPadding = SplitButtonDefaults.leadingButtonContentPaddingFor(ButtonHeight),
             modifier = Modifier
                 .weight(1f)
-                .height(56.dp)
+                .height(ButtonHeight)
+                .semantics { if (!enabled && disabledReason != null) stateDescription = disabledReason }
         ) {
+            val iconSize = SplitButtonDefaults.leadingButtonIconSizeFor(ButtonHeight)
+            if (transientLabel != null) {
+                // Drawn in the button's content colour, so it shows on the filled container
+                LoadingIndicator(color = LocalContentColor.current, modifier = Modifier.size(iconSize))
+            } else {
+                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(iconSize))
+            }
+            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
             Text(
-                text = buttonText,
-                fontSize = 18.sp
+                text = transientLabel ?: stringResource(R.string.button_generate),
+                maxLines = 1,
+                // Long translations shrink rather than wrap or cut
+                autoSize = TextAutoSize.StepBased(minFontSize = 14.sp, maxFontSize = 18.sp),
+                style = LocalTextStyle.current.copy(fontSize = 18.sp)
             )
         }
 
         // Spacing between buttons (matches SplitButtonDefaults.Spacing)
         Spacer(modifier = Modifier.width(SplitButtonDefaults.Spacing))
 
-        // Trailing button - toggle menu on click, disabled in offline mode
+        // Trailing button with dropdown - square button matching height of leading
+        // Animate icon rotation: 0° when closed, 180° when open (arrow points up)
+        val iconRotation by animateFloatAsState(
+            targetValue = if (showMenu) 180f else 0f,
+            label = "dropdown icon rotation"
+        )
+
+        // Trailing button - disabled in offline mode (no queue operations available)
         Box(modifier = Modifier.wrapContentWidth(unbounded = true)) {
-            SplitButtonDefaults.ElevatedTrailingButton(
+            // Turns round while its menu is open
+            SplitButtonDefaults.TrailingButton(
                 checked = showMenu,
                 onCheckedChange = { showMenu = it },
                 enabled = !isOfflineMode,
-                colors = ButtonDefaults.elevatedButtonColors(
-                    containerColor = containerColor,
-                    contentColor = contentColor
-                ),
-                modifier = Modifier.size(56.dp)
+                shapes = SplitButtonDefaults.trailingButtonShapesFor(ButtonHeight),
+                contentPadding = SplitButtonDefaults.trailingButtonContentPaddingFor(ButtonHeight),
+                modifier = Modifier.size(ButtonHeight)
             ) {
                 Icon(
                     Icons.Default.KeyboardArrowDown,
@@ -171,68 +179,74 @@ fun GenerationButton(
                 )
             }
 
-            DropdownMenu(
+            // Expressive menu in two groups: where a new job goes, and stopping your own running job
+            DropdownMenuPopup(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false }
             ) {
-                // Batch count stepper section
-                BatchCountStepper(
-                    count = batchCount,
-                    onCountChange = onBatchCountChange
-                )
-
-                HorizontalDivider()
-
-                // Queue management actions
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.menu_add_to_front_of_queue)) },
-                    onClick = {
-                        showMenu = false
-                        onAddToFrontOfQueue()
-                    },
-                    leadingIcon = {
-                        Icon(Icons.AutoMirrored.Filled.PlaylistAddCheck, contentDescription = null)
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.button_clear_queue)) },
-                    onClick = {
-                        showMenu = false
-                        onClearQueue()
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.Delete, contentDescription = null)
-                    }
-                )
-
-                HorizontalDivider()
-
-                // Cancel current
-                val cancelColor = if (isExecuting) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MenuDefaults.itemColors().disabledTextColor
+                onBatchCountChange?.let { change ->
+                    BatchCountStepper(count = batchCount, onCountChange = change)
+                    Spacer(Modifier.height(MenuDefaults.GroupSpacing))
                 }
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.menu_cancel_current), color = cancelColor) },
-                    onClick = {
-                        showMenu = false
-                        onCancelCurrent()
-                    },
-                    enabled = isExecuting,
-                    leadingIcon = {
-                        Icon(Icons.Default.Cancel, contentDescription = null, tint = cancelColor)
+                val placementCount = 2
+                DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, if (canCancelOwnJob) 2 else 1)) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.menu_add_to_front_of_queue)) },
+                        shape = MenuDefaults.itemShape(0, placementCount).shape,
+                        onClick = {
+                            showMenu = false
+                            onAddToFrontOfQueue()
+                        },
+                        leadingIcon = { Icon(Icons.Rounded.VerticalAlignTop, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.menu_show_queue)) },
+                        shape = MenuDefaults.itemShape(1, placementCount).shape,
+                        onClick = {
+                            showMenu = false
+                            onShowQueue()
+                        },
+                        leadingIcon = { Icon(Icons.Rounded.Queue, contentDescription = null) },
+                        // Your jobs and other clients' jobs, as on the queue chip
+                        trailingIcon = if (ownJobs + otherJobs > 0) ({
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (ownJobs > 0) {
+                                    Icon(Icons.Rounded.Person, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Text(ownJobs.toString(), style = MaterialTheme.typography.labelMedium)
+                                }
+                                if (ownJobs > 0 && otherJobs > 0) Spacer(Modifier.width(6.dp))
+                                if (otherJobs > 0) {
+                                    Icon(Icons.Rounded.Group, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Text(otherJobs.toString(), style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }) else null
+                    )
+                }
+                // Only when the running job is yours: another client's job isn't yours to stop
+                if (canCancelOwnJob) {
+                    Spacer(Modifier.height(MenuDefaults.GroupSpacing))
+                    DropdownMenuGroup(shapes = MenuDefaults.groupShape(1, 2)) {
+                        val error = MaterialTheme.colorScheme.error
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.menu_cancel_my_job)) },
+                            shape = MenuDefaults.itemShape(0, 1).shape,
+                            onClick = {
+                                showMenu = false
+                                onCancelOwnJob()
+                            },
+                            leadingIcon = { Icon(Icons.Rounded.Cancel, contentDescription = null) },
+                            colors = MenuDefaults.itemColors(textColor = error, leadingIconColor = error)
+                        )
                     }
-                )
+                }
             }
         }
     }
 }
 
-/**
- * Batch count stepper with presets (4, 8, 16, 32) and custom input.
- * Adjusting count immediately updates the shared state; no confirm needed.
- */
+private val ButtonHeight = 56.dp
+
 @Composable
 private fun BatchCountStepper(
     count: Int,

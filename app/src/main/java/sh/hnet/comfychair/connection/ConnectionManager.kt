@@ -29,6 +29,7 @@ import sh.hnet.comfychair.ComfyUIClient
 import sh.hnet.comfychair.WorkflowManager
 import sh.hnet.comfychair.model.AuthCredentials
 import sh.hnet.comfychair.cache.MediaCache
+import sh.hnet.comfychair.cache.ResultThumbnails
 import sh.hnet.comfychair.cache.MediaStateHolder
 import sh.hnet.comfychair.queue.JobRegistry
 import sh.hnet.comfychair.repository.GalleryRepository
@@ -115,6 +116,11 @@ object ConnectionManager {
     private val _isReconnecting = MutableStateFlow(false)
     val isReconnecting: StateFlow<Boolean> = _isReconnecting.asStateFlow()
 
+    // Session expired signal for browser-based (Cookie) authentication.
+    // Set by the AuthInterceptor when a 401/403 or an SSO redirect is detected.
+    private val _sessionExpired = MutableStateFlow(false)
+    val sessionExpired: StateFlow<Boolean> = _sessionExpired.asStateFlow()
+
     private var _client: ComfyUIClient? = null
     private var _clientId: String? = null
     private var _applicationContext: Context? = null
@@ -148,6 +154,30 @@ object ConnectionManager {
      */
     fun clearLogoutFlag() {
         isUserInitiatedLogout = false
+    }
+
+    /**
+     * Acknowledge that the session-expiry event has been handled.
+     * Call this after presenting the re-authentication UI to the user.
+     * Also re-arms the AuthInterceptor so it can detect the next expiry.
+     */
+    fun resetSessionExpired() {
+        _sessionExpired.value = false
+        _client?.resetSessionExpiredFlag()
+        DebugLogger.d(TAG, "Session expiry acknowledged, detection re-armed")
+    }
+
+    /**
+     * Update the credentials used for subsequent requests without reconnecting.
+     * Intended for refreshing browser-session cookies after re-authentication.
+     * Also re-arms session-expiry detection.
+     *
+     * @param credentials New credentials (typically [AuthCredentials.Cookie])
+     */
+    fun updateCredentials(credentials: AuthCredentials) {
+        _client?.setCredentials(credentials)
+        _client?.resetSessionExpiredFlag()
+        DebugLogger.d(TAG, "Credentials updated")
     }
 
     /**
@@ -266,6 +296,10 @@ object ConnectionManager {
         _client = ComfyUIClient(context.applicationContext, hostname, port, credentials).apply {
             setWorkingProtocol(protocol)
             setClientId(_clientId!!)
+            setOnSessionExpired {
+                DebugLogger.w(TAG, "Browser auth session expired — notifying UI")
+                _sessionExpired.value = true
+            }
         }
 
         _connectionState.value = ConnectionState.Connected(
@@ -302,6 +336,7 @@ object ConnectionManager {
         _client?.shutdown()
         _client = null
         _clientId = null
+        _sessionExpired.value = false
         _connectionState.value = ConnectionState.Disconnected
         DebugLogger.i(TAG, "Disconnected")
     }
@@ -375,6 +410,7 @@ object ConnectionManager {
         val hasCache = when {
             failureType == ConnectionFailure.STALLED -> false
             failureType == ConnectionFailure.AUTHENTICATION -> false
+            failureType == ConnectionFailure.CERTIFICATE -> false
             AppSettings.isMemoryFirstCache(context) -> false
             else -> hasOfflineCache(context, currentServerId ?: "")
         }
@@ -622,6 +658,7 @@ object ConnectionManager {
         GalleryRepository.getInstance().reset()
         MediaStateHolder.clearAll()
         MediaCache.reset()
+        ResultThumbnails.clear()
         JobRegistry.clear()
         // Clear model cache and node registry
         _modelCache.value = ModelCache()
@@ -775,8 +812,10 @@ object ConnectionManager {
                     val data = message.optJSONObject("data")
                     val promptId = data?.optString("prompt_id") ?: ""
                     DebugLogger.i(TAG, "WS: execution_success (promptId: ${Obfuscator.promptId(promptId)})")
-                    // Also notify JobRegistry - execution_success is another completion signal
+                    // Also notify JobRegistry - execution_success is another completion signal, and the only one
+                    // that means the job produced its results (it arrives before "executing" with no node)
                     if (promptId.isNotEmpty()) {
+                        JobRegistry.notifyReady(promptId)
                         JobRegistry.markCompleted(promptId)
                     }
                     WebSocketMessage.ExecutionSuccess(promptId)
@@ -926,13 +965,13 @@ object ConnectionManager {
             if (success) {
                 reconnectAttempts = 0
                 openWebSocket()
-            } else if (failureType == ConnectionFailure.AUTHENTICATION) {
-                // Auth failure - don't retry, notify UI immediately
-                DebugLogger.w(TAG, "Authentication failed during reconnection")
+            } else if (failureType == ConnectionFailure.AUTHENTICATION || failureType == ConnectionFailure.CERTIFICATE) {
+                // Auth or certificate failure - retrying won't help, the user decides on the login screen
+                DebugLogger.w(TAG, "Reconnection rejected: $failureType")
                 reconnectAttempts = MAX_RECONNECT_ATTEMPTS  // Prevent further retries
                 _webSocketState.value = WebSocketState.Failed(
                     reason = errorMessage,
-                    failureType = ConnectionFailure.AUTHENTICATION
+                    failureType = failureType
                 )
             } else {
                 // Network error during background retry - just log and let background loop retry
@@ -978,17 +1017,14 @@ object ConnectionManager {
         _modelCache.value = _modelCache.value.copy(isLoading = true, lastError = null)
 
         client.fetchFullObjectInfo { objectInfo ->
-            if (objectInfo != null) {
-                // Parse node definitions for workflow editor
-                nodeTypeRegistry.parseObjectInfo(objectInfo)
+            val ctx = _applicationContext
+            val serverId = currentServerId
+            // Cache object_info to disk for offline mode, then parse node definitions for the
+            // workflow editor from that copy, so the response is never held in memory as a whole
+            val loaded = objectInfo != null && ctx != null && serverId != null &&
+                    ObjectInfoCache.saveObjectInfo(ctx, serverId, objectInfo, nodeTypeRegistry::parseObjectInfo)
 
-                // Cache object_info to disk for offline mode
-                val ctx = _applicationContext
-                val serverId = currentServerId
-                if (ctx != null && serverId != null) {
-                    ObjectInfoCache.saveObjectInfo(ctx, serverId, objectInfo)
-                }
-
+            if (loaded) {
                 // Extract model lists for generation screens (field-name-based discovery)
                 val models = extractModelLists()
                 _modelCache.value = models.copy(isLoaded = true, isLoading = false)
@@ -1034,8 +1070,8 @@ object ConnectionManager {
             return false
         }
 
-        val objectInfo = ObjectInfoCache.loadObjectInfo(context, serverId)
-        if (objectInfo == null) {
+        // Parse node definitions for workflow editor
+        if (!ObjectInfoCache.loadObjectInfo(context, serverId, nodeTypeRegistry::parseObjectInfo)) {
             DebugLogger.e(TAG, "Failed to load offline cache for server: $serverId")
             return false
         }
@@ -1045,9 +1081,6 @@ object ConnectionManager {
 
         // Set offline connected state so currentServerId is available
         _connectionState.value = ConnectionState.OfflineConnected(serverId = serverId)
-
-        // Parse node definitions for workflow editor
-        nodeTypeRegistry.parseObjectInfo(objectInfo)
 
         // Extract model lists for generation screens
         val models = extractModelLists()
@@ -1117,6 +1150,12 @@ object ConnectionManager {
             latentUpscaleModels = nodeTypeRegistry.getOptionsForNodeInput(
                 "LatentUpscaleModelLoader",
                 TemplateKeyRegistry.getJsonKeyForPlaceholder("latent_upscale_model")
+            ),
+            samplers = nodeTypeRegistry.getOptionsForField(
+                TemplateKeyRegistry.getJsonKeyForPlaceholder("sampler_name")
+            ),
+            schedulers = nodeTypeRegistry.getOptionsForField(
+                TemplateKeyRegistry.getJsonKeyForPlaceholder("scheduler")
             )
         )
     }

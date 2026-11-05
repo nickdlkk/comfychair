@@ -3,16 +3,19 @@ package sh.hnet.comfychair
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import sh.hnet.comfychair.viewmodel.base.GenerationParams
+import sh.hnet.comfychair.viewmodel.base.ModelSlot
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.model.NodeAttributeEdits
 import sh.hnet.comfychair.model.WorkflowDefaults
 import sh.hnet.comfychair.storage.WorkflowValuesStorage
+import sh.hnet.comfychair.util.WorkflowPromptFinalizer
 import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.util.BypassNodeResolver
 import sh.hnet.comfychair.util.LoraInjectionUtils
 import sh.hnet.comfychair.util.WorkflowJsonAnalyzer
-import sh.hnet.comfychair.util.WorkflowPromptFinalizer
 import sh.hnet.comfychair.util.Obfuscator
+import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.util.UuidUtils
 import sh.hnet.comfychair.util.ValidationUtils
 import sh.hnet.comfychair.workflow.TemplateKeyRegistry
@@ -126,15 +129,13 @@ object WorkflowManager {
     }
 
     // Constants - delegate to WorkflowJsonAnalyzer
-    val REQUIRED_PLACEHOLDERS get() = WorkflowJsonAnalyzer.REQUIRED_PLACEHOLDERS
     val REQUIRED_PATTERNS get() = WorkflowJsonAnalyzer.REQUIRED_PATTERNS
     val PREFIX_TO_TYPE get() = WorkflowJsonAnalyzer.PREFIX_TO_TYPE
 
     // Available workflows loaded from res/raw and user storage
     private val workflows = mutableListOf<Workflow>()
     private val workflowValuesStorage by lazy { WorkflowValuesStorage(applicationContext) }
-    private val debugArtifactDir: File
-        get() = applicationContext.cacheDir
+    private val debugArtifactDir: File get() = applicationContext.cacheDir
 
     // Workflow change notification - increments when workflows are added/updated/deleted
     // ViewModels can observe this to refresh their workflow lists
@@ -148,6 +149,41 @@ object WorkflowManager {
         workflows.clear()
         loadBuiltInWorkflows()
         loadUserWorkflows()
+        disabledWorkflowIds = AppSettings.getDisabledWorkflowIds(
+            applicationContext,
+            workflows.filter { it.isBuiltIn }.map { it.id }
+        )
+    }
+
+    // Workflows switched off by the user (see AppSettings.getDisabledWorkflowIds)
+    @Volatile
+    private var disabledWorkflowIds: Set<String> = emptySet()
+
+    /** IDs of the workflows switched off by the user. */
+    fun getDisabledWorkflowIds(): Set<String> = disabledWorkflowIds
+
+    /** Whether a workflow is offered on the generation screens. */
+    fun isWorkflowEnabled(workflowId: String): Boolean = workflowId !in disabledWorkflowIds
+
+    /**
+     * Switches a workflow on or off. The generation screens refresh their lists through
+     * [workflowsVersion] and fall back to another workflow if the selected one was switched off.
+     */
+    fun setWorkflowEnabled(workflowId: String, enabled: Boolean) {
+        val updated = if (enabled) disabledWorkflowIds - workflowId else disabledWorkflowIds + workflowId
+        if (updated == disabledWorkflowIds) return
+        disabledWorkflowIds = updated
+        AppSettings.setDisabledWorkflowIds(applicationContext, updated)
+        _workflowsVersion.value++
+    }
+
+    /** Switches several workflows on or off at once (a section of the workflows page), with one write. */
+    fun setWorkflowsEnabled(workflowIds: Collection<String>, enabled: Boolean) {
+        val updated = if (enabled) disabledWorkflowIds - workflowIds.toSet() else disabledWorkflowIds + workflowIds
+        if (updated == disabledWorkflowIds) return
+        disabledWorkflowIds = updated
+        AppSettings.setDisabledWorkflowIds(applicationContext, updated)
+        _workflowsVersion.value++
     }
 
     /**
@@ -187,7 +223,7 @@ object WorkflowManager {
 
                 workflows.add(Workflow(id, name, description, jsonContent, type, isBuiltIn = true, defaults))
             } catch (e: Exception) {
-                // Failed to load workflow
+                DebugLogger.e(TAG, "Built-in workflow could not be loaded: ${e.javaClass.simpleName}")
             }
         }
     }
@@ -216,7 +252,7 @@ object WorkflowManager {
                 }
             }
         } catch (e: Exception) {
-            // Reflection failed, return empty list
+            DebugLogger.e(TAG, "Built-in workflows could not be listed: ${e.javaClass.simpleName}")
         }
 
         return resources
@@ -229,11 +265,17 @@ object WorkflowManager {
         val prefs = applicationContext.getSharedPreferences(USER_WORKFLOWS_PREFS, Context.MODE_PRIVATE)
         val metadataJson = prefs.getString(USER_WORKFLOWS_KEY, null) ?: return
 
-        try {
-            val metadataArray = JSONArray(metadataJson)
-            val dir = File(applicationContext.filesDir, USER_WORKFLOWS_DIR)
+        val metadataArray = try {
+            JSONArray(metadataJson)
+        } catch (e: Exception) {
+            DebugLogger.e(TAG, "User workflow list could not be read: ${e.javaClass.simpleName}")
+            return
+        }
+        val dir = File(applicationContext.filesDir, USER_WORKFLOWS_DIR)
 
-            for (i in 0 until metadataArray.length()) {
+        // Each workflow on its own, so one broken entry doesn't hide the others
+        for (i in 0 until metadataArray.length()) {
+            try {
                 val metadata = metadataArray.getJSONObject(i)
                 val id = metadata.getString("id")
                 val name = metadata.getString("name")
@@ -246,12 +288,15 @@ object WorkflowManager {
                 } catch (e: Exception) {
                     // Old-format workflow types (TTI_CHECKPOINT, TTI_UNET, ITI_CHECKPOINT, ITI_UNET, ITE_UNET, TTV_UNET, ITV_UNET)
                     // are no longer supported. These workflows will be silently skipped.
-                    DebugLogger.w(TAG, "Skipping workflow '$name': unsupported type '$typeStr' (old format)")
+                    DebugLogger.w(TAG, "Skipping workflow ${Obfuscator.workflowName(name)}: unsupported type '$typeStr' (old format)")
                     continue
                 }
 
                 val file = File(dir, filename)
-                if (!file.exists()) continue
+                if (!file.exists()) {
+                    DebugLogger.w(TAG, "Skipping workflow ${Obfuscator.workflowName(name)}: file missing")
+                    continue
+                }
 
                 val jsonContent = file.readText()
                 val jsonObject = try {
@@ -262,9 +307,9 @@ object WorkflowManager {
                 val defaults = WorkflowDefaults.fromJson(jsonObject?.optJSONObject("defaults"))
 
                 workflows.add(Workflow(id, name, description, jsonContent, type, isBuiltIn = false, defaults))
+            } catch (e: Exception) {
+                DebugLogger.e(TAG, "User workflow ${i + 1} could not be loaded: ${e.javaClass.simpleName}")
             }
-        } catch (e: Exception) {
-            // Failed to load user workflows
         }
     }
 
@@ -531,41 +576,49 @@ object WorkflowManager {
      */
     fun getNodeSpecificOptionsForField(workflowId: String, fieldKey: String): List<String>? {
         val workflow = getWorkflowById(workflowId) ?: return null
-        val json = try {
-            JSONObject(workflow.jsonContent)
-        } catch (e: Exception) {
-            return null
-        }
-        val nodesJson = if (json.has("nodes")) json.optJSONObject("nodes") ?: json else json
-
-        // Find the placeholder pattern for this field
-        val placeholderName = TemplateKeyRegistry.getPlaceholderForKey(fieldKey)
-        val placeholder = "{{$placeholderName}}"
-
-        // Search nodes for the one containing this placeholder
-        val nodeIds = nodesJson.keys()
-        while (nodeIds.hasNext()) {
-            val nodeId = nodeIds.next()
-            val node = nodesJson.optJSONObject(nodeId) ?: continue
-            val inputs = node.optJSONObject("inputs") ?: continue
-            val classType = node.optString("class_type")
-
-            // Check if any input has our placeholder
-            val inputKeys = inputs.keys()
-            while (inputKeys.hasNext()) {
-                val inputKey = inputKeys.next()
-                val value = inputs.optString(inputKey, "")
-                if (value == placeholder) {
-                    // Found the node! Get its options from NodeTypeRegistry
-                    val nodeDefinition = ConnectionManager.nodeTypeRegistry.getNodeDefinition(classType)
-                    return nodeDefinition?.inputs
-                        ?.find { it.name == inputKey }
-                        ?.options
-                }
-            }
-        }
-        return null
+        val placeholder = "{{${TemplateKeyRegistry.getPlaceholderForKey(fieldKey)}}}"
+        val (classType, inputKey) = placeholderInputIndex(workflow.jsonContent)[placeholder] ?: return null
+        // Node definitions are looked up on each call: the registry may be loaded after the index was built
+        return ConnectionManager.nodeTypeRegistry.getNodeDefinition(classType)
+            ?.inputs
+            ?.find { it.name == inputKey }
+            ?.options
     }
+
+    /** Placeholder index per workflow JSON; screens query it for many fields right after loading a workflow. */
+    private val placeholderIndexCache = java.util.Collections.synchronizedMap(
+        object : LinkedHashMap<String, Map<String, Pair<String, String>>>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Map<String, Pair<String, String>>>?) =
+                size > 16
+        }
+    )
+
+    /**
+     * Map each placeholder ("{{name}}") to the first node input holding it, as (class_type, input name).
+     * Parsed once per workflow JSON instead of once per queried field.
+     */
+    private fun placeholderInputIndex(jsonContent: String): Map<String, Pair<String, String>> =
+        placeholderIndexCache.getOrPut(jsonContent) {
+            val index = mutableMapOf<String, Pair<String, String>>()
+            try {
+                val json = JSONObject(jsonContent)
+                val nodesJson = if (json.has("nodes")) json.optJSONObject("nodes") ?: json else json
+                for (nodeId in nodesJson.keys()) {
+                    val node = nodesJson.optJSONObject(nodeId) ?: continue
+                    val inputs = node.optJSONObject("inputs") ?: continue
+                    val classType = node.optString("class_type")
+                    for (inputKey in inputs.keys()) {
+                        val value = inputs.optString(inputKey, "")
+                        if (value.startsWith("{{") && value.endsWith("}}")) {
+                            index.putIfAbsent(value, classType to inputKey)
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // Invalid JSON: no node-specific options
+            }
+            index
+        }
 
     /**
      * Generate a sanitized filename for export (without type prefix).
@@ -675,8 +728,18 @@ object WorkflowManager {
             }
         }
 
-        // Remove placeholders for unmapped optional fields
-        // This prevents fields like {{highnoise_lora_name}} from appearing as "UI: ..." when not mapped
+        // Build reverse map: placeholder name -> target node ID for all mapped fields
+        val placeholderToTargetNodeId = fieldMappings.entries.associate { (fieldKey, mapping) ->
+            TemplateKeyRegistry.getPlaceholderForKey(fieldKey) to mapping.first
+        }
+
+        // Remove stale and unmapped placeholders in a single pass:
+        // - Stale: node still holds {{placeholder}} for a MAPPED field but is no longer the
+        //   target node (left over when the user re-saves with a different node selected).
+        //   replaceCommonPlaceholders() does a global String.replace, so a stale placeholder
+        //   in an unrelated node (e.g. {{latent_upscale_model}} in UltralyticsDetectorProvider)
+        //   would receive the wrong value and cause a server 400 error.
+        // - Unmapped: node holds {{placeholder}} for an optional field that has no mapping at all.
         val mappedFieldKeys = fieldMappings.keys
         val allOptionalKeys = TemplateKeyRegistry.getOptionalKeysForType(type)
         val unmappedOptionalKeys = allOptionalKeys - mappedFieldKeys
@@ -688,17 +751,20 @@ object WorkflowManager {
 
             for (inputKey in inputs.keys().asSequence().toList()) {
                 val value = inputs.optString(inputKey, "")
-                val placeholderMatch = placeholderRegex.find(value)
-                if (placeholderMatch != null) {
-                    val placeholderName = placeholderMatch.groupValues[1]
-                    val fieldKey = TemplateKeyRegistry.getJsonKeyForPlaceholder(placeholderName)
-                    // Check both placeholder name and JSON key (OPTIONAL_KEYS uses mixed formats:
-                    // JSON keys for prompts like "negative_text", placeholder names for
-                    // highnoise/lownoise variants that share the same JSON key)
-                    if (placeholderName in unmappedOptionalKeys || fieldKey in unmappedOptionalKeys) {
-                        // Replace placeholder with empty string so it shows as unmapped in editor
-                        inputs.put(inputKey, "")
-                    }
+                val placeholderMatch = placeholderRegex.find(value) ?: continue
+                val placeholderName = placeholderMatch.groupValues[1]
+
+                // Case 1: placeholder belongs to a mapped field but this is not the target node
+                val targetNodeId = placeholderToTargetNodeId[placeholderName]
+                if (targetNodeId != null && nodeId != targetNodeId) {
+                    inputs.put(inputKey, "")
+                    continue
+                }
+
+                // Case 2: placeholder belongs to an unmapped optional field
+                val fieldKey = TemplateKeyRegistry.getJsonKeyForPlaceholder(placeholderName)
+                if (placeholderName in unmappedOptionalKeys || fieldKey in unmappedOptionalKeys) {
+                    inputs.put(inputKey, "")
                 }
             }
         }
@@ -735,6 +801,10 @@ object WorkflowManager {
             // Include notes if present in original JSON
             if (isWrapped && json.has("notes")) {
                 put("notes", json.getJSONArray("notes"))
+            }
+            // Include manual_placement if present in original JSON
+            if (isWrapped && json.has("manual_placement")) {
+                put("manual_placement", json.getBoolean("manual_placement"))
             }
             // Store field mappings for reference
             if (fieldMappings.isNotEmpty()) {
@@ -856,8 +926,18 @@ object WorkflowManager {
             }
         }
 
-        // Remove placeholders for unmapped optional fields
-        // This prevents fields like {{highnoise_lora_name}} from appearing as "UI: ..." when not mapped
+        // Build reverse map: placeholder name -> target node ID for all mapped fields
+        val placeholderToTargetNodeId = fieldMappings.entries.associate { (fieldKey, mapping) ->
+            TemplateKeyRegistry.getPlaceholderForKey(fieldKey) to mapping.first
+        }
+
+        // Remove stale and unmapped placeholders in a single pass:
+        // - Stale: node still holds {{placeholder}} for a MAPPED field but is no longer the
+        //   target node (left over when the user re-saves with a different node selected).
+        //   replaceCommonPlaceholders() does a global String.replace, so a stale placeholder
+        //   in an unrelated node (e.g. {{latent_upscale_model}} in UltralyticsDetectorProvider)
+        //   would receive the wrong value and cause a server 400 error.
+        // - Unmapped: node holds {{placeholder}} for an optional field that has no mapping at all.
         val mappedFieldKeys = fieldMappings.keys
         val allOptionalKeys = TemplateKeyRegistry.getOptionalKeysForType(existingWorkflow.type)
         val unmappedOptionalKeys = allOptionalKeys - mappedFieldKeys
@@ -869,17 +949,20 @@ object WorkflowManager {
 
             for (inputKey in inputs.keys().asSequence().toList()) {
                 val value = inputs.optString(inputKey, "")
-                val placeholderMatch = placeholderRegex.find(value)
-                if (placeholderMatch != null) {
-                    val placeholderName = placeholderMatch.groupValues[1]
-                    val fieldKey = TemplateKeyRegistry.getJsonKeyForPlaceholder(placeholderName)
-                    // Check both placeholder name and JSON key (OPTIONAL_KEYS uses mixed formats:
-                    // JSON keys for prompts like "negative_text", placeholder names for
-                    // highnoise/lownoise variants that share the same JSON key)
-                    if (placeholderName in unmappedOptionalKeys || fieldKey in unmappedOptionalKeys) {
-                        // Replace placeholder with empty string so it shows as unmapped in editor
-                        inputs.put(inputKey, "")
-                    }
+                val placeholderMatch = placeholderRegex.find(value) ?: continue
+                val placeholderName = placeholderMatch.groupValues[1]
+
+                // Case 1: placeholder belongs to a mapped field but this is not the target node
+                val targetNodeId = placeholderToTargetNodeId[placeholderName]
+                if (targetNodeId != null && nodeId != targetNodeId) {
+                    inputs.put(inputKey, "")
+                    continue
+                }
+
+                // Case 2: placeholder belongs to an unmapped optional field
+                val fieldKey = TemplateKeyRegistry.getJsonKeyForPlaceholder(placeholderName)
+                if (placeholderName in unmappedOptionalKeys || fieldKey in unmappedOptionalKeys) {
+                    inputs.put(inputKey, "")
                 }
             }
         }
@@ -915,6 +998,10 @@ object WorkflowManager {
             // Include notes if present in original JSON
             if (isWrapped && json.has("notes")) {
                 put("notes", json.getJSONArray("notes"))
+            }
+            // Include manual_placement if present in original JSON
+            if (isWrapped && json.has("manual_placement")) {
+                put("manual_placement", json.getBoolean("manual_placement"))
             }
             if (fieldMappings.isNotEmpty()) {
                 put("fieldMappings", JSONObject().apply {
@@ -1117,6 +1204,11 @@ object WorkflowManager {
             // Update preferences
             prefs.edit().putString(USER_WORKFLOWS_KEY, newArray.toString()).apply()
 
+            if (workflowId in disabledWorkflowIds) {
+                disabledWorkflowIds = disabledWorkflowIds - workflowId
+                AppSettings.setDisabledWorkflowIds(applicationContext, disabledWorkflowIds)
+            }
+
             _workflowsVersion.value++
             return true
         } catch (e: Exception) {
@@ -1201,6 +1293,13 @@ object WorkflowManager {
     }
 
     /**
+     * Get the workflows of a type the user hasn't switched off, i.e. those offered on the
+     * generation screens
+     */
+    fun getEnabledWorkflowsByType(type: WorkflowType): List<Workflow> =
+        getWorkflowsByType(type).filter { isWorkflowEnabled(it.id) }
+
+    /**
      * Check if a workflow can be deleted (not built-in)
      */
     fun canDeleteWorkflow(workflowId: String): Boolean {
@@ -1254,44 +1353,6 @@ object WorkflowManager {
      */
     fun getWorkflowById(id: String): Workflow? {
         return workflows.find { it.id == id }
-    }
-
-    private fun saveDebugArtifact(filename: String, content: String) {
-        runCatching {
-            File(debugArtifactDir, filename).writeText(content, StandardCharsets.UTF_8)
-        }.onFailure { e ->
-            DebugLogger.w(TAG, "saveDebugArtifact failed for $filename: ${e.message}")
-        }
-    }
-
-    private fun saveWorkflowDebugSnapshot(
-        workflow: Workflow,
-        workflowId: String,
-        preparedJson: String,
-        extraContext: JSONObject = JSONObject()
-    ) {
-        saveDebugArtifact("selected_workflow_original.json", workflow.jsonContent)
-        saveDebugArtifact("last_prepared_workflow.json", preparedJson)
-
-        val serverId = ConnectionManager.currentServerId
-        val workflowValues = serverId?.let { workflowValuesStorage.loadValues(it, workflowId) }
-        val workflowValuesJson = JSONObject().apply {
-            put("server_id", serverId ?: JSONObject.NULL)
-            put("workflow_id", workflowId)
-            put("workflow_name", workflow.name)
-            put("values", workflowValues?.let { JSONObject(sh.hnet.comfychair.model.WorkflowValues.toJson(it)) } ?: JSONObject.NULL)
-        }
-        saveDebugArtifact("workflow_values_snapshot.json", workflowValuesJson.toString(2))
-
-        val generationContext = JSONObject().apply {
-            put("workflow_id", workflowId)
-            put("workflow_name", workflow.name)
-            put("workflow_type", workflow.type.name)
-            put("server_id", serverId ?: JSONObject.NULL)
-            put("captured_at", System.currentTimeMillis())
-            put("extra", extraContext)
-        }
-        saveDebugArtifact("generation_context.json", generationContext.toString(2))
     }
 
     /**
@@ -1503,7 +1564,210 @@ object WorkflowManager {
     }
 
     /**
-     * Prepare workflow JSON with actual parameter values (by workflow ID)
+     * Images uploaded to the server for a workflow (server-side file names).
+     */
+    private fun saveDebugArtifact(filename: String, content: String) {
+        runCatching {
+            File(debugArtifactDir, filename).writeText(content, StandardCharsets.UTF_8)
+        }.onFailure { e ->
+            DebugLogger.w(TAG, "saveDebugArtifact failed for $filename: ${e.message}")
+        }
+    }
+
+    private fun saveWorkflowDebugSnapshot(
+        workflow: Workflow,
+        workflowId: String,
+        preparedJson: String,
+        extraContext: JSONObject = JSONObject()
+    ) {
+        saveDebugArtifact("selected_workflow_original.json", workflow.jsonContent)
+        saveDebugArtifact("last_prepared_workflow.json", preparedJson)
+
+        val serverId = ConnectionManager.currentServerId
+        val workflowValues = serverId?.let { workflowValuesStorage.loadValues(it, workflowId) }
+        val workflowValuesJson = JSONObject().apply {
+            put("server_id", serverId ?: JSONObject.NULL)
+            put("workflow_id", workflowId)
+            put("workflow_name", workflow.name)
+            put("values", workflowValues?.let { JSONObject(sh.hnet.comfychair.model.WorkflowValues.toJson(it)) } ?: JSONObject.NULL)
+        }
+        saveDebugArtifact("workflow_values_snapshot.json", workflowValuesJson.toString(2))
+
+        val generationContext = JSONObject().apply {
+            put("workflow_id", workflowId)
+            put("workflow_name", workflow.name)
+            put("workflow_type", workflow.type.name)
+            put("server_id", serverId ?: JSONObject.NULL)
+            put("captured_at", System.currentTimeMillis())
+            put("extra", extraContext)
+        }
+        saveDebugArtifact("generation_context.json", generationContext.toString(2))
+    }
+
+    data class WorkflowImages(
+        val source: String? = null,
+        val reference1: String? = null,
+        val reference2: String? = null,
+        val source2: String? = null,
+        val source3: String? = null,
+        val source4: String? = null,
+        val bypassedSourceSlots: Set<Int> = emptySet()
+    )
+
+    /**
+     * Prepare a workflow for submission: every placeholder filled from [params] (prompts, all model
+     * selections, all parameters), uploaded [images] referenced, unused reference image nodes removed,
+     * node edits from the Workflow Editor and bypassed nodes applied, and the LoRA chains injected.
+     *
+     * The single preparation for all screens: any workflow can use any placeholder, so nothing here
+     * depends on the screen. Returns null if the workflow doesn't exist.
+     */
+    fun prepareWorkflow(
+        workflowId: String,
+        params: GenerationParams,
+        images: WorkflowImages = WorkflowImages()
+    ): String? {
+        val workflow = getWorkflowById(workflowId) ?: return null
+        DebugLogger.i(TAG, "Preparing workflow ${Obfuscator.workflowName(workflow.name)} (${workflow.type})")
+        DebugLogger.d(TAG, "Prompt: ${Obfuscator.prompt(params.positivePrompt)}, steps: ${params.steps}, cfg: ${params.cfg}, " +
+            "sampler: ${params.sampler}, scheduler: ${params.scheduler}")
+        ModelSlot.entries.forEach { slot ->
+            params.selection(slot).takeIf { it.isNotEmpty() }?.let {
+                DebugLogger.d(TAG, "${slot.name}: ${Obfuscator.modelName(it)}")
+            }
+        }
+        images.source?.let { DebugLogger.d(TAG, "Source image: ${Obfuscator.filename(it)}") }
+
+        var json = workflow.jsonContent
+
+        // Prompts and models
+        json = json.replace("{{positive_prompt}}", escapeForJson(params.positivePrompt))
+        json = json.replace("{{negative_prompt}}", escapeForJson(params.negativePrompt))
+        ModelSlot.entries.forEach { slot ->
+            json = json.replace("{{${slot.placeholder}}}", escapeForJson(params.selection(slot)))
+        }
+
+        // Identify optional source nodes against the unexpanded template, never by an empty
+        // image value: two empty inputs must not accidentally bypass an unrelated LoadImage.
+        json = applySourceSlotBypasses(json, images.bypassedSourceSlots)
+        val imageValues = listOf(
+            Triple("image_filename", "uploaded_image.png", images.source),
+            Triple("image_filename_2", "uploaded_image_2.png", images.source2),
+            Triple("image_filename_3", "uploaded_image_3.png", images.source3),
+            Triple("image_filename_4", "uploaded_image_4.png", images.source4),
+            Triple("reference_image_1", "reference_image_1.png", images.reference1),
+            Triple("reference_image_2", "reference_image_2.png", images.reference2)
+        )
+        imageValues.forEach { (key, literal, name) ->
+            name?.let {
+                require(!it.endsWith(" [input]")) { "Workflow image descriptors must be bare paths" }
+                val annotated = "${escapeForJson(it)} [input]"
+                json = json.replace("{{$key}} [input]", "{{$key}}")
+                json = json.replace("{{$key}}", annotated)
+                json = json.replace("$literal [input]", annotated)
+            }
+        }
+
+        // Parameters
+        json = replaceCommonPlaceholders(
+            json = json,
+            seed = if (params.randomSeed) (0..999999999999).random() else (params.seed.toLongOrNull() ?: 0),
+            steps = params.steps.toIntOrNull(),
+            cfg = params.cfg.toFloatOrNull(),
+            samplerName = params.sampler,
+            scheduler = params.scheduler,
+            denoise = params.denoise.toFloatOrNull(),
+            batchSize = params.batchSize.toIntOrNull(),
+            width = params.width.toIntOrNull(),
+            height = params.height.toIntOrNull(),
+            megapixels = params.megapixels.toFloatOrNull(),
+            length = params.length.toIntOrNull(),
+            frameRate = params.fps.toIntOrNull(),
+            upscaleMethod = params.upscaleMethod.takeIf { it.isNotEmpty() },
+            scaleBy = params.scaleBy.toFloatOrNull(),
+            stopAtClipLayer = params.stopAtClipLayer.toIntOrNull()
+        )
+
+        json = removeUnusedReferenceImages(json, images)
+        json = applyBypassedNodes(WorkflowPromptFinalizer.fillMissingPngSaveInputs(applyNodeAttributeEdits(json, workflow.id)))
+
+        // LoRA chains: the main chain after the model loader, the high/low noise chains after a
+        // dual-model workflow's own LoRAs (no change for workflows without that structure)
+        if (params.loraChain.isNotEmpty()) {
+            json = injectLoraChain(json, params.loraChain, workflow.type)
+        }
+        if (params.highnoiseLoraChain.isNotEmpty()) {
+            json = injectAdditionalVideoLoras(json, params.highnoiseLoraChain, isHighNoise = true)
+        }
+        if (params.lownoiseLoraChain.isNotEmpty()) {
+            json = injectAdditionalVideoLoras(json, params.lownoiseLoraChain, isHighNoise = false)
+        }
+        saveWorkflowDebugSnapshot(workflow, workflow.id, json, JSONObject().apply {
+            put("mode", workflow.type.name)
+            put("bypassed_slots", JSONArray(images.bypassedSourceSlots.toList()))
+        })
+        return json
+    }
+
+    /** Mark only the native source nodes of the requested slots before placeholder expansion. */
+    private fun applySourceSlotBypasses(template: String, slots: Set<Int>): String {
+        require(slots.all { it in 2..4 }) { "Only optional source slots 2–4 can be bypassed" }
+        if (slots.isEmpty()) return template
+        val json = JSONObject(template)
+        val nodes = json.optJSONObject("prompt") ?: json.optJSONObject("nodes") ?: json
+        for (id in nodes.keys()) {
+            val node = nodes.optJSONObject(id) ?: continue
+            if (node.optString("class_type") != "LoadImage") continue
+            val image = node.optJSONObject("inputs")?.optString("image") ?: continue
+            if (slots.any { image == "{{image_filename_$it}}" || image == "{{image_filename_$it}} [input]" }) {
+                node.put("mode", 4)
+            }
+        }
+        return json.toString()
+    }
+
+    /**
+     * Remove reference image nodes (LoadImage with a reference image placeholder) that got no image,
+     * together with the inputs connected to them, so the workflow runs without the optional references.
+     */
+    private fun removeUnusedReferenceImages(processedJson: String, images: WorkflowImages): String {
+        if (!processedJson.contains("reference_image_")) return processedJson
+        return try {
+            val json = JSONObject(processedJson)
+            val nodes = json.optJSONObject("prompt") ?: json.optJSONObject("nodes") ?: json
+
+            val nodesToRemove = mutableSetOf<String>()
+            for (nodeId in nodes.keys()) {
+                val node = nodes.optJSONObject(nodeId) ?: continue
+                if (node.optString("class_type") != "LoadImage") continue
+                val imageName = node.optJSONObject("inputs")?.optString("image", "") ?: continue
+                val isRef1 = imageName == "{{reference_image_1}}" || imageName == "reference_image_1.png [input]"
+                val isRef2 = imageName == "{{reference_image_2}}" || imageName == "reference_image_2.png [input]"
+                if ((isRef1 && images.reference1 == null) || (isRef2 && images.reference2 == null)) {
+                    nodesToRemove.add(nodeId)
+                }
+            }
+            if (nodesToRemove.isEmpty()) return processedJson
+            nodesToRemove.forEach { nodes.remove(it) }
+
+            // Connections are [nodeId, outputIndex] arrays
+            for (nodeId in nodes.keys()) {
+                val inputs = nodes.optJSONObject(nodeId)?.optJSONObject("inputs") ?: continue
+                val connected = inputs.keys().asSequence().filter { key ->
+                    val value = inputs.opt(key)
+                    value is JSONArray && value.length() == 2 && value.optString(0) in nodesToRemove
+                }.toList()
+                connected.forEach { inputs.remove(it) }
+            }
+            json.toString()
+        } catch (e: Exception) {
+            processedJson
+        }
+    }
+
+    /**
+     * Check if a value is a template placeholder (e.g., "{{sampler_name}}")
+     * These should not be extracted as default values.
      */
     fun prepareWorkflowById(
         workflowId: String,
@@ -2320,10 +2584,6 @@ object WorkflowManager {
         return finalJson
     }
 
-    /**
-     * Check if a value is a template placeholder (e.g., "{{sampler_name}}")
-     * These should not be extracted as default values.
-     */
     private fun isPlaceholder(value: Any?): Boolean {
         return value is String && value.startsWith("{{") && value.endsWith("}}")
     }

@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import sh.hnet.comfychair.ComfyUIClient
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.util.DebugLogger
+import sh.hnet.comfychair.util.Obfuscator
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -32,7 +33,10 @@ data class MediaCacheKey(
     val filename: String
 ) {
     val keyString: String get() = "${promptId}_$filename"
-    override fun toString(): String = keyString
+
+    /** Obfuscated form for the debug log, which users may export and share. */
+    val logString: String get() = "${Obfuscator.promptId(promptId)}/${Obfuscator.filename(filename)}"
+    override fun toString(): String = logString
 }
 
 /**
@@ -166,6 +170,22 @@ object MediaCache {
      * Check if memory-first mode is enabled.
      */
     fun isMemoryFirstMode(): Boolean = isMemoryFirstMode
+
+    /** Whether the gallery/viewer disk cache holds any files. */
+    fun hasDiskCache(context: Context): Boolean =
+        File(context.cacheDir, DISK_CACHE_DIR).listFiles()?.isNotEmpty() == true
+
+    /**
+     * Delete the gallery/viewer disk cache, for memory-only storage. Unlike switching modes, this
+     * also removes files left when the app starts in memory mode.
+     */
+    fun deleteDiskCache(context: Context) {
+        try {
+            File(context.cacheDir, DISK_CACHE_DIR).deleteRecursively()
+        } catch (_: Exception) {
+            // Ignore deletion failures
+        }
+    }
 
     /**
      * Get the disk cache directory.
@@ -480,13 +500,13 @@ object MediaCache {
         if (isMemoryFirstMode) {
             // Memory-first: check memory cache first
             bitmapCache.get(keyStr)?.let {
-                DebugLogger.d(TAG, "fetchBitmap: $keyStr from memory cache -> HIT")
+                DebugLogger.d(TAG, "fetchBitmap: ${key.logString} from memory cache -> HIT")
                 return it
             }
 
             // No client in offline mode - can't fetch from server
             if (client == null) {
-                DebugLogger.d(TAG, "fetchBitmap: $keyStr -> no client (offline), cache MISS")
+                DebugLogger.d(TAG, "fetchBitmap: ${key.logString} -> no client (offline), cache MISS")
                 return null
             }
 
@@ -503,7 +523,7 @@ object MediaCache {
                 // Check disk cache first (works in offline mode!)
                 if (!isVideo) {
                     readBitmapFromDisk(context, key)?.let {
-                        DebugLogger.d(TAG, "fetchBitmap: $keyStr from disk cache -> HIT")
+                        DebugLogger.d(TAG, "fetchBitmap: ${key.logString} from disk cache -> HIT")
                         return@withContext it
                     }
                 } else {
@@ -511,7 +531,7 @@ object MediaCache {
                     if (existsInDiskCache(context, key, true)) {
                         val videoBytes = readVideoBytesFromDisk(context, key)
                         if (videoBytes != null) {
-                            DebugLogger.d(TAG, "fetchBitmap: $keyStr video from disk cache -> HIT")
+                            DebugLogger.d(TAG, "fetchBitmap: ${key.logString} video from disk cache -> HIT")
                             val (_, thumbnail) = extractVideoData(keyStr, videoBytes, context)
                             return@withContext thumbnail
                         }
@@ -520,12 +540,12 @@ object MediaCache {
 
                 // No client in offline mode - can't fetch from server
                 if (client == null) {
-                    DebugLogger.d(TAG, "fetchBitmap: $keyStr -> no client (offline), disk cache MISS")
+                    DebugLogger.d(TAG, "fetchBitmap: ${key.logString} -> no client (offline), disk cache MISS")
                     return@withContext null
                 }
 
                 // Fetch from server
-                DebugLogger.d(TAG, "fetchBitmap: $keyStr -> fetching from server")
+                DebugLogger.d(TAG, "fetchBitmap: ${key.logString} -> fetching from server")
                 if (isVideo) {
                     fetchVideoBitmapDiskFirst(key, subfolder, type, client, context)
                 } else {
@@ -662,13 +682,13 @@ object MediaCache {
         if (isMemoryFirstMode) {
             // Memory-first: check memory cache first
             bitmapCache.get(key.keyString)?.let {
-                DebugLogger.d(TAG, "fetchImage: ${key.keyString} from memory cache -> HIT")
+                DebugLogger.d(TAG, "fetchImage: ${key.logString} from memory cache -> HIT")
                 return it
             }
 
             // No client in offline mode - can't fetch from server
             if (client == null) {
-                DebugLogger.d(TAG, "fetchImage: ${key.keyString} -> no client (offline), cache MISS")
+                DebugLogger.d(TAG, "fetchImage: ${key.logString} -> no client (offline), cache MISS")
                 return null
             }
 
@@ -686,17 +706,17 @@ object MediaCache {
             // Disk-first: check disk cache first, fetch and save to disk if not found
             return withContext(Dispatchers.IO) {
                 readBitmapFromDisk(context, key)?.let {
-                    DebugLogger.d(TAG, "fetchImage: ${key.keyString} from disk cache -> HIT")
+                    DebugLogger.d(TAG, "fetchImage: ${key.logString} from disk cache -> HIT")
                     return@withContext it
                 }
 
                 // No client in offline mode - can't fetch from server
                 if (client == null) {
-                    DebugLogger.d(TAG, "fetchImage: ${key.keyString} -> no client (offline), disk cache MISS")
+                    DebugLogger.d(TAG, "fetchImage: ${key.logString} -> no client (offline), disk cache MISS")
                     return@withContext null
                 }
 
-                DebugLogger.d(TAG, "fetchImage: ${key.keyString} -> fetching from server")
+                DebugLogger.d(TAG, "fetchImage: ${key.logString} -> fetching from server")
                 val bitmap = suspendCancellableCoroutine { continuation ->
                     client.fetchImage(key.filename, subfolder, type) { bmp, _ ->
                         continuation.resume(bmp)
@@ -734,13 +754,13 @@ object MediaCache {
         if (isMemoryFirstMode) {
             // Memory-first: check memory cache first
             videoCache.get(key.keyString)?.let {
-                DebugLogger.d(TAG, "fetchVideoBytes: ${key.keyString} from memory cache -> HIT")
+                DebugLogger.d(TAG, "fetchVideoBytes: ${key.logString} from memory cache -> HIT")
                 return it
             }
 
             // No client in offline mode - can't fetch from server
             if (client == null) {
-                DebugLogger.d(TAG, "fetchVideoBytes: ${key.keyString} -> no client (offline), cache MISS")
+                DebugLogger.d(TAG, "fetchVideoBytes: ${key.logString} -> no client (offline), cache MISS")
                 return null
             }
 
@@ -758,17 +778,17 @@ object MediaCache {
             // Disk-first: check disk cache first, fetch and save to disk if not found
             return withContext(Dispatchers.IO) {
                 readVideoBytesFromDisk(context, key)?.let {
-                    DebugLogger.d(TAG, "fetchVideoBytes: ${key.keyString} from disk cache -> HIT")
+                    DebugLogger.d(TAG, "fetchVideoBytes: ${key.logString} from disk cache -> HIT")
                     return@withContext it
                 }
 
                 // No client in offline mode - can't fetch from server
                 if (client == null) {
-                    DebugLogger.d(TAG, "fetchVideoBytes: ${key.keyString} -> no client (offline), disk cache MISS")
+                    DebugLogger.d(TAG, "fetchVideoBytes: ${key.logString} -> no client (offline), disk cache MISS")
                     return@withContext null
                 }
 
-                DebugLogger.d(TAG, "fetchVideoBytes: ${key.keyString} -> fetching from server")
+                DebugLogger.d(TAG, "fetchVideoBytes: ${key.logString} -> fetching from server")
                 val bytes = suspendCancellableCoroutine { continuation ->
                     client.fetchVideo(key.filename, subfolder, type) { videoBytes, _ ->
                         continuation.resume(videoBytes)
@@ -799,7 +819,7 @@ object MediaCache {
 
     /**
      * Get video URI for ExoPlayer playback.
-     * In memory-first mode, creates a temp file from cached bytes.
+     * In memory-first mode, returns an in-memory URI (see InMemoryVideo), nothing is written to disk.
      * In disk-first mode, returns URI directly to the cached file.
      * Returns null if bytes not cached - call fetchVideoBytes first.
      */
@@ -810,27 +830,12 @@ object MediaCache {
             // Memory-first: return cached URI if available
             videoUriCache[keyStr]?.let { return it }
 
-            val bytes = videoCache.get(keyStr) ?: return null
+            if (videoCache.get(keyStr) == null) return null
 
-            return withContext(Dispatchers.IO) {
-                try {
-                    // Create temp file for playback
-                    val tempFile = File(context.cacheDir, "playback_${keyStr.hashCode()}.mp4")
-                    tempFile.writeBytes(bytes)
-
-                    val uri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        tempFile
-                    )
-
-                    // Cache the URI for future use
-                    videoUriCache[keyStr] = uri
-                    uri
-                } catch (_: Exception) {
-                    null
-                }
-            }
+            // Play straight from RAM; cache the URI for future use
+            val uri = InMemoryVideo.uriFor("cache_$keyStr") { videoCache.get(keyStr) }
+            videoUriCache[keyStr] = uri
+            return uri
         } else {
             // Disk-first: return URI directly to the cached file
             return withContext(Dispatchers.IO) {
@@ -1158,23 +1163,18 @@ object MediaCache {
     // Utilities
 
     /**
-     * Extract video dimensions and thumbnail from video bytes.
-     * Uses MediaMetadataRetriever which requires a file, so creates a temp file.
+     * Extract video dimensions and thumbnail from video bytes, read from RAM (no temp file).
      * Returns Pair of (dimensions, thumbnail) - either may be null on error.
      *
-     * @param keyStr Unique key string used for temp file naming to prevent race conditions
+     * @param keyStr Cache key of the video (unused, kept for call-site symmetry)
      * @param videoBytes The video bytes to extract from
-     * @param context Android context for cache directory access
+     * @param context Android context
      */
+    @Suppress("UNUSED_PARAMETER")
     private fun extractVideoData(keyStr: String, videoBytes: ByteArray, context: Context): Pair<VideoDimensions?, Bitmap?> {
-        // Use key hash + thread ID for unique temp filename to prevent race conditions
-        @Suppress("DEPRECATION")
-        val uniqueId = "${keyStr.hashCode()}_${Thread.currentThread().id}"
-        val tempFile = File(context.cacheDir, "temp_meta_$uniqueId.mp4")
         return try {
-            tempFile.writeBytes(videoBytes)
             val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(tempFile.absolutePath)
+            retriever.setDataSource(InMemoryVideo.ByteArrayMediaDataSource(videoBytes))
             val thumbnail = retriever.getFrameAtTime(0)
             val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
                 ?: thumbnail?.width ?: 0
@@ -1184,8 +1184,6 @@ object MediaCache {
             Pair(VideoDimensions(width, height), thumbnail)
         } catch (_: Exception) {
             Pair(null, null)
-        } finally {
-            tempFile.delete()
         }
     }
 }

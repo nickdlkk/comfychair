@@ -4,17 +4,19 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
+import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import sh.hnet.comfychair.ComfyUIClient
 import sh.hnet.comfychair.R
@@ -23,13 +25,15 @@ import sh.hnet.comfychair.notification.GenerationForegroundService
 import sh.hnet.comfychair.notification.NotificationHelper
 import sh.hnet.comfychair.connection.ConnectionFailure
 import sh.hnet.comfychair.connection.ConnectionManager
-import sh.hnet.comfychair.util.VideoUtils
 import sh.hnet.comfychair.connection.WebSocketMessage
 import sh.hnet.comfychair.connection.WebSocketState
 import sh.hnet.comfychair.queue.JobRegistry
+import sh.hnet.comfychair.queue.QueueSnapshot
 import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.util.DebugLogger
+import sh.hnet.comfychair.util.GenerationOutputs
 import sh.hnet.comfychair.util.Obfuscator
+import sh.hnet.comfychair.util.VideoUtils
 
 /**
  * Generation state data class
@@ -100,6 +104,10 @@ class GenerationViewModel : ViewModel() {
     // Generation state
     private val _generationState = MutableStateFlow(GenerationState())
     val generationState: StateFlow<GenerationState> = _generationState.asStateFlow()
+
+    // Latest live frame of our running job, for the queue sheet; RAM only, cleared when the job ends
+    private val _livePreview = MutableStateFlow<Bitmap?>(null)
+    val livePreview: StateFlow<Bitmap?> = _livePreview.asStateFlow()
 
     // One-time events
     private val _events = MutableSharedFlow<GenerationEvent>()
@@ -269,6 +277,7 @@ class GenerationViewModel : ViewModel() {
                 // Only process previews if we're generating and live preview is enabled
                 val context = applicationContext
                 if (currentState.isGenerating && context != null && AppSettings.isLivePreviewEnabled(context)) {
+                    _livePreview.value = message.bitmap
                     dispatchEvent(GenerationEvent.PreviewImage(message.bitmap))
                 }
             }
@@ -555,7 +564,7 @@ class GenerationViewModel : ViewModel() {
                     }
                 }
                 DebugLogger.i(TAG, "Fetching video immediately for $ownerId (promptId=${Obfuscator.promptId(event.promptId)})")
-                VideoUtils.fetchVideoFromHistory(context, client, event.promptId, filePrefix) { uri ->
+                VideoUtils.fetchVideoFromHistory(context, client, event.promptId, filePrefix) { uri, _ ->
                     if (uri != null) {
                         DebugLogger.i(TAG, "Immediate video fetch successful for $ownerId")
                         // Trigger completion notification
@@ -588,40 +597,27 @@ class GenerationViewModel : ViewModel() {
         client.fetchHistory(promptId) { historyJson ->
             if (historyJson != null) {
                 try {
-                    val promptData = historyJson.optJSONObject(promptId)
-                    val outputs = promptData?.optJSONObject("outputs")
+                    GenerationOutputs.fromHistory(historyJson, promptId).firstOrNull { !it.isVideo }?.let { image ->
+                        val filename = image.filename
+                        val subfolder = image.subfolder
+                        val type = image.type
 
-                    outputs?.keys()?.forEach { nodeId ->
-                        val nodeOutput = outputs.getJSONObject(nodeId)
-                        val images = nodeOutput.optJSONArray("images")
-
-                        if (images != null && images.length() > 0) {
-                            val imageInfo = images.getJSONObject(0)
-                            val filename = imageInfo.optString("filename")
-                            val subfolder = imageInfo.optString("subfolder", "")
-                            val type = imageInfo.optString("type", "output")
-
-                            client.fetchImage(filename, subfolder, type) { bitmap, failureType ->
-                                if (bitmap != null) {
-                                    MediaStateHolder.putBitmap(mediaKey, bitmap, context)
-                                    DebugLogger.i(TAG, "Immediate image fetch successful, stored to ${mediaKey::class.simpleName}")
-                                    // Trigger completion notification
-                                    NotificationHelper.onGenerationComplete(
-                                        context = context,
-                                        promptId = promptId,
-                                        ownerId = ownerId,
-                                        contentType = "IMAGE",
-                                        isVideo = false
-                                    )
-                                } else if (failureType == ConnectionFailure.STALLED) {
-                                    DebugLogger.w(TAG, "Immediate image fetch stalled")
-                                    ConnectionManager.showConnectionAlert(context, failureType)
-                                } else {
-                                    DebugLogger.w(TAG, "Immediate image fetch failed: bitmap is null")
-                                }
+                        client.fetchImage(filename, subfolder, type) { bitmap, failureType ->
+                            if (bitmap != null) {
+                                MediaStateHolder.putBitmap(mediaKey, bitmap, context)
+                                DebugLogger.i(TAG, "Immediate image fetch successful, stored to ${mediaKey::class.simpleName}")
+                                NotificationHelper.onGenerationComplete(
+                                    context = context, promptId = promptId, ownerId = ownerId,
+                                    contentType = "IMAGE", isVideo = false
+                                )
+                            } else if (failureType == ConnectionFailure.STALLED) {
+                                DebugLogger.w(TAG, "Immediate image fetch stalled")
+                                ConnectionManager.showConnectionAlert(context, failureType)
+                            } else {
+                                DebugLogger.w(TAG, "Immediate image fetch failed: bitmap is null")
                             }
-                            return@fetchHistory
                         }
+                        return@fetchHistory
                     }
                     DebugLogger.w(TAG, "Immediate image fetch: no images in history output")
                 } catch (e: Exception) {
@@ -694,12 +690,27 @@ class GenerationViewModel : ViewModel() {
 
         DebugLogger.d(TAG, "Submitting workflow to server")
         val mainHandler = Handler(Looper.getMainLooper())
-        client.submitPrompt(workflowJson, front) { success, promptId, errorMessage, failureType ->
+        client.submitPrompt(workflowJson, front) { success, promptId, errorMessage, failureType, skippedOutputs ->
             if (success && promptId != null) {
                 DebugLogger.i(TAG, "Workflow submitted successfully (promptId: ${Obfuscator.promptId(promptId)})")
 
                 // Bind immutable source metadata before completion can be delivered to its owner.
                 onSubmitted(promptId)
+                // ComfyUI queued the job but dropped outputs that failed validation; tell the user
+                // instead of silently delivering an incomplete result (full list in the debug log)
+                if (skippedOutputs.isNotEmpty()) {
+                    mainHandler.post {
+                        applicationContext?.let { ctx ->
+                            val message = if (skippedOutputs.size == 1) {
+                                ctx.getString(R.string.msg_outputs_skipped, skippedOutputs.first())
+                            } else {
+                                ctx.getString(R.string.msg_outputs_skipped_more, skippedOutputs.first(), skippedOutputs.size - 1)
+                            }
+                            Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+
                 // Register job with JobRegistry for queue tracking
                 generationOwnerId?.let { ownerId ->
                     JobRegistry.registerJob(promptId, ownerId, generationContentType)
@@ -748,7 +759,12 @@ class GenerationViewModel : ViewModel() {
     /**
      * Cancel the current generation
      */
-    fun cancelGeneration(onResult: (success: Boolean) -> Unit) {
+    /**
+     * Interrupt the running job.
+     *
+     * @param promptId Interrupt only this job (see [ComfyUIClient.interruptExecution]); null for whatever runs
+     */
+    fun cancelGeneration(promptId: String? = null, onResult: (success: Boolean) -> Unit) {
         DebugLogger.i(TAG, "Cancelling generation")
         val client = comfyUIClient ?: run {
             DebugLogger.w(TAG, "Cannot cancel: client not initialized")
@@ -757,7 +773,7 @@ class GenerationViewModel : ViewModel() {
         }
 
         val mainHandler = Handler(Looper.getMainLooper())
-        client.interruptExecution { success ->
+        client.interruptExecution(promptId) { success ->
             if (success) {
                 DebugLogger.i(TAG, "Generation cancelled successfully")
             } else {
@@ -766,6 +782,80 @@ class GenerationViewModel : ViewModel() {
             resetGenerationState()
             dispatchEvent(GenerationEvent.GenerationCancelled)
             mainHandler.post { onResult(success) }
+        }
+    }
+
+    // Queue sheet
+
+    /** The server queue as job ids, on the main thread; null if it couldn't be read. */
+    fun fetchQueueSnapshot(onResult: (QueueSnapshot?) -> Unit) {
+        val client = comfyUIClient ?: return onResult(null)
+        val mainHandler = Handler(Looper.getMainLooper())
+        client.fetchQueue { json -> mainHandler.post { onResult(json?.let { QueueSnapshot.parse(it) }) } }
+    }
+
+    /** Remove one of our waiting jobs from the server queue and stop tracking it. */
+    fun removeFromQueue(promptId: String, onResult: (success: Boolean) -> Unit) {
+        val client = comfyUIClient ?: return onResult(false)
+        val mainHandler = Handler(Looper.getMainLooper())
+        client.deleteFromQueue(listOf(promptId)) { success ->
+            if (success) forgetJob(promptId)
+            mainHandler.post { onResult(success) }
+        }
+    }
+
+    /**
+     * Move one of our waiting jobs to the front. ComfyUI can't reorder its queue, so the job is removed and submitted
+     * again at the front with the same id. If it started running in between, it's left alone rather than run twice;
+     * if the queue can't be checked after removing it, it's submitted again rather than lost.
+     */
+    fun moveToFront(promptId: String, onResult: (success: Boolean) -> Unit) {
+        val client = comfyUIClient ?: return onResult(false)
+        val mainHandler = Handler(Looper.getMainLooper())
+        val done: (Boolean) -> Unit = { success -> mainHandler.post { onResult(success) } }
+        client.fetchQueue { json ->
+            val prompt = json?.let { QueueSnapshot.pendingPrompt(it, promptId) } ?: return@fetchQueue done(false)
+            client.deleteFromQueue(listOf(promptId)) { deleted ->
+                if (!deleted) return@deleteFromQueue done(false)
+                client.fetchQueue { after ->
+                    val snapshot = after?.let { QueueSnapshot.parse(it) }
+                    if (snapshot != null && (promptId in snapshot.running || promptId in snapshot.pending)) {
+                        // Started (or stayed) before it could be removed: nothing to resubmit
+                        return@fetchQueue done(false)
+                    }
+                    client.resubmitPrompt(prompt, promptId, front = true) { success, newId ->
+                        if (success && newId != null) {
+                            if (newId != promptId) {
+                                // The server assigned a new id: follow the job under it
+                                JobRegistry.rekeyJob(promptId, newId)
+                                _generationState.update { if (it.promptId == promptId) it.copy(promptId = newId) else it }
+                            }
+                            applicationContext?.let { JobRegistry.saveState(it) }
+                        } else {
+                            DebugLogger.w(TAG, "Job removed but not submitted again (${Obfuscator.promptId(promptId)})")
+                            forgetJob(promptId)
+                        }
+                        done(success)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Clear the whole server queue, other clients' jobs included. */
+    fun clearQueue(onResult: (success: Boolean) -> Unit) {
+        val client = comfyUIClient ?: return onResult(false)
+        val mainHandler = Handler(Looper.getMainLooper())
+        client.clearQueue { success -> mainHandler.post { onResult(success) } }
+    }
+
+    /** Stop tracking a job that left the queue without running; a screen waiting for it stops waiting. */
+    private fun forgetJob(promptId: String) {
+        JobRegistry.removeJob(promptId)
+        applicationContext?.let { JobRegistry.saveState(it) }
+        if (_generationState.value.promptId == promptId) {
+            resetGenerationState()
+            dispatchEvent(GenerationEvent.GenerationCancelled)
         }
     }
 
@@ -805,6 +895,7 @@ class GenerationViewModel : ViewModel() {
         }
 
         _generationState.value = GenerationState()
+        _livePreview.value = null
         generationOwnerId = null
         // Clear persisted state to prevent stale "generating" state on app restart
         applicationContext?.let { saveGenerationState(it) }
@@ -846,14 +937,10 @@ class GenerationViewModel : ViewModel() {
 
             val outputs = historyJson.optJSONObject(promptId)?.optJSONObject("outputs")
             if (outputs != null && outputs.length() > 0) {
-                val event = if (contentType == ContentType.VIDEO) {
-                    GenerationEvent.VideoGenerated(promptId)
-                } else {
-                    GenerationEvent.ImageGenerated(promptId)
-                }
-                dispatchEvent(event)
-                completeGeneration(promptId)
-                // Gallery refresh handled by JobRegistry.markCompleted() via WebSocket event
+                // Same completion as the other paths, including marking the job done in JobRegistry: polling runs
+                // exactly when no WebSocket completion event will come (e.g. after an app restart the server sends the
+                // job's events to the client id that submitted it, not to ours)
+                dispatchCompletionEvent(promptId, contentType)
             }
         }
     }
@@ -946,6 +1033,8 @@ class GenerationViewModel : ViewModel() {
         }
         dispatchEvent(event)
         completeGeneration(promptId)  // Pass promptId to prevent clearing state for a different job
+        // Found in the history with outputs: a ready result (if the WebSocket didn't report it already)
+        JobRegistry.notifyReady(promptId)
         // Clear JobRegistry state - ensures executingOwnerId is reset even when
         // WebSocket events were missed (app was in background during completion)
         JobRegistry.markCompleted(promptId)

@@ -12,10 +12,10 @@ class ServerGalleryLayoutContractTest {
         assertFalse(SettingsChromePolicy.showBottomBar("server_gallery"))
         for (route in listOf(null, "application", "server", "workflows", "about"))
             assertTrue(SettingsChromePolicy.showBottomBar(route))
-        val nav = source("ui/navigation/SettingsNavHost.kt")
-        assertTrue(nav.contains("if (showSettingsChrome) BottomAppBar("))
-        assertTrue(nav.contains("contentWindowInsets = if (showSettingsChrome)"))
-        assertTrue(nav.contains("consumeWindowInsets(paddingValues)"))
+        // The standalone gallery lives in the upstream MainNavHost; the bottom bar hides for its route.
+        val nav = source("ui/navigation/MainNavHost.kt")
+        assertTrue(nav.contains("currentRoute != \"server_gallery\""))
+        assertTrue(nav.contains("Modifier.padding(paddingValues)"))
     }
     @Test fun topTabsHaveNoPrecedingHeaderOrExplicitBack() {
         val screen = source("ui/screens/ServerGalleryScreen.kt")

@@ -1,7 +1,5 @@
 package sh.hnet.comfychair.viewmodel
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.ViewModel
@@ -22,6 +20,8 @@ import sh.hnet.comfychair.model.NodeAttributeEdits
 import sh.hnet.comfychair.storage.WorkflowValuesStorage
 import sh.hnet.comfychair.util.ConnectionValidator
 import sh.hnet.comfychair.util.DebugLogger
+import sh.hnet.comfychair.util.Obfuscator
+import sh.hnet.comfychair.util.PrivacyUtils
 import sh.hnet.comfychair.util.FieldMappingAnalyzer
 import sh.hnet.comfychair.util.GraphMutationUtils
 import sh.hnet.comfychair.util.GraphViewportCalculator
@@ -44,12 +44,12 @@ import sh.hnet.comfychair.workflow.NodeTypeDefinition
 import sh.hnet.comfychair.workflow.NodeTypeRegistry
 import sh.hnet.comfychair.workflow.OutputSlot
 import sh.hnet.comfychair.workflow.SlotPosition
+import sh.hnet.comfychair.workflow.TemplateKeyRegistry
 import sh.hnet.comfychair.workflow.WorkflowEdge
 import sh.hnet.comfychair.workflow.WorkflowEditorUiState
 import sh.hnet.comfychair.workflow.WorkflowGraph
 import sh.hnet.comfychair.workflow.WorkflowGroup
 import sh.hnet.comfychair.workflow.WorkflowLayoutEngine
-import sh.hnet.comfychair.workflow.TemplateKeyRegistry
 import sh.hnet.comfychair.workflow.WorkflowMappingState
 import sh.hnet.comfychair.workflow.WorkflowNode
 import sh.hnet.comfychair.workflow.WorkflowNote
@@ -202,7 +202,9 @@ class WorkflowEditorViewModel : ViewModel() {
                     editingWorkflowType = workflowType,
                     originalWorkflowName = name,
                     originalWorkflowDescription = description,
-                    viewingWorkflowIsBuiltIn = isBuiltIn
+                    viewingWorkflowIsBuiltIn = isBuiltIn,
+                    // Sync manual placement mode from graph
+                    isManualPlacementMode = graph.isManualPlacementMode
                 )
                 isInitialized = true
             } catch (e: Exception) {
@@ -385,7 +387,9 @@ class WorkflowEditorViewModel : ViewModel() {
                     editingWorkflowType = workflow.type,
                     originalWorkflowName = workflow.name,
                     originalWorkflowDescription = workflow.description,
-                    hasUnsavedChanges = false
+                    hasUnsavedChanges = false,
+                    // Sync manual placement mode from graph
+                    isManualPlacementMode = graph.isManualPlacementMode
                 )
                 isInitialized = true
 
@@ -908,7 +912,7 @@ class WorkflowEditorViewModel : ViewModel() {
         val name = state.saveDialogName.trim()
         val description = state.saveDialogDescription.trim()
 
-        DebugLogger.d(TAG, "proceedWithSave: name='$name', type=$selectedType, nodes=${graph.nodes.size}")
+        DebugLogger.d(TAG, "proceedWithSave: name=${Obfuscator.workflowName(name)}, type=$selectedType, nodes=${graph.nodes.size}")
 
         // Validate name format
         val nameError = WorkflowManager.validateWorkflowName(name)
@@ -1505,11 +1509,8 @@ class WorkflowEditorViewModel : ViewModel() {
             // Skip connections
             if (value is InputValue.Connection) return@filter false
 
-            // Skip template variables
-            if (value is InputValue.Literal) {
-                val strValue = value.value.toString()
-                if (strValue.contains("{{") && strValue.contains("}}")) return@filter false
-            }
+            // Skip template variables and other values filled in at generation time
+            if (value is InputValue.Literal && TemplateKeyRegistry.isAppManagedValue(value.value)) return@filter false
 
             // Skip force-input fields
             val definition = nodeDefinition?.inputs?.find { it.name == name }
@@ -1717,6 +1718,65 @@ class WorkflowEditorViewModel : ViewModel() {
             graphBounds = newBounds,
             hasUnsavedChanges = true
         )
+    }
+
+    /**
+     * Add a new note in manual placement mode, positioned at the view center.
+     * Calculates view center from stored canvas dimensions and current transform.
+     */
+    fun addNoteManual() {
+        val graph = mutableGraph ?: return
+        val state = _uiState.value
+        if (!state.isEditMode) return
+
+        // Generate unique note ID
+        val existingIds = graph.notes.map { it.id }.toSet()
+        var newId = 1
+        while (newId in existingIds) {
+            newId++
+        }
+
+        // Calculate note dimensions (estimate - will be measured during drawing)
+        val noteWidth = WorkflowLayoutEngine.NODE_WIDTH
+        val rawNoteHeight = WorkflowLayoutEngine.NODE_HEADER_HEIGHT + WorkflowLayoutEngine.NOTE_BODY_PADDING
+        val noteHeight = WorkflowLayoutEngine.snapHeightToGrid(rawNoteHeight)
+
+        // Calculate view center in graph coordinates
+        val viewCenterX = (canvasWidth / 2 - state.offset.x) / state.scale
+        val viewCenterY = (canvasHeight / 2 - state.offset.y) / state.scale
+
+        // Calculate note position at view center, snapped to grid
+        val noteX = viewCenterX - noteWidth / 2
+        val noteY = viewCenterY - noteHeight / 2
+        val (snappedX, snappedY) = WorkflowLayoutEngine.snapToGrid(noteX, noteY)
+
+        // Create the new note with position already set
+        val newNote = WorkflowNote(
+            id = newId,
+            title = "Note",
+            content = "",
+            x = snappedX,
+            y = snappedY,
+            width = noteWidth,
+            height = noteHeight,
+            hasManualPosition = true  // Mark as manually positioned
+        )
+
+        // Add to graph
+        graph.notes.add(newNote)
+
+        // Update graph (no re-layout needed since we're in manual mode)
+        val updatedGraph = graph.toImmutable()
+        val newBounds = layoutEngine.calculateBounds(updatedGraph)
+
+        // Update UI state
+        _uiState.value = state.copy(
+            graph = updatedGraph,
+            graphBounds = newBounds,
+            hasUnsavedChanges = true
+        )
+
+        DebugLogger.d(TAG, "addNoteManual: created note $newId at ($snappedX, $snappedY)")
     }
 
     /**
@@ -1980,7 +2040,9 @@ class WorkflowEditorViewModel : ViewModel() {
             editingWorkflowId = workflowId,
             editingWorkflowType = workflow.type,
             originalWorkflowName = workflow.name,
-            originalWorkflowDescription = workflow.description
+            originalWorkflowDescription = workflow.description,
+            // Sync manual placement mode from graph
+            isManualPlacementMode = graph.isManualPlacementMode
         )
 
         DebugLogger.i(TAG, "returnToViewMode: Now in view mode for workflow ${workflow.name}")
@@ -2204,6 +2266,76 @@ class WorkflowEditorViewModel : ViewModel() {
         )
     }
 
+    // ========== Manual Placement Mode ==========
+
+    /**
+     * Toggle manual placement mode for this workflow.
+     * If currently enabled, shows confirmation dialog before disabling.
+     * If currently disabled, enables immediately.
+     */
+    fun toggleManualPlacementMode() {
+        val state = _uiState.value
+        val graph = mutableGraph ?: return
+        if (!state.isEditMode) return
+
+        if (state.isManualPlacementMode) {
+            // Switching OFF - show confirmation dialog
+            _uiState.value = state.copy(showDisableManualPlacementConfirmation = true)
+        } else {
+            // Switching ON - immediate
+            applyManualPlacementMode(true)
+        }
+    }
+
+    /**
+     * Confirm disabling manual placement mode after user confirms in dialog.
+     * Clears all manual positions and runs auto-layout.
+     */
+    fun confirmDisableManualPlacement() {
+        _uiState.value = _uiState.value.copy(showDisableManualPlacementConfirmation = false)
+        applyManualPlacementMode(false)
+    }
+
+    /**
+     * Cancel disabling manual placement mode (dismiss dialog).
+     */
+    fun cancelDisableManualPlacement() {
+        _uiState.value = _uiState.value.copy(showDisableManualPlacementConfirmation = false)
+    }
+
+    /**
+     * Apply manual placement mode change.
+     * When disabling, clears all manual positions and runs auto-layout.
+     */
+    private fun applyManualPlacementMode(enabled: Boolean) {
+        val graph = mutableGraph ?: return
+
+        graph.isManualPlacementMode = enabled
+
+        if (!enabled) {
+            // Clear all positions and run auto-layout
+            WorkflowLayoutEngine.clearManualPositions(graph)
+            val layoutedGraph = layoutEngine.layoutGraph(graph.toImmutable())
+            mutableGraph = MutableWorkflowGraph.fromImmutable(layoutedGraph)
+            // Preserve the manual placement mode setting after re-creating the graph
+            mutableGraph?.isManualPlacementMode = false
+            val newBounds = layoutEngine.calculateBounds(layoutedGraph)
+
+            _uiState.value = _uiState.value.copy(
+                graph = layoutedGraph,
+                graphBounds = newBounds,
+                isManualPlacementMode = false,
+                hasUnsavedChanges = true
+            )
+        } else {
+            _uiState.value = _uiState.value.copy(
+                graph = graph.toImmutable(),
+                isManualPlacementMode = true,
+                hasUnsavedChanges = true
+            )
+        }
+    }
+
     /**
      * Show the node browser for adding new nodes.
      */
@@ -2311,10 +2443,11 @@ class WorkflowEditorViewModel : ViewModel() {
         val outputCount = nodeType.outputs.size
         val connectionAreaHeight = maxOf(connectionInputCount, outputCount) * WorkflowLayoutEngine.INPUT_ROW_HEIGHT
         val contentHeight = (literalInputCount * WorkflowLayoutEngine.INPUT_ROW_HEIGHT) + connectionAreaHeight
-        val nodeHeight = maxOf(
+        val rawNodeHeight = maxOf(
             WorkflowLayoutEngine.NODE_MIN_HEIGHT,
             WorkflowLayoutEngine.NODE_HEADER_HEIGHT + contentHeight + 16f
         )
+        val nodeHeight = WorkflowLayoutEngine.snapHeightToGrid(rawNodeHeight)
 
         // Create the new node (position will be set by layout engine)
         val newNode = WorkflowNode(
@@ -2688,10 +2821,11 @@ class WorkflowEditorViewModel : ViewModel() {
         val outputCount = nodeType.outputs.size
         val connectionAreaHeight = maxOf(connectionInputCount, outputCount) * WorkflowLayoutEngine.INPUT_ROW_HEIGHT
         val contentHeight = (literalInputCount * WorkflowLayoutEngine.INPUT_ROW_HEIGHT) + connectionAreaHeight
-        val nodeHeight = maxOf(
+        val rawNodeHeight = maxOf(
             WorkflowLayoutEngine.NODE_MIN_HEIGHT,
             WorkflowLayoutEngine.NODE_HEADER_HEIGHT + contentHeight + 16f
         )
+        val nodeHeight = WorkflowLayoutEngine.snapHeightToGrid(rawNodeHeight)
 
         // 3. Create the new node with a unique ID
         val newNodeId = generateUniqueNodeId()
@@ -2833,10 +2967,11 @@ class WorkflowEditorViewModel : ViewModel() {
         val outputCount = nodeType.outputs.size
         val connectionAreaHeight = maxOf(connectionInputCount, outputCount) * WorkflowLayoutEngine.INPUT_ROW_HEIGHT
         val contentHeight = (literalInputCount * WorkflowLayoutEngine.INPUT_ROW_HEIGHT) + connectionAreaHeight
-        val nodeHeight = maxOf(
+        val rawNodeHeight = maxOf(
             WorkflowLayoutEngine.NODE_MIN_HEIGHT,
             WorkflowLayoutEngine.NODE_HEADER_HEIGHT + contentHeight + 16f
         )
+        val nodeHeight = WorkflowLayoutEngine.snapHeightToGrid(rawNodeHeight)
 
         // 3. Create the new node with a unique ID
         val newNodeId = generateUniqueNodeId()
@@ -2996,12 +3131,286 @@ class WorkflowEditorViewModel : ViewModel() {
         val json = exportToJson() ?: return false
 
         try {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = ClipData.newPlainText("Workflow JSON", json)
-            clipboard.setPrimaryClip(clip)
+            PrivacyUtils.copySensitiveText(context, "Workflow JSON", json)
             return true
         } catch (e: Exception) {
             return false
         }
+    }
+
+    // ===========================================
+    // Manual Node Placement (Drag to Reposition)
+    // ===========================================
+
+    /**
+     * Start dragging a node for manual repositioning.
+     */
+    fun startNodeDrag(nodeId: String) {
+        DebugLogger.d(TAG, "startNodeDrag: nodeId=$nodeId")
+        _uiState.value = _uiState.value.copy(
+            draggingNodeId = nodeId,
+            dragOffset = Offset.Zero
+        )
+    }
+
+    /**
+     * Update the drag offset while dragging a node or note.
+     * Works for both node and note drags since they share the same dragOffset.
+     */
+    fun updateNodeDrag(delta: Offset) {
+        val state = _uiState.value
+        // Allow update if either a node or note is being dragged
+        if (state.draggingNodeId == null && state.draggingNoteId == null) return
+
+        _uiState.value = state.copy(
+            dragOffset = state.dragOffset + delta
+        )
+    }
+
+    /**
+     * End dragging and snap the node to the grid.
+     */
+    fun endNodeDrag() {
+        val state = _uiState.value
+        val draggingId = state.draggingNodeId ?: return
+        val graph = mutableGraph ?: return
+
+        // Find the dragging node
+        val nodeIndex = graph.nodes.indexOfFirst { it.id == draggingId }
+        if (nodeIndex == -1) {
+            cancelNodeDrag()
+            return
+        }
+
+        val node = graph.nodes[nodeIndex]
+        val newX = node.x + state.dragOffset.x
+        val newY = node.y + state.dragOffset.y
+
+        // Snap to grid
+        val (snappedX, snappedY) = WorkflowLayoutEngine.snapToGrid(newX, newY)
+
+        DebugLogger.d(TAG, "endNodeDrag: nodeId=$draggingId, from (${node.x}, ${node.y}) to ($snappedX, $snappedY)")
+
+        // Update the node position and mark as having manual position
+        val updatedNode = node.copy(
+            x = snappedX,
+            y = snappedY,
+            hasManualPosition = true
+        )
+        graph.nodes[nodeIndex] = updatedNode
+
+        // Recalculate bounds
+        val layoutedGraph = graph.toImmutable()
+        val newBounds = layoutEngine.calculateBounds(layoutedGraph)
+
+        // Update UI state - set justDroppedNodeId to skip animation
+        _uiState.value = state.copy(
+            graph = layoutedGraph,
+            graphBounds = newBounds,
+            draggingNodeId = null,
+            dragOffset = Offset.Zero,
+            justDroppedNodeId = draggingId,
+            hasUnsavedChanges = true
+        )
+    }
+
+    /**
+     * Cancel dragging without saving changes.
+     */
+    fun cancelNodeDrag() {
+        _uiState.value = _uiState.value.copy(
+            draggingNodeId = null,
+            dragOffset = Offset.Zero
+        )
+    }
+
+    /**
+     * Clear the just-dropped node ID after the canvas has rendered it.
+     */
+    fun clearJustDroppedNode() {
+        _uiState.value = _uiState.value.copy(justDroppedNodeId = null)
+    }
+
+    // ===========================================
+    // Manual Note Placement (Drag to Reposition)
+    // ===========================================
+
+    /**
+     * Start dragging a note for manual repositioning.
+     */
+    fun startNoteDrag(noteId: Int) {
+        DebugLogger.d(TAG, "startNoteDrag: noteId=$noteId")
+        _uiState.value = _uiState.value.copy(
+            draggingNoteId = noteId,
+            dragOffset = Offset.Zero
+        )
+    }
+
+    /**
+     * Update the drag offset while dragging a note.
+     * Uses the same dragOffset as node drag since only one element can be dragged at a time.
+     */
+    fun updateNoteDrag(delta: Offset) {
+        val state = _uiState.value
+        if (state.draggingNoteId == null) return
+
+        _uiState.value = state.copy(
+            dragOffset = state.dragOffset + delta
+        )
+    }
+
+    /**
+     * End dragging a note and snap to the grid.
+     */
+    fun endNoteDrag() {
+        val state = _uiState.value
+        val draggingId = state.draggingNoteId ?: return
+        val graph = mutableGraph ?: return
+
+        // Find the dragging note
+        val noteIndex = graph.notes.indexOfFirst { it.id == draggingId }
+        if (noteIndex == -1) {
+            cancelNoteDrag()
+            return
+        }
+
+        val note = graph.notes[noteIndex]
+        val newX = note.x + state.dragOffset.x
+        val newY = note.y + state.dragOffset.y
+
+        // Snap to grid
+        val (snappedX, snappedY) = WorkflowLayoutEngine.snapToGrid(newX, newY)
+
+        DebugLogger.d(TAG, "endNoteDrag: noteId=$draggingId, from (${note.x}, ${note.y}) to ($snappedX, $snappedY)")
+
+        // Update the note position and mark as having manual position
+        val updatedNote = note.copy(
+            x = snappedX,
+            y = snappedY,
+            hasManualPosition = true
+        )
+        graph.notes[noteIndex] = updatedNote
+
+        // Recalculate bounds
+        val layoutedGraph = graph.toImmutable()
+        val newBounds = layoutEngine.calculateBounds(layoutedGraph)
+
+        // Update UI state - set justDroppedNoteId to skip animation
+        _uiState.value = state.copy(
+            graph = layoutedGraph,
+            graphBounds = newBounds,
+            draggingNoteId = null,
+            dragOffset = Offset.Zero,
+            justDroppedNoteId = draggingId,
+            hasUnsavedChanges = true
+        )
+    }
+
+    /**
+     * Cancel dragging a note without saving changes.
+     */
+    fun cancelNoteDrag() {
+        _uiState.value = _uiState.value.copy(
+            draggingNoteId = null,
+            dragOffset = Offset.Zero
+        )
+    }
+
+    /**
+     * Clear the just-dropped note ID after the canvas has rendered it.
+     */
+    fun clearJustDroppedNote() {
+        _uiState.value = _uiState.value.copy(justDroppedNoteId = null)
+    }
+
+    /**
+     * Add a new node in manual placement mode, positioned at the view center.
+     * Calculates view center from stored canvas dimensions and current transform.
+     */
+    fun addNodeManual(nodeType: NodeTypeDefinition) {
+        val graph = mutableGraph ?: return
+        val state = _uiState.value
+        if (!state.isEditMode) return
+
+        // Create inputs map from the node definition (same as addNode)
+        val inputs = linkedMapOf<String, InputValue>()
+
+        // First pass: add all literal (editable) inputs
+        nodeType.inputs.forEach { inputDef ->
+            val isConnectionType = inputDef.type !in listOf("INT", "FLOAT", "STRING", "BOOLEAN", "ENUM")
+
+            if (!isConnectionType && !inputDef.forceInput) {
+                inputs[inputDef.name] = InputValue.Literal(inputDef.getEffectiveDefault())
+            }
+        }
+
+        // Second pass: add all connection-type inputs (slots)
+        nodeType.inputs.forEach { inputDef ->
+            val isConnectionType = inputDef.type !in listOf("INT", "FLOAT", "STRING", "BOOLEAN", "ENUM")
+
+            if (isConnectionType || inputDef.forceInput) {
+                inputs[inputDef.name] = InputValue.UnconnectedSlot(inputDef.type)
+            }
+        }
+
+        val category = categorizeNodeByClassType(nodeType.classType)
+
+        // Calculate proper node dimensions
+        val nodeWidth = WorkflowLayoutEngine.NODE_WIDTH
+        val literalInputCount = inputs.count { (_, value) -> value is InputValue.Literal }
+        val connectionInputCount = inputs.count { (_, value) ->
+            value is InputValue.Connection || value is InputValue.UnconnectedSlot
+        }
+        val outputCount = nodeType.outputs.size
+        val connectionAreaHeight = maxOf(connectionInputCount, outputCount) * WorkflowLayoutEngine.INPUT_ROW_HEIGHT
+        val contentHeight = (literalInputCount * WorkflowLayoutEngine.INPUT_ROW_HEIGHT) + connectionAreaHeight
+        val rawNodeHeight = maxOf(
+            WorkflowLayoutEngine.NODE_MIN_HEIGHT,
+            WorkflowLayoutEngine.NODE_HEADER_HEIGHT + contentHeight + 16f
+        )
+        val nodeHeight = WorkflowLayoutEngine.snapHeightToGrid(rawNodeHeight)
+
+        // Calculate view center in graph coordinates
+        val viewCenterX = (canvasWidth / 2 - state.offset.x) / state.scale
+        val viewCenterY = (canvasHeight / 2 - state.offset.y) / state.scale
+
+        // Calculate node position at view center, snapped to grid
+        val nodeX = viewCenterX - nodeWidth / 2
+        val nodeY = viewCenterY - nodeHeight / 2
+        val (snappedX, snappedY) = WorkflowLayoutEngine.snapToGrid(nodeX, nodeY)
+
+        // Create the new node with position already set
+        val newNode = WorkflowNode(
+            id = generateUniqueNodeId(),
+            classType = nodeType.classType,
+            title = nodeType.classType,
+            category = category,
+            inputs = sortInputsForLayout(inputs),
+            outputs = nodeType.outputs,
+            templateInputKeys = emptySet(),
+            x = snappedX,
+            y = snappedY,
+            width = nodeWidth,
+            height = nodeHeight,
+            hasManualPosition = true  // Mark as manually positioned
+        )
+
+        // Add to graph
+        graph.nodes.add(newNode)
+
+        // Update graph (no re-layout needed since we're in manual mode)
+        val updatedGraph = graph.toImmutable()
+        val newBounds = layoutEngine.calculateBounds(updatedGraph)
+
+        // Update UI state
+        _uiState.value = state.copy(
+            graph = updatedGraph,
+            graphBounds = newBounds,
+            selectedNodeIds = setOf(newNode.id),
+            hasUnsavedChanges = true,
+            showNodeBrowser = false,
+            nodeInsertPosition = null,
+            nodeDefinitions = state.nodeDefinitions + (nodeType.classType to nodeType)
+        )
     }
 }

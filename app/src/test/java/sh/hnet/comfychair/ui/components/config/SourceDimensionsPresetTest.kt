@@ -3,6 +3,8 @@ import org.junit.Assert.*
 import org.junit.Test
 import sh.hnet.comfychair.model.WorkflowCapabilities
 import sh.hnet.comfychair.viewmodel.*
+import sh.hnet.comfychair.viewmodel.base.GenerationParams
+
 class SourceDimensionsPresetTest {
     @Test fun exactAsymmetricDimensionsUseOnlyMappedCallbacks() {
         for (w in listOf(false, true)) for (h in listOf(false, true)) {
@@ -23,11 +25,13 @@ class SourceDimensionsPresetTest {
     }
     @Test fun otherModesNeverExposePreset() {
         assertNull(sourceDimensionsPreset(false, true, true, 1237, 853, {}, {}))
-        val callbacks = UnifiedCallbacks(onWorkflowChange = {}, onViewWorkflow = {}, onNegativePromptChange = {})
+        val callbacks = UnifiedCallbacks(onWorkflowChange = {}, onViewWorkflow = {})
         assertNull(ImageToImageUiState(mode = ImageToImageMode.INPAINTING,
-            capabilities = WorkflowCapabilities(hasWidth = true)).toBottomSheetConfig(callbacks).parameters.sourceDimensionsPreset)
-        val editing = ImageToImageUiState(capabilities = WorkflowCapabilities(hasWidth = true))
-            .toBottomSheetConfig(callbacks).parameters.sourceDimensionsPreset!!
+            inpaintingParams = GenerationParams(capabilities = WorkflowCapabilities(hasWidth = true))
+        ).toBottomSheetConfig(callbacks).parameters.sourceDimensionsPreset)
+        val editing = ImageToImageUiState(
+            editingParams = GenerationParams(capabilities = WorkflowCapabilities(hasWidth = true))
+        ).toBottomSheetConfig(callbacks).parameters.sourceDimensionsPreset!!
         assertFalse(editing.enabled)
     }
 }
