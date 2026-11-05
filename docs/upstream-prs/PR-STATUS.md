@@ -12,7 +12,9 @@
 | PR 拆分方案 | `UPSTREAM-PR-PLAN.md`（PR-A … PR-K） |
 | **PR-B** | **已发 [PR #51](https://github.com/legal-hkr/comfychair/pull/51)（OPEN）** |
 | **Login backup restore** | **已发 [PR #50](https://github.com/legal-hkr/comfychair/pull/50)（OPEN）** |
-| PR-A/C…K | 未开始；下一个推荐 PR-A（见文末） |
+| **PR-C** | **topic 分支已就绪**（topic/pr-c-upload-reuse，未发 PR） |
+| **PR-D** | **topic 分支已就绪**（topic/pr-d-direct-input，含 C，未发 PR） |
+| PR-A/E…K | 未开始 |
 
 ## PR-B — Import saved ComfyUI server workflows（已发 PR #51）
 
@@ -153,3 +155,25 @@
 5. 描述里附 node schema 依据（SaveImageAdvanced 的 format.bit_depth/input_color_space 定义），说明为何补这两个默认值
 
 **为什么排下一个**：diff 最小（预计 <100 行）、无 UI 依赖、已确认上游缺失、独立可回退——比 PR-C（上传复用，~500+ 行含并发/认证）审查成本低得多。
+
+### 2026-11-05（深夜）PR-C / PR-D topic 分支完成
+
+**PR-C（topic/pr-c-upload-reuse @ 9680039，基于 origin/main 0c43c47）**
+- `model/ServerImage.kt`（精简版：descriptor 校验 + viewUrl，fork 的 picker 富模型不带）
+- `connection/ImageUploadReuse.kt`：**RAM-only**（fork 的 PrivateImageDiskCache/namespace/上传 descriptor 磁盘缓存全部剥除，那是 PR-H 的内容）
+- ComfyUIClient epoch API：imageReuseSession（冻结认证，serverTrust.configure 派生 client，禁 redirect）、imageUploadIdentity、uploadImageReusing（完成时校验 epoch）；setWorkingProtocol(值变化时)/setCredentials 失效化
+- ITIVM 4 个上传点（editing source/ref1/ref2/inpaint source）+ ITV 1 个点全部切到 uploadImageReusing；随机 UUID 命名路径在这些屏上完全移除；错误面保留（401/403→connection alert，其余→error_save_image toast）
+- 上游无 stall 概念冲突：reuse 按 payload 字节推进，无进度则 HTTP 层 60s 超时
+- 测试：ImageUploadReuseTest 13 例（MockWebServer，含新增 protocolChange epoch 用例）+ WiringTest 4 例源码契约；全量 59/0
+
+**PR-D（topic/pr-d-direct-input @ 3c2d966 = C + D 提交）**
+- `connection/DirectInputSource.kt` 原样移植（supports() 槽位 token 校验、eligible 对象身份三重校验）
+- ComfyUIClient.reuseInputImage（HEAD 存在性，404 才回退编码上传）
+- ITIVM：directSources 进程级 provenance map（slot 1）；新入口 useServerImageAsSource(descriptor, bitmap)；useAsSource/onSourceImageChange/clearSourceImage 三处 remove(1)
+- MediaViewer：currentItemDescriptor()（非视频 + descriptor 校验），MediaViewerOverlay/Host/MainNavHost 三层把 descriptor 传给 ITIVM（bitmap 必须是 viewer 对同一 descriptor 的自有解码）
+- prepareEditingWorkflow：eligible + supports(workflowTemplate, 1) + HEAD 全过才直用原文件，否则回退 uploadImageReusing
+- 设计约束：上游尚无 server→source 的其它入口（PR-E 才有 picker），当前唯一 provenance 产生点是 MediaViewer 的 Use as source；上游 MediaViewerItem(filename/subfolder/type) 天然带服务器 descriptor
+- 测试：DirectInputSourceTest（eligibility 矩阵 + supports 正负例）+ DirectInputWiringTest（3 处 remove(1) 计数、回退路径、handoff 链）；全量 65/0
+
+**踩坑**：MainNavHost 局部 lambda 引用后置局部函数需声明在前（三次重排才成功）；cherry-pick C 到 D 分支因 patch-id 相同直接快进。
+**均未发 PR**；发 PR 前需真机验证 + 确认上游是否要求 feature flag。
