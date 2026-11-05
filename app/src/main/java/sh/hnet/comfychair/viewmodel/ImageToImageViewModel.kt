@@ -24,6 +24,7 @@ import sh.hnet.comfychair.WorkflowManager
 import sh.hnet.comfychair.WorkflowType
 import sh.hnet.comfychair.cache.MediaStateHolder
 import sh.hnet.comfychair.connection.ConnectionFailure
+import sh.hnet.comfychair.connection.ImageUploadReuse
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.ui.components.shared.WorkflowItemBase
 import sh.hnet.comfychair.util.DebugLogger
@@ -663,6 +664,32 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
     }
 
     /**
+     * Upload already-encoded bytes with content-addressed reuse and return the server descriptor
+     * path, or null after reporting the failure (reuse has no stall state: it either progresses by
+     * payload bytes or fails with HTTP/network/auth). Auth failures surface the connection alert.
+     */
+    private suspend fun uploadImageWithReuse(
+        client: ComfyUIClient,
+        bytes: ByteArray,
+        extension: String
+    ): String? {
+        return try {
+            client.uploadImageReusing(bytes, extension).path
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: java.io.IOException) {
+            if (e is ImageUploadReuse.HttpFailure && e.status in setOf(401, 403)) {
+                applicationContext?.let { ctx ->
+                    ConnectionManager.showConnectionAlert(ctx, ConnectionFailure.AUTHENTICATION)
+                }
+            } else {
+                _events.emit(GenerationScreenEvent.ShowToast(R.string.error_save_image))
+            }
+            null
+        }
+    }
+
+    /**
      * Prepare workflow for Editing mode (no mask, optional reference images)
      */
     private suspend fun prepareEditingWorkflow(
@@ -677,31 +704,10 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
             outputStream.toByteArray()
         }
 
-        // Upload source image
-        data class UploadResult(val filename: String?, val failureType: ConnectionFailure)
-        val sourceResult: UploadResult = withContext(Dispatchers.IO) {
-            kotlin.coroutines.suspendCoroutine { continuation ->
-                client.uploadImage(sourceBytes, UuidUtils.generateUniqueUploadFilename("editing_source")) { success, filename, _, failureType ->
-                    continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
-                }
-            }
-        }
+        // Upload source image with content-addressed reuse
+        val uploadedSource = uploadImageWithReuse(client, sourceBytes, "png") ?: return null
 
-        if (sourceResult.filename == null) {
-            // Check for stall or auth failure - show dialog instead of toast
-            if (sourceResult.failureType == ConnectionFailure.STALLED ||
-                sourceResult.failureType == ConnectionFailure.AUTHENTICATION) {
-                applicationContext?.let { ctx ->
-                    ConnectionManager.showConnectionAlert(ctx, sourceResult.failureType)
-                }
-            } else {
-                _events.emit(GenerationScreenEvent.ShowToast(R.string.error_save_image))
-            }
-            return null
-        }
-        val uploadedSource = sourceResult.filename
-
-        // Upload reference image 1 (if present)
+        // Upload reference image 1 (if present) with content-addressed reuse
         var uploadedRef1: String? = null
         if (state.referenceImage1 != null) {
             val ref1Bytes = withContext(Dispatchers.IO) {
@@ -709,24 +715,10 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
                 state.referenceImage1.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
                 outputStream.toByteArray()
             }
-            val ref1Result: UploadResult = withContext(Dispatchers.IO) {
-                kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(ref1Bytes, UuidUtils.generateUniqueUploadFilename("reference_1")) { success, filename, _, failureType ->
-                        continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
-                    }
-                }
-            }
-            if (ref1Result.filename == null && (ref1Result.failureType == ConnectionFailure.STALLED ||
-                ref1Result.failureType == ConnectionFailure.AUTHENTICATION)) {
-                applicationContext?.let { ctx ->
-                    ConnectionManager.showConnectionAlert(ctx, ref1Result.failureType)
-                }
-                return null
-            }
-            uploadedRef1 = ref1Result.filename
+            uploadedRef1 = uploadImageWithReuse(client, ref1Bytes, "png") ?: return null
         }
 
-        // Upload reference image 2 (if present)
+        // Upload reference image 2 (if present) with content-addressed reuse
         var uploadedRef2: String? = null
         if (state.referenceImage2 != null) {
             val ref2Bytes = withContext(Dispatchers.IO) {
@@ -734,21 +726,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
                 state.referenceImage2.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
                 outputStream.toByteArray()
             }
-            val ref2Result: UploadResult = withContext(Dispatchers.IO) {
-                kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(ref2Bytes, UuidUtils.generateUniqueUploadFilename("reference_2")) { success, filename, _, failureType ->
-                        continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
-                    }
-                }
-            }
-            if (ref2Result.filename == null && (ref2Result.failureType == ConnectionFailure.STALLED ||
-                ref2Result.failureType == ConnectionFailure.AUTHENTICATION)) {
-                applicationContext?.let { ctx ->
-                    ConnectionManager.showConnectionAlert(ctx, ref2Result.failureType)
-                }
-                return null
-            }
-            uploadedRef2 = ref2Result.filename
+            uploadedRef2 = uploadImageWithReuse(client, ref2Bytes, "png") ?: return null
         }
 
         val p = state.editingParams
@@ -786,29 +764,8 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
 
         imageWithMask.recycle()
 
-        // Upload to ComfyUI
-        data class UploadResult(val filename: String?, val failureType: ConnectionFailure)
-        val uploadResult: UploadResult = withContext(Dispatchers.IO) {
-            kotlin.coroutines.suspendCoroutine { continuation ->
-                client.uploadImage(imageBytes, UuidUtils.generateUniqueUploadFilename("inpaint_source")) { success, filename, _, failureType ->
-                    continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
-                }
-            }
-        }
-
-        if (uploadResult.filename == null) {
-            // Check for stall or auth failure - show dialog instead of toast
-            if (uploadResult.failureType == ConnectionFailure.STALLED ||
-                uploadResult.failureType == ConnectionFailure.AUTHENTICATION) {
-                applicationContext?.let { ctx ->
-                    ConnectionManager.showConnectionAlert(ctx, uploadResult.failureType)
-                }
-            } else {
-                _events.emit(GenerationScreenEvent.ShowToast(R.string.error_save_image))
-            }
-            return null
-        }
-        val uploadedFilename = uploadResult.filename
+        // Upload to ComfyUI with content-addressed reuse
+        val uploadedFilename = uploadImageWithReuse(client, imageBytes, "png") ?: return null
 
         val p = state.inpaintingParams
         return WorkflowManager.prepareWorkflow(
