@@ -81,3 +81,35 @@
 - 打包产物命名：`comfychair-{版本}-{特性}-debug-{时间戳}.apk`，固定名 `comfychair-prb-debug.apk` 供覆盖安装
 - LAN 分发：9010 端口 python http.server，`--directory /root/share/comfychair`，URL 不带 /comfychair/ 前缀
 - remote：`origin` = legal-hkr（上游，只读 fetch）、`nick` = nickdlkk（fork 推送，URL 含 token 明文，待改为 credential helper）
+
+## PR（候选）— Login screen backup restore（已实现，待定是否送上游）
+
+### 分支
+
+- **分支名**：`topic/login-restore-backup`
+- **基线**：上游 `origin/main` @ `70222e6`（fetch 后新建，包含比 PR-B 更新的上游提交）
+- **提交**：单提交 `6562acf` `feat: restore configuration from a backup on the login screen`
+- **diff 规模**：3 files，+97
+- **远程**：已推送至 nick
+
+### 内容
+
+在登录/连接服务器界面（LoginScreen）的 Add server 按钮下增加「从备份文件恢复」按钮：
+
+- 场景：全新安装/清数据/换机后首次打开，服务器列表为空，无需先进 Settings 即可恢复备份
+- 流程：GetContent 选 JSON → 复用 Settings 同款覆盖确认对话框（title/msg/button 均复用现有 strings）→ `BackupManager.restoreBackup` 恢复 → 就地刷新服务器列表与选中项
+- `serversChanged` 时调用 `ConnectionManager.invalidateForRestore()`（与 Settings 路径一致）
+- 连接中或恢复进行中按钮禁用；恢复用 LONG toast
+- 复用 `BackupManager.restoreBackup`，无新恢复逻辑；新 string 仅 1 条 `button_backup_restore_login`（中英）
+
+### 验证
+
+- compileDebugKotlin / assembleDebug 通过，aapt 确认 40/v0.8.13
+- JVM 测试 41/0（该基线上游源码树共 9 个测试类）
+- APK：`comfychair-v0.8.13-login-restore-backup-debug-20261105-1905.apk`，固定名 `comfychair-loginrestore-debug.apk`，LAN 200
+- 真机验证：未做
+
+### 备注
+
+- 类似功能此前未做过（fork 历史无 login 恢复入口；备份功能本身是上游 058f3e1 引入、Settings 页承载）
+- 送上游前需门禁同 PR-B；UI 位置（服务器列表下 vs 行菜单/overflow）可能需维护者讨论
