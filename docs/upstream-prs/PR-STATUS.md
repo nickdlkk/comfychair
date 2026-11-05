@@ -12,22 +12,22 @@
 | PR 拆分方案 | `UPSTREAM-PR-PLAN.md`（PR-A … PR-K） |
 | **PR-B** | **已发 [PR #51](https://github.com/legal-hkr/comfychair/pull/51)（OPEN）** |
 | **Login backup restore** | **已发 [PR #50](https://github.com/legal-hkr/comfychair/pull/50)（OPEN）** |
-| **PR-C** | **topic 分支已就绪**（topic/pr-c-upload-reuse，未发 PR） |
-| **PR-D** | **topic 分支已就绪**（topic/pr-d-direct-input，含 C，未发 PR） |
+| **PR-C** | **topic 分支已就绪**（feat/upload-reuse，未发 PR） |
+| **PR-D** | **topic 分支已就绪**（feat/direct-input-reuse，含 C，未发 PR） |
 | PR-A/E…K | 未开始 |
 
 ## PR-B — Import saved ComfyUI server workflows（已发 PR #51）
 
 ### PR
 
-- **PR #51**：https://github.com/legal-hkr/comfychair/pull/51（OPEN，head=nickdlkk:topic/pr-b-server-workflow-import → base=main）
+- **PR #51**：https://github.com/legal-hkr/comfychair/pull/51（OPEN，head=nickdlkk:feat/server-workflow-import → base=main）
 - rebase 到 origin/main 6f202a1（上游 FormDialog 改造冲突已适配：warnings 块迁入 FormDialog content slot；prepareImportJson 合并 fileName + filter 感知类型检测）
 - FAB 第三项 Import from server 入口（f4f3831 的 rebase 丢弃后重做进主提交）
 - 最终提交 589b3a1，13 files +806/−59，55 tests 全绿
 
 ### 分支
 
-- **分支名**：`topic/pr-b-server-workflow-import`
+- **分支名**：`feat/server-workflow-import`
 - **基线**：上游 `origin/main` @ `825d72a`（从最新 upstream main 新建，非集成分支）
 - **提交**：单提交 `2f89fd2` `feat: import saved ComfyUI server workflows`
 - **远程**：已推送至 nick（nickdlkk/comfychair）
@@ -96,13 +96,13 @@
 
 ### PR
 
-- **PR #50**：https://github.com/legal-hkr/comfychair/pull/50（OPEN，head=nickdlkk:topic/login-restore-backup → base=main）
+- **PR #50**：https://github.com/legal-hkr/comfychair/pull/50（OPEN，head=nickdlkk:feat/login-restore-backup → base=main）
 - 描述含 What/How/Testing/Scope notes；Testing 中真机验证表述留给维护者确认，未夸大验证级别
 - 状态：待维护者响应；未做 proposal issue（功能小、diff 97 行，直接 PR 并在 Scope notes 邀请讨论 UI 位置）
 
 ### 分支
 
-- **分支名**：`topic/login-restore-backup`
+- **分支名**：`feat/login-restore-backup`
 - **基线**：上游 `origin/main` @ `70222e6`（fetch 后新建，包含比 PR-B 更新的上游提交）
 - **提交**：单提交 `6562acf` `feat: restore configuration from a backup on the login screen`
 - **diff 规模**：3 files，+97
@@ -158,7 +158,7 @@
 
 ### 2026-11-05（深夜）PR-C / PR-D topic 分支完成
 
-**PR-C（topic/pr-c-upload-reuse @ 9680039，基于 origin/main 0c43c47）**
+**PR-C（feat/upload-reuse @ 9680039，基于 origin/main 0c43c47）**
 - `model/ServerImage.kt`（精简版：descriptor 校验 + viewUrl，fork 的 picker 富模型不带）
 - `connection/ImageUploadReuse.kt`：**RAM-only**（fork 的 PrivateImageDiskCache/namespace/上传 descriptor 磁盘缓存全部剥除，那是 PR-H 的内容）
 - ComfyUIClient epoch API：imageReuseSession（冻结认证，serverTrust.configure 派生 client，禁 redirect）、imageUploadIdentity、uploadImageReusing（完成时校验 epoch）；setWorkingProtocol(值变化时)/setCredentials 失效化
@@ -166,7 +166,7 @@
 - 上游无 stall 概念冲突：reuse 按 payload 字节推进，无进度则 HTTP 层 60s 超时
 - 测试：ImageUploadReuseTest 13 例（MockWebServer，含新增 protocolChange epoch 用例）+ WiringTest 4 例源码契约；全量 59/0
 
-**PR-D（topic/pr-d-direct-input @ 3c2d966 = C + D 提交）**
+**PR-D（feat/direct-input-reuse @ 3c2d966 = C + D 提交）**
 - `connection/DirectInputSource.kt` 原样移植（supports() 槽位 token 校验、eligible 对象身份三重校验）
 - ComfyUIClient.reuseInputImage（HEAD 存在性，404 才回退编码上传）
 - ITIVM：directSources 进程级 provenance map（slot 1）；新入口 useServerImageAsSource(descriptor, bitmap)；useAsSource/onSourceImageChange/clearSourceImage 三处 remove(1)
@@ -177,3 +177,9 @@
 
 **踩坑**：MainNavHost 局部 lambda 引用后置局部函数需声明在前（三次重排才成功）；cherry-pick C 到 D 分支因 patch-id 相同直接快进。
 **均未发 PR**；发 PR 前需真机验证 + 确认上游是否要求 feature flag。
+
+### 2026-11-05（末）分支重命名 + PR 关闭
+
+- 本地与 nick 远程分支统一改为 `feat/<功能名>`：feat/server-workflow-import（原 topic/pr-b-server-workflow-import）、feat/login-restore-backup、feat/upload-reuse（原 topic/pr-c-upload-reuse）、feat/direct-input-reuse（原 topic/pr-d-direct-input，C+D 合集）
+- PR #50/#51 已由本人自行关闭（无维护者 review）；GitHub 分支 rename API 会级联关闭 head 指向被删分支的 PR——**重命名前先删新名分支的教训**
+- cd1 测试包（C+D 合集）已 LAN 分发：comfychair-cd-debug.apk
