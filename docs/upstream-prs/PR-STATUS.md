@@ -13,7 +13,14 @@
 | **PR-B** | **topic 分支已就绪，未发 PR**（见下） |
 | PR-A/C…K | 未开始 |
 
-## PR-B — Import saved ComfyUI server workflows（已完成移植）
+## PR-B — Import saved ComfyUI server workflows（已发 PR #51）
+
+### PR
+
+- **PR #51**：https://github.com/legal-hkr/comfychair/pull/51（OPEN，head=nickdlkk:topic/pr-b-server-workflow-import → base=main）
+- rebase 到 origin/main 6f202a1（上游 FormDialog 改造冲突已适配：warnings 块迁入 FormDialog content slot；prepareImportJson 合并 fileName + filter 感知类型检测）
+- FAB 第三项 Import from server 入口（f4f3831 的 rebase 丢弃后重做进主提交）
+- 最终提交 589b3a1，13 files +806/−59，55 tests 全绿
 
 ### 分支
 
