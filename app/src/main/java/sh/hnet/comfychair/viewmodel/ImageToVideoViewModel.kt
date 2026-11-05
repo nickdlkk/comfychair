@@ -15,6 +15,7 @@ import sh.hnet.comfychair.WorkflowManager
 import sh.hnet.comfychair.WorkflowType
 import sh.hnet.comfychair.cache.MediaStateHolder
 import sh.hnet.comfychair.connection.ConnectionFailure
+import sh.hnet.comfychair.connection.ImageUploadReuse
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.ui.components.config.CommonGenerationState
 import sh.hnet.comfychair.util.SeasonalPrompts
@@ -196,29 +197,21 @@ class ImageToVideoViewModel : BaseVideoGenerationViewModel<ImageToVideoUiState>(
                 outputStream.toByteArray()
             }
 
-            // Upload to ComfyUI
-            data class UploadResult(val filename: String?, val failureType: ConnectionFailure)
-            val uploadResult: UploadResult = withContext(Dispatchers.IO) {
-                kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(imageBytes, UuidUtils.generateUniqueUploadFilename("itv_source")) { success, filename, _, failureType ->
-                        continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
-                    }
-                }
-            }
-
-            if (uploadResult.filename == null) {
-                // Check for stall or auth failure - show dialog instead of toast
-                if (uploadResult.failureType == ConnectionFailure.STALLED ||
-                    uploadResult.failureType == ConnectionFailure.AUTHENTICATION) {
+            // Upload to ComfyUI with content-addressed reuse
+            val uploadedFilename = try {
+                client.uploadImageReusing(imageBytes, "png").path
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: java.io.IOException) {
+                if (e is ImageUploadReuse.HttpFailure && e.status in setOf(401, 403)) {
                     applicationContext?.let { ctx ->
-                        ConnectionManager.showConnectionAlert(ctx, uploadResult.failureType)
+                        ConnectionManager.showConnectionAlert(ctx, ConnectionFailure.AUTHENTICATION)
                     }
                 } else {
                     _events.emit(GenerationScreenEvent.ShowToast(R.string.error_save_image))
                 }
                 return null
             }
-            val uploadedFilename = uploadResult.filename
 
             WorkflowManager.prepareWorkflow(p.selectedWorkflowId, withSubmittedSeed(p), WorkflowManager.WorkflowImages(source = uploadedFilename))
         } finally {
