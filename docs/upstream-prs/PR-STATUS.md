@@ -181,5 +181,6 @@
 ### 2026-11-05（末）分支重命名 + PR 关闭
 
 - 本地与 nick 远程分支统一改为 `feat/<功能名>`：feat/server-workflow-import（原 topic/pr-b-server-workflow-import）、feat/login-restore-backup、feat/upload-reuse（原 topic/pr-c-upload-reuse）、feat/direct-input-reuse（原 topic/pr-d-direct-input，C+D 合集）
-- PR #50/#51 已由本人自行关闭（无维护者 review）；GitHub 分支 rename API 会级联关闭 head 指向被删分支的 PR——**重命名前先删新名分支的教训**
+- PR #50/#51 已关闭，由 **PR #52/#53** 接替（feat/ 分支名，内容不变）：GitHub 跨 fork PR 的 head 分支无法用 rename API 换名——rename 级联删旧 ref 会关闭 PR 且 reopen 失败（head 丢失）。可行流程：保留旧 ref → reopen → 建新 PR（feat/ head）→ 关旧 PR 留指针评论 → 删旧 ref
+- PR #52 额外 rebase 到 origin/main 0f5dc25：登录屏对话框适配上游 ConfirmDialog 模式（destructive + SettingsBackupRestore icon）、按钮统一 FilledTonalButton、上游改写的确认文案直接复用
 - cd1 测试包（C+D 合集）已 LAN 分发：comfychair-cd-debug.apk
