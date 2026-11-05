@@ -82,7 +82,13 @@
 - LAN 分发：9010 端口 python http.server，`--directory /root/share/comfychair`，URL 不带 /comfychair/ 前缀
 - remote：`origin` = legal-hkr（上游，只读 fetch）、`nick` = nickdlkk（fork 推送，URL 含 token 明文，待改为 credential helper）
 
-## PR（候选）— Login screen backup restore（已实现，待定是否送上游）
+## PR — Login screen backup restore（已发 PR）
+
+### PR
+
+- **PR #50**：https://github.com/legal-hkr/comfychair/pull/50（OPEN，head=nickdlkk:topic/login-restore-backup → base=main）
+- 描述含 What/How/Testing/Scope notes；Testing 中真机验证表述留给维护者确认，未夸大验证级别
+- 状态：待维护者响应；未做 proposal issue（功能小、diff 97 行，直接 PR 并在 Scope notes 邀请讨论 UI 位置）
 
 ### 分支
 
