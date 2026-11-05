@@ -35,7 +35,6 @@ import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.util.LoraChainManager
 import sh.hnet.comfychair.util.Obfuscator
 import sh.hnet.comfychair.util.SeasonalPrompts
-import sh.hnet.comfychair.util.UuidUtils
 import sh.hnet.comfychair.util.ValidationUtils
 import sh.hnet.comfychair.viewmodel.base.BaseGenerationViewModel
 
@@ -338,14 +337,16 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         private const val FEATHER_RADIUS = 8
     }
 
-    private data class DownloadedSource(val bitmap: Bitmap, val size: Long, val prepared: java.io.File?)
+    private data class DownloadedSource(val bitmap: Bitmap, val size: Long, val prepared: java.io.File?,
+        val descriptor: sh.hnet.comfychair.model.ServerImage)
+    private val directSources = mutableMapOf<Int, sh.hnet.comfychair.connection.DirectInputSource>()
 
     private fun serverImageIdentity(): ServerImageIdentity? {
         if (ConnectionManager.connectionState.value !is sh.hnet.comfychair.connection.ConnectionState.Connected) return null
         val serverId = ConnectionManager.currentServerId ?: return null
         val client = ConnectionManager.clientOrNull ?: return null
         if (MediaStateHolder.getCurrentServerId() != serverId) return null
-        return ServerImageIdentity(serverId, client)
+        return ServerImageIdentity(serverId, client, client.imageUploadIdentity())
     }
 
     private val sourcePicker = ServerImagePicker(
@@ -373,12 +374,19 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                     prepared!!.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
                 }
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                DownloadedSource(bitmap, bytes.size.toLong(), prepared)
+                DownloadedSource(bitmap, bytes.size.toLong(), prepared, image)
             } catch (e: Throwable) { prepared?.delete(); throw e }
             } } catch (e: Throwable) { prepared?.delete(); throw e }
         },
         browse = { owner, source, query -> withContext(Dispatchers.IO) {
             (owner.client as ComfyUIClient).browseSourceImages(source, query)
+        } },
+        cacheGeneration = { sh.hnet.comfychair.cache.PersistentImageCache.generation() },
+        cached = { owner, source, query -> withContext(Dispatchers.IO) {
+            (owner.client as ComfyUIClient).cachedSourceImages(source, query, owner.epoch)
+        } },
+        store = { owner, source, query, page, generation -> withContext(Dispatchers.IO) {
+            if (serverImageIdentity() == owner) (owner.client as ComfyUIClient).cacheSourceImages(source, query, page, owner.epoch, generation)
         } },
         dispose = { value: DownloadedSource -> value.prepared?.delete(); Unit },
         accept = { owner, slot, value: DownloadedSource ->
@@ -391,6 +399,8 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                 }
                 // Synchronous cache publication avoids a second unguarded coroutine after selection.
                 MediaStateHolder.putPreparedBitmap(key, value.bitmap, applicationContext, owner.serverId, value.prepared)
+                directSources[slot] = sh.hnet.comfychair.connection.DirectInputSource(
+                    value.descriptor, owner.epoch, value.bitmap, value.bitmap.generationId)
                 _uiState.update { state ->
                     val reset = state.copy(compressedSlots = state.compressedSlots - slot,
                         viewMode = ImageToImageViewMode.SOURCE)
@@ -404,15 +414,27 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             }
         }
     )
-    // Process/ViewModel-local only: owner includes authenticated client identity. No raw credentials
-    // or image files are written to disk, and reconnecting cannot reuse another owner's preview.
-    private data class PreviewKey(val owner: ServerImageIdentity, val image: sh.hnet.comfychair.model.ServerImage)
+    // Memory fronts a bounded app-private HMAC-scoped sampled-thumbnail disk cache.
+    private data class PreviewKey(val owner: ServerImageIdentity, val image: sh.hnet.comfychair.model.ServerImage, val day: Long = System.currentTimeMillis() / 86_400_000L, val cacheGeneration: Long = sh.hnet.comfychair.cache.PersistentImageCache.generation())
     private val sourcePreviewCache = ServerImagePreviewCache<PreviewKey, Bitmap>(12L * 1024 * 1024, 64)
     suspend fun loadServerImagePreview(image: sh.hnet.comfychair.model.ServerImage): Bitmap =
         sourcePicker.preview(image) { owner -> withContext(Dispatchers.IO) {
             val key = PreviewKey(owner, image)
             sourcePreviewCache.get(key) ?: run {
-                val bytes = (owner.client as ComfyUIClient).downloadSourcePreview(image)
+                val client = owner.client as ComfyUIClient
+                val storage = client.imageCacheStorage(owner.epoch)
+                val generation = storage?.first?.generation()
+                val diskKey = "thumb:" + image.stableKey
+                val cachedBytes = storage?.let { (disk, namespace) -> disk.get(namespace, diskKey, 24 * 60 * 60 * 1000L) }
+                if (cachedBytes != null) {
+                    val saved = BitmapFactory.decodeByteArray(cachedBytes, 0, cachedBytes.size)
+                    if (saved != null && saved.width <= 256 && saved.height <= 256) {
+                        sourcePreviewCache.put(key, saved, saved.allocationByteCount.toLong())
+                        return@withContext saved
+                    }
+                    storage.let { (disk, namespace) -> disk.remove(namespace, diskKey) }
+                }
+                val bytes = client.downloadSourcePreview(image)
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
@@ -425,6 +447,11 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                 val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
                     ?: throw java.io.IOException("Invalid preview")
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (serverImageIdentity() != owner) throw kotlinx.coroutines.CancellationException("Preview owner changed")
+                storage?.let { (disk, namespace) ->
+                    val encoded = java.io.ByteArrayOutputStream().also { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }.toByteArray()
+                    disk.put(namespace, diskKey, encoded, generation!!)
+                }
                 sourcePreviewCache.put(key, bitmap, bitmap.allocationByteCount.toLong())
                 bitmap
             }
@@ -436,7 +463,25 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
     }
     fun loadMoreServerImages(retry: Boolean = false) = sourcePicker.loadMore(retry)
     fun changeServerImageQuery(name: String, sort: sh.hnet.comfychair.model.ServerImageSort) = sourcePicker.changeQuery(name, sort)
-    fun refreshServerImages() = sourcePicker.refresh()
+    fun refreshServerImages() {
+        val owner = serverImageIdentity() ?: return
+        val images = sourcePicker.state.value.images.toList()
+        sourcePreviewCache.clear()
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    (owner.client as ComfyUIClient).imageCacheStorage(owner.epoch)?.let { (disk, namespace) ->
+                        images.forEach { disk.remove(namespace, "thumb:" + it.stableKey) }
+                    }
+                }
+                if (serverImageIdentity() == owner) sourcePicker.refresh()
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        }
+    }
+    fun removeDeletedServerImages(images: List<sh.hnet.comfychair.model.ServerImage>, session: Long) {
+        sourcePicker.removeDeleted(images, session)
+        sourcePreviewCache.clear()
+    }
     fun cancelServerImageDownload() = sourcePicker.cancelDownload()
     fun retryServerImageDownload() = sourcePicker.retryDownload()
     fun closeServerImagePicker() = sourcePicker.close()
@@ -444,6 +489,12 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
     fun selectServerImage(image: sh.hnet.comfychair.model.ServerImage) = sourcePicker.select(image)
 
     init {
+        viewModelScope.launch {
+            sh.hnet.comfychair.cache.PersistentImageCache.changes.collect {
+                sourcePreviewCache.clear()
+                sourcePicker.close() // cancels in-flight list/preview publication, not selected sources
+            }
+        }
         viewModelScope.launch {
             ConnectionManager.connectionState.collect { sourcePicker.connectionChanged() }
         }
@@ -1311,6 +1362,26 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
      * Unlike onSourceImageChange which takes a Uri, this receives a pre-loaded Bitmap directly.
      * @param slot 1-4
      */
+    fun acceptStandaloneGallerySource(context: Context, value: ServerGalleryViewModel.FullImage) {
+        if (serverImageIdentity() != value.owner) return
+        closeServerImagePicker()
+        viewModelScope.launch {
+            var prepared: java.io.File? = null
+            try {
+                withContext(Dispatchers.IO) {
+                    prepared = java.io.File.createTempFile("server-source-", ".png", context.cacheDir)
+                    prepared!!.outputStream().use { check(value.bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+                }
+                if (serverImageIdentity() != value.owner) return@launch
+                MediaStateHolder.putPreparedBitmap(MediaStateHolder.MediaKey.ItiSource, value.bitmap, context, value.owner.serverId, prepared)
+                directSources.remove(1)
+                _uiState.update { it.copy(sourceImage = value.bitmap, sourceImageSize = value.encodedSize.toLong(),
+                    maskPaths = emptyList(), compressedSlots = it.compressedSlots - 1, viewMode = ImageToImageViewMode.SOURCE,
+                    comparisonOriginal = null, comparisonSource = null) }
+            } finally { prepared?.delete() }
+        }
+    }
+
     fun onSourceImageFromGallery(context: Context, slot: Int, bitmap: Bitmap) {
         closeServerImagePicker()
         viewModelScope.launch(Dispatchers.IO) {
@@ -1518,9 +1589,11 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
      * Generate the mask bitmap from current paths
      * Returns black/white bitmap where white = inpaint area
      */
-    fun generateMaskBitmap(): Bitmap? {
-        val sourceImage = _uiState.value.sourceImage ?: return null
-        if (_uiState.value.maskPaths.isEmpty()) return null
+    fun generateMaskBitmap(): Bitmap? = generateMaskBitmap(_uiState.value)
+
+    private fun generateMaskBitmap(state: ImageToImageUiState): Bitmap? {
+        val sourceImage = state.sourceImage ?: return null
+        if (state.maskPaths.isEmpty()) return null
 
         // Create mask at source image size
         val maskBitmap = Bitmap.createBitmap(sourceImage.width, sourceImage.height, Bitmap.Config.ARGB_8888)
@@ -1546,7 +1619,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             isAntiAlias = true
         }
 
-        _uiState.value.maskPaths.forEach { pathData ->
+        state.maskPaths.forEach { pathData ->
             val paint = if (pathData.isEraser) erasePaint else paintPaint
             paint.strokeWidth = pathData.brushSize
             canvas.drawPath(pathData.path, paint)
@@ -2187,6 +2260,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
 
     suspend fun prepareWorkflow(): PreparedImageWorkflow? {
         val client = comfyUIClient ?: return null
+        val preparationServer = MediaStateHolder.getCurrentServerId()
         val context = applicationContext ?: return null
 
         // Check connection before uploading
@@ -2195,8 +2269,9 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                 cont.resumeWith(Result.success(success))
             }
         }
-        if (!connected) return null  // Dialog already shown by ensureConnection
+        if (!connected || comfyUIClient !== client || preparationServer != MediaStateHolder.getCurrentServerId()) return null
 
+        val uploadOwner = client.imageUploadIdentity()
         val state = _uiState.value
         val sourceImage = state.sourceImage ?: return null
 
@@ -2215,11 +2290,14 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
             )
                 ImageToImageMode.INPAINTING -> prepareInpaintingWorkflow(client, sourceImage, state)
             }
+        } catch (e: java.io.IOException) {
+            null // A required auxiliary image failed; never silently submit without it.
         } finally {
             _uiState.update { it.copy(isUploading = false, uploadTotalBytes = null, uploadProgressBytes = null, uploadLabel = null) }
         }
 
-        if (workflowJson == null) return null
+        if (workflowJson == null || comfyUIClient !== client || preparationServer != MediaStateHolder.getCurrentServerId() ||
+            client.imageUploadIdentity() !== uploadOwner) return null
         // Stream the exact primary source used by this preparation to private cache. No bitmap
         // copy / ByteArray / Intent payload; failure disables comparison, never generation.
         val snapshot = if (state.mode == ImageToImageMode.EDITING) withContext(Dispatchers.IO) {
@@ -2229,6 +2307,8 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
                 }
             } catch (e: Exception) { null }
         } else null
+        if (comfyUIClient !== client || preparationServer != MediaStateHolder.getCurrentServerId() ||
+            client.imageUploadIdentity() !== uploadOwner) { snapshot?.delete(); return null }
         val unresolved = findUnresolvedPlaceholders(workflowJson)
         return PreparedImageWorkflow(workflowJson, snapshot, unresolved)
     }
@@ -2248,6 +2328,26 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
     /**
      * Prepare workflow for Editing mode (no mask, optional reference images)
      */
+    private suspend fun uploadPreparedImage(
+        client: ComfyUIClient, bytes: ByteArray, extension: String, label: String
+    ): String? {
+        setUploadProgress(label, bytes.size.toLong(), 0L)
+        return try {
+            client.uploadImageReusing(bytes, extension) { written, _ ->
+                _uiState.update { it.copy(uploadProgressBytes = written) }
+            }.path
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: java.io.IOException) {
+            if (e is sh.hnet.comfychair.connection.ImageUploadReuse.HttpFailure && e.status in setOf(401, 403)) {
+                applicationContext?.let { ConnectionManager.showConnectionAlert(it, ConnectionFailure.AUTHENTICATION) }
+            } else {
+                _events.emit(ImageToImageEvent.ShowToast(R.string.error_save_image))
+            }
+            null
+        }
+    }
+
     private suspend fun prepareEditingWorkflow(
         client: ComfyUIClient,
         sourceImage: Bitmap,
@@ -2257,162 +2357,41 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         state: ImageToImageUiState
     ): String? {
         if (!state.hasValidEditingDimensions()) return null
-        val sourceCompressed = 1 in state.compressedSlots
-        val (sourceBytes, sourceExtension) = withContext(Dispatchers.IO) {
-            encodeSourceImageForUpload(sourceImage, sourceCompressed)
+        // Capture all encodings from this preparation's state, never current UI during uploads.
+        val epoch = client.imageUploadIdentity()
+        val provenance = directSources.toMap()
+        val workflowTemplate = WorkflowManager.getWorkflowById(state.selectedEditingWorkflowId)?.jsonContent.orEmpty()
+        suspend fun source(bitmap: Bitmap, slot: Int): String? {
+            val original = provenance[slot]
+            if (original?.eligible(epoch, bitmap, bitmap.generationId, slot in state.compressedSlots,
+                    state.maskPaths.isNotEmpty(), sh.hnet.comfychair.connection.DirectInputSource.supports(workflowTemplate, slot)) == true) {
+                // Explicit original server semantics: native LoadImage decodes the original file,
+                // not our Android-reencoded representation. Only 404 falls back to encoded upload.
+                if (client.reuseInputImage(original.image, epoch)) return original.image.path
+            }
+            val (bytes, ext) = withContext(Dispatchers.IO) {
+                encodeSourceImageForUpload(bitmap, slot in state.compressedSlots)
+            }
+            return uploadPreparedImage(client, bytes, ext, "source $slot")
         }
-        setUploadProgress("source", sourceBytes.size.toLong(), 0L)
-
-        // Upload source image
-        data class UploadResult(val filename: String?, val failureType: ConnectionFailure)
-        val sourceResult: UploadResult = withContext(Dispatchers.IO) {
-            kotlin.coroutines.suspendCoroutine { continuation ->
-                client.uploadImage(
-                    sourceBytes,
-                    UuidUtils.generateUploadFilenameFromBytes("editing_source", sourceBytes, sourceExtension),
-                    onProgress = { written, _ ->
-                        _uiState.update { it.copy(uploadProgressBytes = written) }
-                    }
-                ) { success, filename, _, failureType ->
-                    continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
-                }
+        suspend fun reference(bitmap: Bitmap, label: String): String? {
+            val bytes = withContext(Dispatchers.IO) {
+                java.io.ByteArrayOutputStream().also {
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+                }.toByteArray()
             }
+            return uploadPreparedImage(client, bytes, "png", label)
         }
-
-        if (sourceResult.filename == null) {
-            // Check for stall or auth failure - show dialog instead of toast
-            if (sourceResult.failureType == ConnectionFailure.STALLED ||
-                sourceResult.failureType == ConnectionFailure.AUTHENTICATION) {
-                applicationContext?.let { ctx ->
-                    ConnectionManager.showConnectionAlert(ctx, sourceResult.failureType)
-                }
-            } else {
-                _events.emit(ImageToImageEvent.ShowToast(R.string.error_save_image))
-            }
-            return null
-        }
-        val uploadedSource = sourceResult.filename
-
-        // Upload reference image 1 (if present)
-        var uploadedRef1: String? = null
-        if (state.referenceImage1 != null) {
-            val ref1Bytes = withContext(Dispatchers.IO) {
-                val outputStream = java.io.ByteArrayOutputStream()
-                state.referenceImage1.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-                outputStream.toByteArray()
-            }
-            setUploadProgress("reference 1", ref1Bytes.size.toLong(), 0L)
-            val ref1Result: UploadResult = withContext(Dispatchers.IO) {
-                kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(ref1Bytes, UuidUtils.generateUploadFilenameFromBytes("reference_1", ref1Bytes),
-                        onProgress = { written, _ -> _uiState.update { it.copy(uploadProgressBytes = written) } }
-                    ) { success, filename, _, failureType ->
-                        continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
-                    }
-                }
-            }
-            if (ref1Result.filename == null && (ref1Result.failureType == ConnectionFailure.STALLED ||
-                ref1Result.failureType == ConnectionFailure.AUTHENTICATION)) {
-                applicationContext?.let { ctx ->
-                    ConnectionManager.showConnectionAlert(ctx, ref1Result.failureType)
-                }
-                return null
-            }
-            uploadedRef1 = ref1Result.filename
-        }
-
-        // Upload reference image 2 (if present)
-        var uploadedRef2: String? = null
-        if (state.referenceImage2 != null) {
-            val ref2Bytes = withContext(Dispatchers.IO) {
-                val outputStream = java.io.ByteArrayOutputStream()
-                state.referenceImage2.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-                outputStream.toByteArray()
-            }
-            setUploadProgress("reference 2", ref2Bytes.size.toLong(), 0L)
-            val ref2Result: UploadResult = withContext(Dispatchers.IO) {
-                kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(ref2Bytes, UuidUtils.generateUploadFilenameFromBytes("reference_2", ref2Bytes),
-                        onProgress = { written, _ -> _uiState.update { it.copy(uploadProgressBytes = written) } }
-                    ) { success, filename, _, failureType ->
-                        continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
-                    }
-                }
-            }
-            if (ref2Result.filename == null && (ref2Result.failureType == ConnectionFailure.STALLED ||
-                ref2Result.failureType == ConnectionFailure.AUTHENTICATION)) {
-                applicationContext?.let { ctx ->
-                    ConnectionManager.showConnectionAlert(ctx, ref2Result.failureType)
-                }
-                return null
-            }
-            uploadedRef2 = ref2Result.filename
-        }
-
-        // Upload additional source images (image 2/3/4) if present and actually needed by the workflow
-        var uploadedSource2: String? = null
-        var uploadedSource3: String? = null
-        var uploadedSource4: String? = null
-        val needsSource2 = "image_filename_2" in state.workflowPlaceholders
-        val needsSource3 = "image_filename_3" in state.workflowPlaceholders
-        val needsSource4 = "image_filename_4" in state.workflowPlaceholders
-
-        if (sourceImage2 != null && needsSource2 && 2 !in state.bypassedSourceSlots) {
-            val (bytes2, ext2) = withContext(Dispatchers.IO) {
-                encodeSourceImageForUpload(sourceImage2, 2 in state.compressedSlots)
-            }
-            setUploadProgress("source 2", bytes2.size.toLong(), 0L)
-            val result2: UploadResult = withContext(Dispatchers.IO) {
-                kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(
-                        bytes2,
-                        UuidUtils.generateUploadFilenameFromBytes("editing_source_2", bytes2, ext2),
-                        onProgress = { written, _ -> _uiState.update { it.copy(uploadProgressBytes = written) } }
-                    ) { success, filename, _, failureType ->
-                        continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
-                    }
-                }
-            }
-            uploadedSource2 = result2.filename
-        }
-
-        if (sourceImage3 != null && needsSource3 && 3 !in state.bypassedSourceSlots) {
-            val (bytes3, ext3) = withContext(Dispatchers.IO) {
-                encodeSourceImageForUpload(sourceImage3, 3 in state.compressedSlots)
-            }
-            setUploadProgress("source 3", bytes3.size.toLong(), 0L)
-            val result3: UploadResult = withContext(Dispatchers.IO) {
-                kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(
-                        bytes3,
-                        UuidUtils.generateUploadFilenameFromBytes("editing_source_3", bytes3, ext3),
-                        onProgress = { written, _ -> _uiState.update { it.copy(uploadProgressBytes = written) } }
-                    ) { success, filename, _, failureType ->
-                        continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
-                    }
-                }
-            }
-            uploadedSource3 = result3.filename
-        }
-
-        if (sourceImage4 != null && needsSource4 && 4 !in state.bypassedSourceSlots) {
-            val (bytes4, ext4) = withContext(Dispatchers.IO) {
-                encodeSourceImageForUpload(sourceImage4, 4 in state.compressedSlots)
-            }
-            setUploadProgress("source 4", bytes4.size.toLong(), 0L)
-            val result4: UploadResult = withContext(Dispatchers.IO) {
-                kotlin.coroutines.suspendCoroutine { continuation ->
-                    client.uploadImage(
-                        bytes4,
-                        UuidUtils.generateUploadFilenameFromBytes("editing_source_4", bytes4, ext4),
-                        onProgress = { written, _ -> _uiState.update { it.copy(uploadProgressBytes = written) } }
-                    ) { success, filename, _, failureType ->
-                        continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
-                    }
-                }
-            }
-            uploadedSource4 = result4.filename
-        }
+        val uploadedSource = source(sourceImage, 1) ?: return null
+        val uploadedRef1 = state.referenceImage1?.let { reference(it, "reference 1") ?: return null }
+        val uploadedRef2 = state.referenceImage2?.let { reference(it, "reference 2") ?: return null }
+        suspend fun additional(bitmap: Bitmap?, slot: Int): String? =
+            if (bitmap != null && "image_filename_$slot" in state.workflowPlaceholders &&
+                slot !in state.bypassedSourceSlots) source(bitmap, slot)
+                    ?: throw java.io.IOException("Required source upload failed") else null
+        val uploadedSource2 = additional(sourceImage2, 2)
+        val uploadedSource3 = additional(sourceImage3, 3)
+        val uploadedSource4 = additional(sourceImage4, 4)
 
         // Mapped dimensions come from the current editing controls, never stale storage
         // or source-image dimensions. Unmapped inputs remain owned by the workflow.
@@ -2467,7 +2446,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
         state: ImageToImageUiState
     ): String? {
         // Generate mask
-        val maskBitmap = generateMaskBitmap()
+        val maskBitmap = generateMaskBitmap(state)
         if (maskBitmap == null) {
             _events.emit(ImageToImageEvent.ShowToast(R.string.hint_paint_mask))
             return null
@@ -2486,35 +2465,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState, Image
 
         imageWithMask.recycle()
 
-        setUploadProgress("source", imageBytes.size.toLong(), 0L)
-
-        // Upload to ComfyUI
-        data class UploadResult(val filename: String?, val failureType: ConnectionFailure)
-        val uploadResult: UploadResult = withContext(Dispatchers.IO) {
-            kotlin.coroutines.suspendCoroutine { continuation ->
-                client.uploadImage(imageBytes, UuidUtils.generateUploadFilenameFromBytes("inpaint_source", imageBytes),
-                    onProgress = { written, _ ->
-                        _uiState.update { it.copy(uploadProgressBytes = written) }
-                    }
-                ) { success, filename, _, failureType ->
-                    continuation.resumeWith(Result.success(UploadResult(if (success) filename else null, failureType)))
-                }
-            }
-        }
-
-        if (uploadResult.filename == null) {
-            // Check for stall or auth failure - show dialog instead of toast
-            if (uploadResult.failureType == ConnectionFailure.STALLED ||
-                uploadResult.failureType == ConnectionFailure.AUTHENTICATION) {
-                applicationContext?.let { ctx ->
-                    ConnectionManager.showConnectionAlert(ctx, uploadResult.failureType)
-                }
-            } else {
-                _events.emit(ImageToImageEvent.ShowToast(R.string.error_save_image))
-            }
-            return null
-        }
-        val uploadedFilename = uploadResult.filename
+        val uploadedFilename = uploadPreparedImage(client, imageBytes, "png", "source") ?: return null
 
         // Prepare workflow JSON using unified fields
         val baseWorkflow = WorkflowManager.prepareImageToImageWorkflowById(

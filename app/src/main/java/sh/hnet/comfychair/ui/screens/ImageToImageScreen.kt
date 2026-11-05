@@ -509,7 +509,8 @@ fun ImageToImageScreen(
             onQuery = imageToImageViewModel::changeServerImageQuery,
             onCancelDownload = imageToImageViewModel::cancelServerImageDownload,
             onRetryDownload = imageToImageViewModel::retryServerImageDownload,
-            onClose = imageToImageViewModel::closeServerImagePicker
+            onClose = imageToImageViewModel::closeServerImagePicker,
+            onDeleted = { imageToImageViewModel.removeDeletedServerImages(it, serverPickerState.session) }
         )
 
         // Progress indicator - below app bar, only show if THIS screen's job is executing

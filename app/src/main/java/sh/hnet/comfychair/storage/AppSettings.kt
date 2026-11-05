@@ -8,6 +8,19 @@ import android.content.Context
  */
 object AppSettings {
     private const val PREFS_NAME = "AppSettings"
+    fun getImageCachePolicy(context: Context): sh.hnet.comfychair.cache.ImageCachePolicy {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return sh.hnet.comfychair.cache.ImageCachePolicy.restore { key, default ->
+            when (default) { is Boolean -> prefs.getBoolean(key, default); is Int -> prefs.getInt(key, default); else -> error("Invalid default") }
+        }
+    }
+    fun setImageCachePolicy(context: Context, value: sh.hnet.comfychair.cache.ImageCachePolicy) {
+        val editor = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+        value.values().forEach { (key, item) ->
+            when (item) { is Boolean -> editor.putBoolean(key, item); is Int -> editor.putInt(key, item) }
+        }
+        check(editor.commit()) { "Cannot save cache settings" }
+    }
     fun isRealtimeLoggingEnabled(context: Context): Boolean = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean("realtime_logging", false)
     fun getRealtimeLogUrl(context: Context): String = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString("realtime_log_url", "") ?: ""
     fun setRealtimeLoggingEnabled(context: Context, enabled: Boolean) {

@@ -17,8 +17,16 @@ class ServerAssetsTest {
         .put("tags", org.json.JSONArray(listOf("input", "models"))).put("preview_url", preview)
     private fun page(cursor: String? = null) = JSONObject().put("assets", org.json.JSONArray().put(asset()))
         .put("total", 123).put("has_more", cursor != null).put("next_cursor", cursor).toString()
-    private fun client(s: MockWebServer) = ComfyUIClient(hostname = s.hostName, port = s.port,
-        credentials = AuthCredentials.Bearer("fixture")).apply { setWorkingProtocol("http") }
+    private fun client(s: MockWebServer): ComfyUIClient {
+        s.dispatcher = object : QueueDispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.path == "/comfychair/v1/media/capabilities") return MockResponse().setResponseCode(404)
+                return super.dispatch(request)
+            }
+        }
+        return ComfyUIClient(hostname = s.hostName, port = s.port,
+            credentials = AuthCredentials.Bearer("fixture")).apply { setWorkingProtocol("http") }
+    }
 
     @Test fun nativeNamespaceMimeAndRelativePreviewAreRequired() {
         assertNotNull(ServerAssetDiscovery.image(asset(), ServerImageSource.INPUT, base))
@@ -43,6 +51,7 @@ class ServerAssetsTest {
             s.enqueue(MockResponse().setBody("{\"assets\":true}"))
             s.enqueue(MockResponse().setBody(page("cursor+")))
             val first = c.browseSourceImages(ServerImageSource.INPUT, ServerImageQuery("中文 +", ServerImageSort.NAME))
+            assertEquals("/comfychair/v1/media/capabilities", s.takeRequest().path)
             assertEquals("/api/features", s.takeRequest().path)
             val r = s.takeRequest()
             assertEquals("Bearer fixture", r.getHeader("Authorization"))
@@ -64,7 +73,7 @@ class ServerAssetsTest {
             val c = client(s)
             s.enqueue(MockResponse().setResponseCode(status).setBody("{}"))
             assertTrue(runCatching { c.browseSourceImages(ServerImageSource.INPUT, ServerImageQuery()) }.isFailure)
-            assertEquals(1, s.requestCount)
+            assertEquals(2, s.requestCount)
         }
         for (mode in listOf("false", "404", "disabled")) MockWebServer().use { s ->
             val c = client(s)
@@ -194,7 +203,7 @@ class ServerAssetsTest {
             File("app/src/main/java/sh/hnet/comfychair/ui/components/ServerImagePickerPanel.kt")).first { it.isFile }.readText()
         assertTrue(p.contains("image.stableKey in visible, !state.downloading"))
         assertTrue(p.contains("if (!requestAllowed || bitmap != null) return@LaunchedEffect"))
-        assertTrue(p.contains("onCancelDownload")); assertTrue(p.contains("autoPages < 5"))
+        assertTrue(p.contains("onCancelDownload")); assertTrue(p.contains("ServerPickerScrollPolicy.shouldLoad"))
         assertFalse(p.contains("visible && !state.downloading"))
     }
 }

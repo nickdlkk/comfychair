@@ -43,6 +43,11 @@ jobs:
           shutil.copy2(apk, 'comfychair-${{ github.ref_name }}-release-ci.apk')
           PY
 
+      - name: Test companion extension in isolation
+        run: |
+          python3 -m pip install pytest pytest-asyncio aiohttp
+          python3 -m pytest server/tests -q --junitxml=server-test-results.xml
+
       - name: Preserve R8 mapping and test reports
         uses: actions/upload-artifact@v4
         with:
@@ -50,6 +55,7 @@ jobs:
           path: |
             app/build/outputs/mapping/release/
             app/build/test-results/testDebugUnitTest/
+            server-test-results.xml
           if-no-files-found: error
 
       - name: Upload to Release

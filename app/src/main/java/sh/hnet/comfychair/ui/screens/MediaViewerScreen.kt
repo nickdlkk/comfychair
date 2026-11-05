@@ -31,7 +31,7 @@ import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.DoNotDisturb
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material3.CircularProgressIndicator
+import sh.hnet.comfychair.ui.components.MediaLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FloatingActionButton
@@ -549,7 +549,7 @@ private fun MediaContent(
             isVideo || isLoading -> {
                 // Video pages without content always show spinner (never black)
                 // This handles the case where thumbnail is not yet in cache
-                CircularProgressIndicator(color = Color.White)
+                MediaLoadingIndicator()
             }
             // Fallback: only images without bitmap and not loading show black
         }

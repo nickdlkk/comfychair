@@ -102,7 +102,9 @@ class ComfyUIClient(
      *
      * @param protocol Either "http" or "https"
      */
+    @Synchronized
     fun setWorkingProtocol(protocol: String) {
+        if (workingProtocol != protocol) { imageReuse?.invalidate(); imageReuse = null }
         workingProtocol = protocol
     }
 
@@ -127,7 +129,10 @@ class ComfyUIClient(
      *
      * @param credentials The new credentials to use
      */
+    @Synchronized
     fun setCredentials(credentials: AuthCredentials) {
+        imageReuse?.invalidate()
+        imageReuse = null
         authInterceptor.setCredentials(credentials)
     }
 
@@ -136,6 +141,73 @@ class ComfyUIClient(
      * @return The current authentication credentials
      */
     fun getCredentials(): AuthCredentials = authInterceptor.getCredentials()
+
+    private var imageReuse: sh.hnet.comfychair.connection.ImageUploadReuse? = null
+
+    @Synchronized
+    private fun imageReuseSession(): sh.hnet.comfychair.connection.ImageUploadReuse = imageReuse ?: run {
+        val base = getBaseUrl()?.toHttpUrl() ?: throw IOException("Not connected")
+        // Freeze authentication for this epoch; an in-flight request cannot migrate credentials.
+        val client = SelfSignedCertHelper.configureToAcceptSelfSigned(OkHttpClient.Builder()
+            .addInterceptor(AuthInterceptor(getCredentials()))
+            .followRedirects(false).followSslRedirects(false)
+            .connectTimeout(10, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)).build()
+        val storage = imageCacheStorage()
+        sh.hnet.comfychair.connection.ImageUploadReuse(client, base, disk = storage?.first,
+            namespace = storage?.second.orEmpty()).also { imageReuse = it }
+    }
+
+    fun imageUploadIdentity(): Any = imageReuseSession()
+    suspend fun clearImageUploadMemoryCache() { imageReuse?.clearMemoryCache() }
+
+    private val privateImageDisk by lazy {
+        context?.let { sh.hnet.comfychair.cache.PersistentImageCache.storage(it) }
+    }
+    @Synchronized
+    fun imageCacheStorage(expectedEpoch: Any? = null): Pair<sh.hnet.comfychair.cache.PrivateImageDiskCache, String>? {
+        if (expectedEpoch != null && imageReuse !== expectedEpoch) throw kotlinx.coroutines.CancellationException("Cache owner changed")
+        val disk = privateImageDisk ?: return null
+        val base = getBaseUrl() ?: return null
+        val auth = when (val value = getCredentials()) {
+            is AuthCredentials.Basic -> listOf("basic", value.username, value.password)
+            is AuthCredentials.Bearer -> listOf("bearer", value.token)
+            else -> listOf("none")
+        }
+        return disk to disk.namespace(listOf(base) + auth)
+    }
+    fun cachedSourceImages(source: sh.hnet.comfychair.model.ServerImageSource,
+        query: sh.hnet.comfychair.model.ServerImageQuery, epoch: Any): sh.hnet.comfychair.model.ServerImagePage? =
+        imageCacheStorage(epoch)?.let { (disk, owner) -> sh.hnet.comfychair.cache.ServerImageListDiskCache(disk, owner).get(source, query) }
+
+    fun cacheSourceImages(source: sh.hnet.comfychair.model.ServerImageSource,
+        query: sh.hnet.comfychair.model.ServerImageQuery, page: sh.hnet.comfychair.model.ServerImagePage, epoch: Any, generation: Long) {
+        imageCacheStorage(epoch)?.let { (disk, owner) -> sh.hnet.comfychair.cache.ServerImageListDiskCache(disk, owner).put(source, query, page, generation) }
+    }
+
+    suspend fun reuseInputImage(image: sh.hnet.comfychair.model.ServerImage, expectedEpoch: Any): Boolean {
+        val session = imageReuseSession()
+        if (session !== expectedEpoch) throw kotlinx.coroutines.CancellationException("Source owner changed")
+        require(image.type == "input" && sh.hnet.comfychair.model.ServerImageDiscovery.descriptor(image.path, image.type) == image.copy(assetId = null))
+        val exists = session.exists(image)
+        if (imageReuseSession() !== expectedEpoch) throw kotlinx.coroutines.CancellationException("Source owner changed")
+        return exists
+    }
+
+    suspend fun uploadImageReusing(imageData: ByteArray, extension: String,
+        onProgress: ((Long, Long) -> Unit)? = null): sh.hnet.comfychair.model.ServerImage {
+        val session = imageReuseSession()
+        val result = try { session.upload(imageData, extension, onProgress) } catch (e: IOException) {
+            synchronized(this) {
+                if (imageReuse !== session) throw kotlinx.coroutines.CancellationException("Image upload owner changed")
+            }
+            throw e
+        }
+        synchronized(this) {
+            if (imageReuse !== session) throw kotlinx.coroutines.CancellationException("Image upload owner changed")
+        }
+        return result
+    }
 
     // Store the active WebSocket connection
     private var webSocket: WebSocket? = null
@@ -1140,14 +1212,58 @@ class ComfyUIClient(
         )
     }
 
+    fun deletionCredentialScope(serverId: String): String = org.json.JSONArray(listOf(serverId, getBaseUrl())).toString()
+
+    fun mediaDeletion(secret: String, allowLan: Boolean = false): sh.hnet.comfychair.connection.ServerMediaDelete {
+        val base = getBaseUrl()?.toHttpUrl() ?: throw IOException("Not connected")
+        val frozen = SelfSignedCertHelper.configureToAcceptSelfSigned(OkHttpClient.Builder()
+            .addInterceptor(AuthInterceptor(getCredentials()))).build()
+        return sh.hnet.comfychair.connection.ServerMediaDelete(frozen, base, secret, allowLan)
+    }
+
+    fun invalidateDeletedImages(images: List<sh.hnet.comfychair.model.ServerImage>, epoch: Any) {
+        imageCacheStorage(epoch)?.let { (disk, owner) ->
+            disk.invalidateImages(owner, images)
+        }
+    }
+
     private class PickerHttpError(val status: Int, val disabled: Boolean) : IOException("HTTP $status")
     // Dedicated derived client retains authentication/TLS configuration but never follows redirects.
     private val pickerClient by lazy { transferClient.newBuilder().followRedirects(false).followSslRedirects(false).build() }
     private var sourceAssetsSupported: Boolean? = null
 
+    var mediaExtensionPresent = false
+    private var mediaExtensionChecked = false
+    private var mediaTombstones: Set<sh.hnet.comfychair.model.ServerImage> = emptySet()
+    private suspend fun updateMediaTombstones() {
+        mediaTombstones = try {
+            val server = if (sh.hnet.comfychair.connection.ConnectionManager.clientOrNull === this)
+                sh.hnet.comfychair.connection.ConnectionManager.currentServerId else null
+            val api = if (context != null && server != null) kotlinx.coroutines.withContext(Dispatchers.IO) {
+                runCatching {
+                    val storage = sh.hnet.comfychair.storage.DeletionCredentialStorage(requireNotNull(context))
+                    val scope = deletionCredentialScope(server)
+                    storage.get(scope).takeIf { it.isNotEmpty() }?.let { mediaDeletion(it, storage.lan(scope)) }
+                }.getOrNull() // Keystore failure disables private metadata/deletion, not ordinary browsing.
+            } else null
+            api?.takeIf { it.credentialTransportAllowed }?.missing() ?: emptySet()
+        }
+        catch (e: sh.hnet.comfychair.connection.ServerMediaDelete.HttpFailure) {
+            if (e.status in setOf(403, 404)) emptySet() else throw e
+        }
+    }
+    private fun hideMissing(page: sh.hnet.comfychair.model.ServerImagePage) =
+        page.copy(images = page.images.filter { image -> mediaTombstones.none { it.type == image.type && it.path == image.path } })
+
     suspend fun browseSourceImages(source: sh.hnet.comfychair.model.ServerImageSource,
         query: sh.hnet.comfychair.model.ServerImageQuery): sh.hnet.comfychair.model.ServerImagePage {
         val base = getBaseUrl()?.toHttpUrl() ?: throw IOException("Not connected")
+        if (!mediaExtensionChecked) {
+            try { mediaDeletion("").available(); mediaExtensionPresent = true }
+            catch (e: sh.hnet.comfychair.connection.ServerMediaDelete.HttpFailure) { if (e.status != 404) throw e }
+            mediaExtensionChecked = true
+        }
+        if (mediaExtensionPresent) updateMediaTombstones()
         if (sourceAssetsSupported == null) {
             try {
                 val features = JSONObject(readSourcePickerBytes(base.newBuilder().addPathSegment("api")
@@ -1167,13 +1283,13 @@ class ComfyUIClient(
                 if (query.name.isNotEmpty()) builder.addQueryParameter("name_contains", query.name)
                 query.cursor?.let { builder.addQueryParameter("after", it) }
                 val json = JSONObject(readSourcePickerBytes(builder.build(), 8 * 1024 * 1024).toString(Charsets.UTF_8))
-                return sh.hnet.comfychair.model.ServerAssetDiscovery.page(json, source, base, query.cursor)
+                return hideMissing(sh.hnet.comfychair.model.ServerAssetDiscovery.page(json, source, base, query.cursor))
             } catch (e: PickerHttpError) {
                 if (e.status != 404 && !(e.status == 503 && e.disabled)) throw e
                 sourceAssetsSupported = false
             }
         }
-        return listSourceImagePage(source, query.legacyOffset)
+        return hideMissing(listSourceImagePage(source, query.legacyOffset))
     }
 
     suspend fun downloadSourceImage(image: sh.hnet.comfychair.model.ServerImage): ByteArray {
@@ -1850,7 +1966,10 @@ class ComfyUIClient(
      * Clean up resources
      * Should be called when done with the client
      */
+    @Synchronized
     fun shutdown() {
+        imageReuse?.invalidate()
+        imageReuse = null
         closeWebSocket()
         // Note: We don't shutdown the httpClient here as it might be reused
         // In a real app, you might want to manage the client lifecycle differently

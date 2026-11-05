@@ -8,6 +8,7 @@
     <cloud-backup>
         <!-- Include shared preferences for backup -->
         <include domain="sharedpref" path="." />
+        <exclude domain="sharedpref" path="MediaDeletionCredentials.xml" />
 
         <!-- Exclude connection settings (hostname/port) for security -->
         <exclude domain="sharedpref" path="ComfyChairPrefs.xml" />
@@ -17,5 +18,6 @@
     <device-transfer>
         <!-- Include all preferences for device transfer (more trusted) -->
         <include domain="sharedpref" path="." />
+        <exclude domain="sharedpref" path="MediaDeletionCredentials.xml" />
     </device-transfer>
 </data-extraction-rules>

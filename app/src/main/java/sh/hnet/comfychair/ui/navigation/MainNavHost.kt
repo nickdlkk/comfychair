@@ -37,10 +37,14 @@ fun MainNavHost(
     onNavigateToSettings: () -> Unit,
     onNavigateToGallery: () -> Unit,
     onLogout: () -> Unit,
+    sourceNavigation: Int = 0,
     startDestination: String = MainRoute.TextToImage.route,
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController()
 ) {
+    androidx.compose.runtime.LaunchedEffect(sourceNavigation) {
+        if (sourceNavigation > 0) navController.navigate(MainRoute.ImageToImage.route) { launchSingleTop = true }
+    }
     Scaffold(
         bottomBar = {
             MainNavigationBar(

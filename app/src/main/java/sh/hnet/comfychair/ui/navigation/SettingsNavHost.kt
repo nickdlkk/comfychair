@@ -1,5 +1,6 @@
 package sh.hnet.comfychair.ui.navigation
 
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -47,9 +48,12 @@ fun SettingsNavHost(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
+    val showSettingsChrome = SettingsChromePolicy.showBottomBar(currentRoute)
     Scaffold(
+        contentWindowInsets = if (showSettingsChrome) androidx.compose.material3.ScaffoldDefaults.contentWindowInsets
+            else androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            BottomAppBar(
+            if (showSettingsChrome) BottomAppBar(
                 actions = {
                     // Add left padding to align with screen content
                     Spacer(modifier = Modifier.width(12.dp))
@@ -201,7 +205,7 @@ fun SettingsNavHost(
         NavHost(
             navController = navController,
             startDestination = SettingsRoute.Workflows.route,
-            modifier = Modifier.padding(paddingValues)
+            modifier = Modifier.padding(paddingValues).consumeWindowInsets(paddingValues)
         ) {
             // Order matches BottomAppBar: Workflows → Application → Server → About
             composable(SettingsRoute.Workflows.route) {
@@ -212,12 +216,16 @@ fun SettingsNavHost(
                 )
             }
 
+            composable("server_gallery") {
+                sh.hnet.comfychair.ui.screens.ServerGalleryScreen(onBack = { navController.popBackStack() })
+            }
             composable(SettingsRoute.Application.route) {
                 ApplicationSettingsScreen(
                     viewModel = settingsViewModel,
                     onNavigateBack = onNavigateToGeneration,
                     onNavigateToGeneration = onNavigateToGeneration,
-                    onLogout = onLogout
+                    onLogout = onLogout,
+                    onServerGallery = { navController.navigate("server_gallery") }
                 )
             }
 

@@ -18,8 +18,8 @@ android {
         minSdk = 33
         targetSdk = 36
         // Stable releases must exceed every previously distributed beta versionCode.
-        versionCode = 54
-        versionName = "v0.8.25"
+        versionCode = 63
+        versionName = "v0.8.26"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

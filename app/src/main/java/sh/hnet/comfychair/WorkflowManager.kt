@@ -1838,6 +1838,11 @@ object WorkflowManager {
             processedJson = processedJson.replace("{{lownoise_lora_name}}", escapeForJson(lownoiseLora))
         }
 
+        // Normalize a single template annotation before appending our canonical annotation.
+        // Descriptor paths are always bare; never pass an annotated filename through this API.
+        for (key in listOf("image_filename", "image_filename_2", "image_filename_3", "image_filename_4")) {
+            processedJson = processedJson.replace("{{$key}} [input]", "{{$key}}")
+        }
         // Type-specific: source image placeholder (both template and literal formats)
         val escapedSourceFilename = escapeForJson(sourceImageFilename)
         processedJson = processedJson.replace("{{image_filename}}", "$escapedSourceFilename [input]")

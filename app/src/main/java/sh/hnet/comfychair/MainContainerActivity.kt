@@ -50,10 +50,20 @@ class MainContainerActivity : ComponentActivity() {
     private val imageToVideoViewModel: ImageToVideoViewModel by viewModels()
     private val materialLibraryViewModel: MaterialLibraryViewModel by viewModels()
 
+    private val gallerySourceNavigation = androidx.compose.runtime.mutableIntStateOf(0)
+
     // Activity result launchers
     private val settingsLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        if (result.resultCode == 102) {
+            val ticket = result.data?.getStringExtra("server_gallery_source")
+            val value = ticket?.let { sh.hnet.comfychair.connection.ServerGallerySourceTransfer.take(it) }
+            if (value != null) {
+                imageToImageViewModel.acceptStandaloneGallerySource(this, value)
+                gallerySourceNavigation.intValue++
+            }
+        }
         when (result.resultCode) {
             RESULT_REFRESH_NEEDED -> {
                 // Settings cleared/restored or workflows changed - restart activity fresh
@@ -155,6 +165,7 @@ class MainContainerActivity : ComponentActivity() {
                         onNavigateToSettings = { openSettings() },
                         onNavigateToGallery = { openGallery() },
                         onLogout = { logout() },
+                        sourceNavigation = gallerySourceNavigation.intValue,
                         startDestination = startDestination
                     )
                 }

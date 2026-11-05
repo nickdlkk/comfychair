@@ -6,6 +6,7 @@ class ServerImagePreviewCache<K, V>(private val maxBytes: Long, private val maxE
     var bytes: Long = 0
         private set
     val size: Int get() = entries.size
+    @Synchronized fun clear() { entries.clear(); bytes = 0 }
     @Synchronized fun get(key: K): V? = entries[key]?.first
     @Synchronized fun put(key: K, value: V, weight: Long) {
         require(weight >= 0)

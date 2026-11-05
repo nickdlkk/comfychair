@@ -107,6 +107,53 @@ class SettingsViewModel : ViewModel() {
         get() = ConnectionManager.clientOrNull
 
     private var resourceRefreshJob: Job? = null
+    val imageCachePolicy = MutableStateFlow(sh.hnet.comfychair.cache.ImageCachePolicy())
+    val imageCacheBusy = MutableStateFlow(false)
+    val imageCacheFeedback = MutableStateFlow<Int?>(null)
+    val imageCacheStats = MutableStateFlow<sh.hnet.comfychair.cache.PrivateImageDiskCache.Stats?>(null)
+    val imageCacheStatsBusy = MutableStateFlow(false)
+    val imageCacheStatsError = MutableStateFlow(false)
+    fun refreshImageCacheStats(context: Context) {
+        if (imageCacheStatsBusy.value) return
+        imageCacheStatsBusy.value = true
+        imageCacheStatsError.value = false
+        viewModelScope.launch {
+            try {
+                imageCacheStats.value = withContext(Dispatchers.IO) {
+                    sh.hnet.comfychair.cache.PersistentImageCache.storage(context.applicationContext).stats()
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: Exception) { imageCacheStatsError.value = true }
+            finally { imageCacheStatsBusy.value = false }
+        }
+    }
+    fun saveImageCachePolicy(context: Context, value: sh.hnet.comfychair.cache.ImageCachePolicy) {
+        imageCacheOperation {
+            withContext(Dispatchers.IO) { sh.hnet.comfychair.cache.PersistentImageCache.apply(context.applicationContext, value) }
+            imageCachePolicy.value = value
+            refreshImageCacheStats(context)
+            R.string.image_cache_saved
+        }
+    }
+    fun clearPersistentImageCache(context: Context) {
+        imageCacheOperation {
+            withContext(Dispatchers.IO) { sh.hnet.comfychair.cache.PersistentImageCache.clear(context.applicationContext) }
+            comfyUIClient?.clearImageUploadMemoryCache()
+            refreshImageCacheStats(context)
+            R.string.image_cache_cleared
+        }
+    }
+    private fun imageCacheOperation(action: suspend () -> Int) {
+        if (imageCacheBusy.value) return
+        imageCacheBusy.value = true
+        imageCacheFeedback.value = null
+        viewModelScope.launch {
+            try { imageCacheFeedback.value = action() }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: Exception) { imageCacheFeedback.value = R.string.image_cache_error }
+            finally { imageCacheBusy.value = false }
+        }
+    }
 
     private val _serverSettingsState = MutableStateFlow(ServerSettingsUiState())
     val serverSettingsState: StateFlow<ServerSettingsUiState> = _serverSettingsState.asStateFlow()
@@ -149,6 +196,7 @@ class SettingsViewModel : ViewModel() {
             hostname = ConnectionManager.hostname,
             port = ConnectionManager.port
         )
+        imageCachePolicy.value = AppSettings.getImageCachePolicy(context)
         // Load settings
         _isLivePreviewEnabled.value = AppSettings.isLivePreviewEnabled(context)
         _isMemoryFirstCache.value = AppSettings.isMemoryFirstCache(context)

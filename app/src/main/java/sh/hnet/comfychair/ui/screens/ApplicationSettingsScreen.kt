@@ -64,7 +64,8 @@ fun ApplicationSettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToGeneration: () -> Unit,
     onLogout: () -> Unit,
-    onNavigateToLogin: () -> Unit = {}
+    onNavigateToLogin: () -> Unit = {},
+    onServerGallery: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val isLivePreviewEnabled by viewModel.isLivePreviewEnabled.collectAsState()
@@ -210,6 +211,10 @@ fun ApplicationSettingsScreen(
         onLogout = onLogout
     ) {
         Spacer(modifier = Modifier.height(16.dp))
+
+        Button(onClick = onServerGallery, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.server_gallery_title))
+        }
 
         // Language Card
         Card(
@@ -583,6 +588,9 @@ fun ApplicationSettingsScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        sh.hnet.comfychair.ui.components.ImageCacheSettings(viewModel)
         Spacer(modifier = Modifier.height(16.dp))
 
         // Backup and Restore Card

@@ -1,0 +1,5 @@
+# Trusted LAN deletion — beta.6/code60
+
+Authorized scope: remove self-imposed HTTPS/proxy mandate for trusted LAN; retain one dedicated random key and existing safety mechanisms. Local app/plugin/tests/build/download only; no remote deployment, restart, network changes, live media mutation or git publication.
+
+Acceptance: explicit server LAN mode + >=32-character cryptographically random secret; default fail-closed; optional proxy support; Android encrypted origin-bound key + LAN toggle/save warning/consent; no redirects or retries; public capabilities without user metadata, key-gated missing metadata; queue mutex, dirfd nofollow, snapshots/idempotency/max50/32KiB retained. Preserve gallery/cache/direct-input and normal auth. Validate server modes/path regression, client HTTP consent/auth/missing/redirect/identity, full clean JVM tests + R8 release, embedded metadata/cert comparison beta5, HTTP9010 full GET hash. Risks: plaintext shared admin key, external writers/POSIX unlink race, persistent tombstones/stale other-client records. Exact results in final handoff.

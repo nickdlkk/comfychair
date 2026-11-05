@@ -1,0 +1,17 @@
+# Input/Output scrolling fix — v0.8.26-beta.4 / code58
+
+## Report and diagnosis
+User reports a populated page with some missing previews and downward scrolling not fetching another page. Source trace found `ServerImagePickerPanel` had a popup-session `autoPages` counter incremented for **every** automatic request, stopped at five; this was intended as sparse-page protection but also stopped normal browsing. Sparse/filtered pages can consume the quota without adding visible images. The old source regression asserting the quota exists was replaced. A new failing source regression was executed against beta3 (1 test / 1 failure; `code58/regression-red.log`). This proves the code defect, not the exact unseen handset sequence.
+
+Preview failures are a separate path: the controller bounds previews to three visible-tile workers; tiles already show a localized tap-to-retry state and do not retry endlessly. Missing previews must never gate list pagination. Full-resolution webp60 network responses may still be slow or exceed the finite 4MiB bound; local sampling is not a network resize. No server extension or deletion added.
+
+## Implementation
+- Replace session page quota with pure `ServerPickerScrollPolicy`, used by a single session-scoped Compose `snapshotFlow` observing layout plus current cursor/loading/error state. Cursor changes while near-bottom stays true still advance; null cursor, request/download/error states stop automatic work.
+- Only request when grid item count matches the current descriptor list. This waits for appended layout before re-evaluating the nine-item threshold and prevents stale `nearBottom=true` draining the library.
+- Count only consecutive append responses adding zero distinct descriptors (empty **or duplicate** pages). Five stop automatic advancement; existing localized footer explicitly retries and renews the sparse budget. Any real progress resets it. Ordinary scrolling has no lifetime quota.
+- Controller synchronously sets loadingMore before launching IO, so repeated viewport events coalesce. Existing seen-cursor cycle validation remains. Refresh resets loadingMore/errors/cursors/sparse budget and uses a separate list request revision, rejecting even non-cooperative pre-refresh callbacks without changing popup/preview lifetime or scroll position.
+- Keep persisted first-page cache and visible sampled thumbnails unchanged. Further-page cursor caches intentionally not added: cursors must come from a fresh query/sort/server traversal, not a stale cached chain. New pages still require one bounded network request; cached thumbnail bytes accelerate previously viewed tiles. No speculative full-resolution preview prefetch.
+- Preserve unchanged direct Input native LoadImage reuse/HEAD/noPOST, upload reuse/cache cleanup, snapshots/batch/front/confirmation and existing dirty/untracked work/stash. No commit/push/tag/Release/live writes.
+
+## Verification scope
+Executable JVM policy/controller tests cover both sources through 12 additional 50-image pages, stale-layout drain prevention, unchanged viewport/cursor progress, sparse cutoff/manual recovery/duplicates, errors/explicit retry, null cursor, in-flight/download guards, failed preview independence, refresh stale callbacks. Existing server/client/slot/query/dismiss cancellation, cache, direct Input and upload tests retained. UI source tests are wiring contracts, **not** rendered Compose gestures. Build/download/certificate and final test details are recorded in `picker-scroll-handoff.md` after execution.

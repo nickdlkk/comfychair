@@ -1,8 +1,18 @@
+# Stable v0.8.26 / code63
+
+[Download stable release](https://github.com/nickdlkk/comfychair/releases/tag/v0.8.26) · [Release notes and verification limits](docs/requirements/release-v0.8.26.md)
+
+Combines beta.1–beta.8: immutable content-addressed upload reuse, unchanged Input reuse for native LoadImage, private persistent caching and cleanup/statistics settings, continuous Input/Output pagination, an independent server gallery, dedicated-key confirmed trusted-LAN deletion, compact fullscreen layout/scroll anchors, and original graphical loading/cancel feedback. The companion extension is disabled until separately configured by an administrator; HTTP is trusted-LAN only. Beta handoffs remain historical evidence, not current deployment instructions.
+
 # <img src="metadata/en-US/icon.png" width="42"/> ComfyChair
+
+## Independent gallery and optional extension (introduced in beta.5)
+Standalone Settings server Input/Output gallery and separately installed physical deletion extension. The release ZIP defaults disabled until explicitly configured; existing deployments retain their private configuration. This publication does not change or restart a live server. [Requirements](docs/requirements/server-gallery-v0.8.26-beta.5.md) · [Installation and security limits](server/comfychair_media/README.md) · [Handoff](docs/requirements/server-gallery-handoff.md).
+
 
 An unofficial, native Android UI for [ComfyUI](https://github.com/comfyanonymous/ComfyUI).
 
-**Current version**: [v0.8.25](https://github.com/nickdlkk/comfychair/releases/tag/v0.8.25) · [简体中文](README.zh-CN.md)
+**Current stable**: [v0.8.26 / code63](https://github.com/nickdlkk/comfychair/releases/tag/v0.8.26) · [简体中文](README.zh-CN.md)
 
 This fork's APKs are published in [nickdlkk/comfychair Releases](https://github.com/nickdlkk/comfychair/releases). The badges below link to the upstream project and F-Droid; they do not necessarily contain this fork's changes.
 
@@ -66,12 +76,32 @@ ComfyChair provides a streamlined mobile interface for interacting with ComfyUI 
   - High Noise / Low Noise UNET and LoRA model selection
   - Live preview during generation
 
+### Input/Output infinite scroll fix (v0.8.26-beta.4)
+
+Normal scrolling no longer stops after five automatic pages. Only five consecutive pages adding no distinct images pause auto-advance; the existing Load more action resumes. Viewport/cursor/loading updates are observed together, with appended-layout synchronization and single-flight controller guards; preview failures never block pagination and tiles retain explicit tap-to-retry. Persisted first-page lists and visible-only sampled thumbnails remain; later list pages still need network, with no stale cursor chain or eager full-image prefetch. See [requirements](docs/requirements/picker-scroll-v0.8.26-beta.4.md) and [verification](docs/requirements/picker-scroll-handoff.md).
+
+### Configurable server-image cache cleanup (v0.8.26-beta.3)
+
+Settings → Server image cache: automatic cleanup switch, 1–1024 MB limit and 1–365 day retention, saved to preferences and immediately applied to the live shared disk cache. Default ON / 64 MB / 7 days. Either age OR size triggers cleanup, oldest creation first (HMAC filename breaks timestamp ties); reads do not renew retention. Auto OFF retains the independent 1024 MB / 8192-entry safety ceiling. Freshness TTLs remain separate (24h lists/thumbnails; 7d descriptors); stale entries are misses, not retention deletions. No background timer: cleanup runs on reads/writes/settings apply. MB = MiB; entry-file bytes include 44-byte headers, not the 32-byte installation key.
+
+Current cache size (formatted and exact bytes) and valid-entry count are scanned on IO when entering settings and after apply/clear; Refresh cache statistics captures later automatic cleanup. Counts/bytes exclude HMAC key, temporary files, unrelated files and corrupt entries; retained freshness-expired valid entries still count. Loading/error feedback is shown.
+
+The separate manual button requires two clicks within 3 seconds, works with auto OFF, shows progress/result/error and clears only this feature across all server/account namespaces. It preserves the HMAC key, selected sources, materials, workflows and comparison snapshots; no server deletion. It closes the picker and clears memory fronts; pre-clear thumbnail/list/upload writes are generation-guarded. Uploads already in progress may finish but cannot repopulate cleared storage. See [requirements](docs/requirements/image-cache-cleanup-v0.8.26-beta.3.md).
+
+### Persistent picker cache and Input reuse (v0.8.26-beta.2)
+
+- Input/Output first-page lists appear from private disk before background refresh; query, sort, source, server and authentication are partitioned. Refresh retains the grid. Sampled thumbnails (at most 256px) persist across restarts; 24-hour disk TTL, configurable retention (default 64 MiB / 7 days), oldest-created eviction, checksum validation and atomic publication. Storage is app-private/no-backup, not encrypted media storage. Installation-random keyed HMAC namespaces never store raw credentials. Network previews still request full-resolution `webp;60`, bounded to 4 MiB: no invented server resizing.
+- **Unchanged Input selections can skip upload entirely**, in Editing mode with every mapped consumer proven native `LoadImage.image`. Retained source object + Bitmap identity/mutation revision + authenticated client epoch must match; compression, masks, replacements, restored sources and custom nodes use encoded uploads. This explicitly uses original server-file semantics, not Android decode/re-encode equivalence. Read-only authenticated HEAD verifies existence: only 404 falls back to upload; auth/network/server/unsupported HEAD errors stop. Output direct reuse is not enabled.
+- Encoded uploads remain immutable SHA-256 addresses (`overwrite=false`), single-flight and cancellable. Successful descriptors now persist for seven days in the same bounded private disk cache, with HEAD before reuse, plus 128 memory descriptors. Auth changes cannot reuse another namespace; returning to the same credentials/server can reuse disk entries. No server file deletion. Cache eviction/key loss/app-data removal causes safe misses.
+- Existing active mapped slots/bypass, references, mask PNG, source snapshots, batch/front/confirmation flows remain. See [implementation and verification](docs/requirements/persistent-input-cache-v0.8.26-beta.2.md); previous beta evidence is historical.
+- See [implementation/verification handoff](docs/requirements/image-upload-reuse-v0.8.26-beta.1.md). No on-device verification without adb hardware; see the stable release verification above.
+
 ### Server Input / Output source picker (v0.8.25)
 
 - In **Image to Image**, use the cloud upload/download icons beside the existing file/material buttons to choose server Input or Output images for source slots 1–4. The captured target slot does not change when paging the source carousel. Existing local file, material library and gallery selection remain available.
 - The compact material-style bottom sheet has a three-column image grid, a combined source/slot/count header, refresh/close/info actions, and one search/sort row. Asset-enabled servers provide debounced name search, cursor pagination and newest/oldest/name/size ordering. Counts distinguish displayed images from matching assets (which may include nonimages). Five sparse pages per automatic round are followed by explicit **Load more**.
 - The existing authenticated connection probes `/api/features` and reads `/api/assets`. Only disabled/unsupported asset APIs fall back: Input uses the server's LoadImage options; Output uses paginated execution history, **not an output-directory scan**. Legacy mode has no server-side asset search/sort. Neither assets nor history promise a complete live filesystem view; deleted files and concurrent history deletion can require refresh. Authentication/network/server errors are shown, not disguised as empty lists or fallback.
-- Visible thumbnails use at most three concurrent requests, 4 MiB encoded responses and sampled decoding to at most 256px. The owner-aware memory LRU is bounded to 12 MiB / 64 entries, with no thumbnail disk cache. Choosing an image pauses new previews without clearing rendered thumbnails, list or scroll state; an overlay and cancellable indeterminate status indicate the original download (no invented percentage). Failed downloads retain the list and offer retry.
+- Visible thumbnails use at most three concurrent requests, 4 MiB encoded responses and sampled decoding to at most 256px. The owner-aware memory LRU is bounded to 12 MiB / 64 entries, fronting the private sampled-thumbnail disk cache described above. Choosing an image pauses new previews without clearing rendered thumbnails, list or scroll state; an overlay and cancellable indeterminate status indicate the original download (no invented percentage). Failed downloads retain the list and offer retry.
 - Originals are fetched separately (asset-ID content for assets), limited to 32 MiB / 16,777,216 pixels; accepted images preserve original dimensions and replace only the captured slot. Server/client/slot/revision checks reject stale results. Closing, backgrounding, changing source or connection cancels work. Stable String grid keys avoid unsupported Android saved-state keys.
 
 ### Opt-in diagnostics

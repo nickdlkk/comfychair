@@ -1,5 +1,7 @@
 # Plan: 图片历史选择器功能
 
+> 当前任务：正式 v0.8.26/code63，整合 beta.1–beta.8 功能链并发布。完整说明及验证边界见 [正式版交接](docs/requirements/release-v0.8.26.md)。以下旧计划仅为历史。
+
 ## 目标
 在 `ImageToImageScreen` 底部工具条中增加按钮，点击后打开 `ModalBottomSheet`，从 `GalleryRepository` 的已生成图片中选择一张作为源图输入。
 
