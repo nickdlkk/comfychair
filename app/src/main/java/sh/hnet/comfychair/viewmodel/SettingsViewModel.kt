@@ -371,6 +371,7 @@ class SettingsViewModel : ViewModel() {
         }
     }
 
+    /** Clear generated media only; imported workflows and explicit material-library assets stay. */
     fun clearCache(context: Context) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -390,10 +391,6 @@ class SettingsViewModel : ViewModel() {
                         }
                     }
                 }
-
-                // Clear user-uploaded workflows
-                WorkflowManager.ensureInitialized(context)
-                WorkflowManager.clearAllUserWorkflows()
             }
 
             // Clear in-memory media caches

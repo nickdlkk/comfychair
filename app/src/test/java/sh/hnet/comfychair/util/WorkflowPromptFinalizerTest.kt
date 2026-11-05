@@ -91,6 +91,34 @@ class WorkflowPromptFinalizerTest {
         assertEquals("sRGB", result.getString("format.input_color_space"))
     }
 
+    @Test fun savedEditsCannotOverrideManagedInputsAcrossAllWrappersAndSlots() {
+        for (wrapper in wrappers) {
+            val template = JSONObject().put("1", JSONObject().put("inputs", JSONObject()
+                .put("image", "{{image_filename}}")
+                .put("slot2", "{{image_filename_2}}")
+                .put("slot3", "{{image_filename_3}}")
+                .put("slot4", "{{image_filename_4}}")
+                .put("source", "uploaded_image.png [input]")
+                .put("ref1", "reference_image_1.png [input]")
+                .put("ref2", "reference_image_2.png [input]")
+                .put("seed", "{{seed}}")
+                .put("literal", "editable")
+                .put("other_image", "user-chosen.png [input]")))
+            val prepared = JSONObject(template.toString())
+            val inputs = prepared.getJSONObject("1").getJSONObject("inputs")
+            for (key in listOf("image", "slot2", "slot3", "slot4", "source", "ref1", "ref2")) inputs.put(key, "current-$key.png")
+            inputs.put("seed", 999999999999L)
+            val edits = inputs.keys().asSequence().associateWith { "stale" as Any }
+            val result = WorkflowPromptFinalizer.applyNodeAttributeEdits(wrap(prepared, wrapper), mapOf("1" to edits), wrap(template, wrapper))
+            val actual = nodes(result, wrapper).getJSONObject("1").getJSONObject("inputs")
+            assertEquals("current-image.png", actual.getString("image"))
+            for (key in listOf("slot2", "slot3", "slot4", "source", "ref1", "ref2")) assertEquals("current-$key.png", actual.getString(key))
+            assertEquals(999999999999L, actual.getLong("seed"))
+            assertEquals("stale", actual.getString("literal"))
+            assertEquals("stale", actual.getString("other_image"))
+        }
+    }
+
     @Test fun malformedJsonAndEmptyEditsAreUnchanged() {
         val malformed = "{broken"
         assertEquals(malformed, WorkflowPromptFinalizer.fillMissingPngSaveInputs(malformed))

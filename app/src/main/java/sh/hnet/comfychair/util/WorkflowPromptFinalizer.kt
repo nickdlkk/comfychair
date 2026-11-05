@@ -2,6 +2,7 @@ package sh.hnet.comfychair.util
 
 import org.json.JSONArray
 import org.json.JSONObject
+import sh.hnet.comfychair.workflow.TemplateKeyRegistry
 
 /** Pure prompt transformations shared by direct and persisted node edits. */
 object WorkflowPromptFinalizer {
@@ -10,15 +11,23 @@ object WorkflowPromptFinalizer {
 
     fun applyNodeAttributeEdits(
         workflowJson: String,
-        edits: Map<String, Map<String, Any>>
+        edits: Map<String, Map<String, Any>>,
+        templateJson: String? = null
     ): String {
         if (edits.isEmpty()) return workflowJson
         return try {
             val root = JSONObject(workflowJson)
             val nodes = nodes(root)
+            // Inspect the unexpanded template, not the current filename/seed. Older editor
+            // versions saved values for these inputs and must not override this generation.
+            val templateNodes = templateJson?.let {
+                try { nodes(JSONObject(it)) } catch (_: Exception) { null }
+            }
             for ((nodeId, nodeEdits) in edits) {
                 val inputs = nodes.optJSONObject(nodeId)?.optJSONObject("inputs") ?: continue
+                val templateInputs = templateNodes?.optJSONObject(nodeId)?.optJSONObject("inputs")
                 for ((inputName, value) in nodeEdits) {
+                    if (TemplateKeyRegistry.isAppManagedValue(templateInputs?.opt(inputName))) continue
                     // Edits are widget values, never graph rewiring or new inputs.
                     if (!inputs.has(inputName) || inputs.opt(inputName) is JSONArray) continue
                     when (value) {

@@ -9,6 +9,14 @@ import sh.hnet.comfychair.WorkflowType
  */
 object TemplateKeyRegistry {
 
+    /** Literal image markers in built-ins are managed just like placeholders, including slots 2–4. */
+    fun isAppManagedValue(value: Any?): Boolean {
+        val text = value as? String ?: return false
+        return (text.contains("{{") && text.contains("}}")) || text in setOf(
+            "uploaded_image.png [input]", "reference_image_1.png [input]", "reference_image_2.png [input]"
+        )
+    }
+
     /**
      * Map from placeholder name to the JSON input key it targets.
      * Example: "{{positive_prompt}}" placeholder maps to "positive_text" key in CLIPTextEncode inputs

@@ -1497,7 +1497,9 @@ object WorkflowManager {
         }
         val edits = NodeAttributeEdits.fromJson(editsJson)
 
-        return applyNodeAttributeEdits(processedJson, edits.edits)
+        return WorkflowPromptFinalizer.applyNodeAttributeEdits(
+            processedJson, edits.edits, getWorkflowById(workflowId)?.jsonContent
+        )
     }
 
     /**
