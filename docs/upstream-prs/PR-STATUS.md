@@ -10,8 +10,9 @@
 | fork 整合 | `main` 已重置为 integration/upstream-20261105（含上游 bfd69ad→825d72a 全量合并），原 main 备份为 `customization/v0.8.26` |
 | 分叉点 | v0.8.11 (`791cd95`)，本地定制 56 commits |
 | PR 拆分方案 | `UPSTREAM-PR-PLAN.md`（PR-A … PR-K） |
-| **PR-B** | **topic 分支已就绪，未发 PR**（见下） |
-| PR-A/C…K | 未开始 |
+| **PR-B** | **已发 [PR #51](https://github.com/legal-hkr/comfychair/pull/51)（OPEN）** |
+| **Login backup restore** | **已发 [PR #50](https://github.com/legal-hkr/comfychair/pull/50)（OPEN）** |
+| PR-A/C…K | 未开始；下一个推荐 PR-A（见文末） |
 
 ## PR-B — Import saved ComfyUI server workflows（已发 PR #51）
 
@@ -126,3 +127,29 @@
 
 - 类似功能此前未做过（fork 历史无 login 恢复入口；备份功能本身是上游 058f3e1 引入、Settings 页承载）
 - 送上游前需门禁同 PR-B；UI 位置（服务器列表下 vs 行菜单/overflow）可能需维护者讨论
+
+## 更新记录
+
+### 2026-11-05（晚）
+
+- PR #50、#51 均已发出，上游无 review/评论（待维护者响应）；早期 PR #25（slot bypass）4 月底被关闭未合并。
+- PR-B 最终提交 `589b3a1`：rebase 到 origin/main `6f202a1`，适配上游 FormDialog 对话框体系（warnings 迁入 content slot）、合并 importFileName/filter 类型检测；FAB 第三项 Import from server 入口并入主提交。55 tests 全绿。
+- 测试包：beta2 APK（v0.8.13-beta2，`comfychair-prb-debug.apk` 固定名分发），与 beta1 差异 = 上游 editor 重构 + FAB 入口。
+
+## 下一个 PR 点：PR-A — SaveImageAdvanced PNG 默认值修复（推荐下一个）
+
+**已验证上游仍可复现**（2026-11-05 检查 origin/main）：
+
+- `git grep bit_depth|SaveImageAdvanced origin/main -- app/src/main/java` → 无结果，上游完全没有该修复
+- fork 侧实现：`customization/v0.8.26` 的 `util/WorkflowPromptFinalizer.kt`（`fillMissingPngSaveInputs`：仅当 `format` 精确为 png 时补 `format.bit_depth=8-bit`、`format.input_color_space=sRGB`，只补 missing/null/blank，不猜其他字段）+ `applyNodeAttributeEdits`（widget 编辑安全过滤：跳过 JSONArray 连接、支持 Long）
+- fork 中 `WorkflowManager` 在 3 处 prepare 末尾调用；上游需接入 `WorkflowManager.prepareWorkflow`（单一出口，比 fork 干净）
+- 上游 prepareWorkflow 已有 Long seed 处理（`(params.seed.toLongOrNull() ?: 0)`），fork 的 Long 保护可能部分冗余，移植时对照删重
+
+**步骤**：
+1. `git branch topic/pr-a-png-export-defaults origin/main`（基于 b97af69 或更新）
+2. 移植 `WorkflowPromptFinalizer`（去掉 fork 的 bypass 相关调用点，只保留纯函数对象）
+3. 在上游 `prepareWorkflow` 返回前接 `fillMissingPngSaveInputs`
+4. 测试：从 fork `util/WorkflowPromptFinalizerTest` 抽裸/nodes/prompt wrapper 负例 + PNG 缺字段正例
+5. 描述里附 node schema 依据（SaveImageAdvanced 的 format.bit_depth/input_color_space 定义），说明为何补这两个默认值
+
+**为什么排下一个**：diff 最小（预计 <100 行）、无 UI 依赖、已确认上游缺失、独立可回退——比 PR-C（上传复用，~500+ 行含并发/认证）审查成本低得多。
