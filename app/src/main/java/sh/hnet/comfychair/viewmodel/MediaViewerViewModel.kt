@@ -30,6 +30,8 @@ import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.util.GenerationMetadata
 import sh.hnet.comfychair.util.GenerationMetadataLoader
 import sh.hnet.comfychair.util.MediaExport
+import sh.hnet.comfychair.model.ServerImage
+import sh.hnet.comfychair.model.ServerImageDiscovery
 
 /**
  * Viewer mode
@@ -606,6 +608,19 @@ class MediaViewerViewModel : ViewModel() {
         return state.currentBitmap
             ?: MediaCache.getBitmap(key)
             ?: if (state.mode == ViewerMode.GALLERY) MediaCache.fetchImage(key, item.subfolder, item.type) else null
+    }
+
+    /**
+     * The current item as a server image descriptor, when it is one: only then can "Use as source"
+     * carry upload provenance (the bitmap is this viewer's own decode of exactly this descriptor).
+     */
+    fun currentItemDescriptor(): ServerImage? {
+        val item = _uiState.value.currentItem ?: return null
+        if (item.isVideo) return null
+        return ServerImageDiscovery.descriptor(
+            if (item.subfolder.isEmpty()) item.filename else "${item.subfolder}/${item.filename}",
+            item.type
+        )
     }
 
     override fun onCleared() {

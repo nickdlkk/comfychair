@@ -33,6 +33,7 @@ import java.util.concurrent.TimeUnit
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import sh.hnet.comfychair.connection.ImageUploadReuse
 import sh.hnet.comfychair.model.ServerImage
+import sh.hnet.comfychair.model.ServerImageDiscovery
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
@@ -213,6 +214,24 @@ class ComfyUIClient(
             }
         }
         return result
+    }
+
+    /**
+     * Whether a known input descriptor still exists on this epoch's server (authenticated HEAD).
+     * Only 404 answers "no"; other failures throw rather than quietly claiming existence.
+     * [expectedEpoch] must be the caller's captured [imageUploadIdentity].
+     */
+    suspend fun reuseInputImage(image: ServerImage, expectedEpoch: Any): Boolean {
+        val session = imageReuseSession()
+        if (session !== expectedEpoch) {
+            throw kotlinx.coroutines.CancellationException("Source owner changed")
+        }
+        require(image.type == "input" && ServerImageDiscovery.descriptor(image.path, image.type) == image)
+        val exists = session.exists(image)
+        if (imageReuseSession() !== expectedEpoch) {
+            throw kotlinx.coroutines.CancellationException("Source owner changed")
+        }
+        return exists
     }
 
     /**

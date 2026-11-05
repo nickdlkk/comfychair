@@ -95,6 +95,7 @@ import sh.hnet.comfychair.viewmodel.SettingsViewModel
 import sh.hnet.comfychair.viewmodel.TextToImageViewModel
 import sh.hnet.comfychair.viewmodel.TextToVideoViewModel
 import sh.hnet.comfychair.viewmodel.WorkflowManagementViewModel
+import sh.hnet.comfychair.model.ServerImage
 
 /**
  * Main navigation host: the generation screens (Image and Video tabs), the Gallery tab and the Settings tab with its
@@ -123,14 +124,12 @@ fun MainNavHost(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // Sends a generated image to Image to Image or Image to Video as its source and switches to
-    // that screen the way the navigation bar does
-    val useAsSource: (SourceTarget, suspend () -> Bitmap?) -> Unit = { target, loadBitmap ->
+    fun useAsSourceBitmap(target: SourceTarget, bitmap: Bitmap, descriptor: ServerImage?) {
         scope.launch {
-            val bitmap = loadBitmap() ?: return@launch
             val route = when (target) {
                 SourceTarget.IMAGE_TO_IMAGE -> {
-                    imageToImageViewModel.useAsSource(context, bitmap)
+                    if (descriptor != null) imageToImageViewModel.useServerImageAsSource(context, descriptor, bitmap)
+                    else imageToImageViewModel.useAsSource(context, bitmap)
                     MainRoute.ImageToImage
                 }
                 SourceTarget.IMAGE_TO_VIDEO -> {
@@ -141,6 +140,17 @@ fun MainNavHost(
             navController.navigateToScreen(route)
         }
     }
+
+    // Sends a generated image to Image to Image or Image to Video as its source and switches to
+    // that screen the way the navigation bar does. When the bitmap is the viewer's own decode of a
+    // known server descriptor, the descriptor travels along as upload provenance (direct reuse).
+    val useAsSource: (SourceTarget, suspend () -> Bitmap?) -> Unit = { target, loadBitmap ->
+        scope.launch {
+            val bitmap = loadBitmap() ?: return@launch
+            useAsSourceBitmap(target, bitmap, null)
+        }
+    }
+
 
     // The media viewer, over everything below (navigation bar included)
     val viewerOpen by mediaViewerViewModel.isOpen.collectAsState()
@@ -345,7 +355,13 @@ fun MainNavHost(
             }
             // Messages and the restore confirmation of every settings page
             SettingsEventsHost(settingsViewModel)
-            MediaViewerOverlay(mediaViewerViewModel, onUseAsSource = { target, bitmap -> useAsSource(target) { bitmap } })
+            MediaViewerOverlay(
+                mediaViewerViewModel,
+                onUseAsSource = { target, bitmap -> useAsSource(target) { bitmap } },
+                onUseServerImageAsSource = { target, bitmap, descriptor ->
+                    useAsSourceBitmap(target, bitmap, descriptor)
+                }
+            )
         }
     }
 }

@@ -24,7 +24,9 @@ import sh.hnet.comfychair.WorkflowManager
 import sh.hnet.comfychair.WorkflowType
 import sh.hnet.comfychair.cache.MediaStateHolder
 import sh.hnet.comfychair.connection.ConnectionFailure
+import sh.hnet.comfychair.connection.DirectInputSource
 import sh.hnet.comfychair.connection.ImageUploadReuse
+import sh.hnet.comfychair.model.ServerImage
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.ui.components.shared.WorkflowItemBase
 import sh.hnet.comfychair.util.DebugLogger
@@ -122,6 +124,17 @@ data class ImageToImageUiState(
 class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
 
     override val initialState = ImageToImageUiState()
+
+    /**
+     * Server descriptors that a source image came from directly, by slot (process-only provenance:
+     * cleared on any local pick, cleared source, app restart). Only such a source may skip its
+     * upload when the same server file still exists.
+     */
+    private val directSources = mutableMapOf<Int, DirectInputSource>()
+
+    private fun imageUploadOwner(): Any =
+        (ConnectionManager.clientOrNull as? ComfyUIClient)?.imageUploadIdentity()
+            ?: Any()
 
     override fun ImageToImageUiState.params() =
         if (mode == ImageToImageMode.EDITING) editingParams else inpaintingParams
@@ -407,6 +420,22 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
     fun useAsSource(context: Context, bitmap: Bitmap) {
         val appContext = applicationContext ?: context.applicationContext
         MediaStateHolder.putBitmap(MediaStateHolder.MediaKey.ItiSource, bitmap, appContext)
+        // A bitmap handed over from elsewhere has no provenance: it may be a re-decoded copy.
+        directSources.remove(1)
+        _uiState.update {
+            it.copy(sourceImage = bitmap, maskPaths = emptyList(), viewMode = ImageToImageViewMode.SOURCE)
+        }
+    }
+
+    /**
+     * Use a server image as the source with its descriptor as upload provenance. The bitmap must be
+     * the one the viewer decoded from this exact descriptor for the identity check to hold; any
+     * re-encode on the way in would make reuse incorrect, so it is the caller's contract.
+     */
+    fun useServerImageAsSource(context: Context, image: ServerImage, bitmap: Bitmap) {
+        val appContext = applicationContext ?: context.applicationContext
+        MediaStateHolder.putBitmap(MediaStateHolder.MediaKey.ItiSource, bitmap, appContext)
+        directSources[1] = DirectInputSource(image, imageUploadOwner(), bitmap, bitmap.generationId)
         _uiState.update {
             it.copy(sourceImage = bitmap, maskPaths = emptyList(), viewMode = ImageToImageViewMode.SOURCE)
         }
@@ -415,6 +444,7 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
     /** Remove the source image and its mask (also from the device in device storage mode). */
     fun clearSourceImage() {
         val context = applicationContext ?: return
+        directSources.remove(1)
         _uiState.update { it.copy(sourceImage = null, maskPaths = emptyList()) }
         viewModelScope.launch { MediaStateHolder.evictAndDeleteFromDisk(context, MediaStateHolder.MediaKey.ItiSource) }
     }
@@ -430,6 +460,9 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
                 if (bitmap != null) {
                     // Store in cache (memory or disk based on mode)
                     MediaStateHolder.putBitmap(MediaStateHolder.MediaKey.ItiSource, bitmap, context)
+
+                    // A locally picked file never carries server provenance
+                    directSources.remove(1)
 
                     _uiState.value = _uiState.value.copy(
                         sourceImage = bitmap,
@@ -704,8 +737,25 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
             outputStream.toByteArray()
         }
 
-        // Upload source image with content-addressed reuse
-        val uploadedSource = uploadImageWithReuse(client, sourceBytes, "png") ?: return null
+        // Upload source image with content-addressed reuse, or reference the original file directly
+        // when this exact bitmap came from this server (provenance held by directSources).
+        val uploadedSource = run {
+            val epoch = client.imageUploadIdentity()
+            val original = directSources[1]
+            if (original?.eligible(
+                    epoch, sourceImage, sourceImage.generationId,
+                    compressed = false, masked = false,
+                    nativeMapping = DirectInputSource.supports(
+                        WorkflowManager.getWorkflowById(state.editingParams.selectedWorkflowId)?.jsonContent.orEmpty(), 1
+                    )
+                ) == true && client.reuseInputImage(original.image, epoch)
+            ) {
+                // Native LoadImage decodes the original server file, not our re-encoded copy.
+                original.image.path
+            } else {
+                uploadImageWithReuse(client, sourceBytes, "png") ?: return null
+            }
+        }
 
         // Upload reference image 1 (if present) with content-addressed reuse
         var uploadedRef1: String? = null
