@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -103,6 +104,12 @@ val LocalMediaViewer = staticCompositionLocalOf<MediaViewerOpener> { error("No m
  */
 val LocalCoveredByMediaViewer = compositionLocalOf { false }
 
+/**
+ * True inside the viewer while its medium is still flying in from its origin: a video waits on its first frame and
+ * starts once the flight has landed, rather than being somewhere into it by then.
+ */
+val LocalMediaViewerLanding = compositionLocalOf { false }
+
 /** The medium flying between its origin and the viewer: a still, cropped to a moving rect, over a fading backdrop. */
 private class MediaFlight(
     val image: ImageBitmap,
@@ -165,7 +172,7 @@ fun MediaViewerOverlay(
             val aspect = still.width.toFloat() / still.height
             val out = MediaFlight(
                 image = still.asImageBitmap(),
-                from = origin.mediaRect(aspect),
+                from = origin.bounds,
                 to = Rect(Offset.Zero, size.toSize()).fitted(aspect),
                 fromCornerPx = origin.cornerPx,
                 toCornerPx = 0f,
@@ -202,7 +209,7 @@ fun MediaViewerOverlay(
         val back = MediaFlight(
             image = still.asImageBitmap(),
             from = screen.fitted(aspect).transformed(screen.center, from.scale, from.offsetY),
-            to = origin.mediaRect(aspect),
+            to = origin.bounds,
             fromCornerPx = from.cornerPx,
             toCornerPx = origin.cornerPx,
             fromBackdrop = from.backdropAlpha,
@@ -226,18 +233,20 @@ fun MediaViewerOverlay(
         if (isOpen) {
             ViewerSystemBars(uiState.isUiVisible)
             Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (shown) 1f else 0f }) {
-                MediaViewerScreen(
-                    viewModel = viewModel,
-                    onClose = { viewModel.close() },
-                    onUseAsSource = { target, bitmap ->
-                        // Only the viewer's own decode of its current server item carries provenance;
-                        // the item is read again here so it matches exactly the bitmap that was loaded.
-                        val item = viewModel.currentItemDescriptor()
-                        if (item != null) onUseServerImageAsSource(target, bitmap, item)
-                        else onUseAsSource(target, bitmap)
-                    },
-                    onRequestClose = requestClose
-                )
+                CompositionLocalProvider(LocalMediaViewerLanding provides !shown) {
+                    MediaViewerScreen(
+                        viewModel = viewModel,
+                        onClose = { viewModel.close() },
+                        onUseAsSource = { target, bitmap ->
+                            // Only the viewer's own decode of its current server item carries provenance;
+                            // the item is read again here so it matches exactly the bitmap that was loaded.
+                            val item = viewModel.currentItemDescriptor()
+                            if (item != null) onUseServerImageAsSource(target, bitmap, item)
+                            else onUseAsSource(target, bitmap)
+                        },
+                        onRequestClose = requestClose
+                    )
+                }
             }
         }
         flight?.let { MediaFlightLayer(it) }

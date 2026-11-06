@@ -19,11 +19,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Brush
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.HideImage
 import androidx.compose.material.icons.rounded.LayersClear
@@ -97,7 +99,9 @@ fun BoxScope.SourceToolbar(
     onRemove: () -> Unit,
     maskTools: MaskTools? = null,
     // Secondary replace through the system file API (DocumentsUI), covering Downloads and file managers
-    onReplaceFromFiles: (() -> Unit)? = null
+    onReplaceFromFiles: (() -> Unit)? = null,
+    // Pick the replacement from the connected server's Input/Output images
+    onPickFromServer: (() -> Unit)? = null
 ) {
     val modifier = Modifier
         .align(Alignment.BottomCenter)
@@ -108,6 +112,9 @@ fun BoxScope.SourceToolbar(
     val replaceFromFiles: (@Composable () -> Unit)? = onReplaceFromFiles?.let {
         { TooltipIconButton(Icons.Rounded.FolderOpen, stringResource(R.string.content_description_replace_source_from_files), it) }
     }
+    val fromServer: (@Composable () -> Unit)? = onPickFromServer?.let { pick ->
+        { TooltipIconButton(Icons.Rounded.Cloud, stringResource(R.string.server_gallery_title), pick) }
+    }
 
     // The toolbar's container in the same role as the frames of thumbnails over the preview and empty reference slots
     val colors = FloatingToolbarDefaults.standardFloatingToolbarColors(
@@ -117,6 +124,7 @@ fun BoxScope.SourceToolbar(
         HorizontalFloatingToolbar(expanded = true, modifier = modifier, colors = colors) {
             replace()
             replaceFromFiles?.invoke()
+            fromServer?.invoke()
             TooltipIconButton(Icons.Rounded.HideImage, stringResource(R.string.content_description_remove_source), onRemove)
         }
     } else {
@@ -139,6 +147,7 @@ fun BoxScope.SourceToolbar(
         ) {
             replace()
             replaceFromFiles?.invoke()
+            fromServer?.invoke()
             TooltipIconButton(Icons.Rounded.HideImage, stringResource(R.string.content_description_remove_source), onRemove)
             TooltipIconButton(
                 Icons.Rounded.LayersClear,
@@ -176,10 +185,15 @@ fun BoxScope.MaskLabel() {
 }
 
 /**
- * Empty source: the preview itself is the picker – a dashed outline and one large button.
+ * Empty source: the preview itself is the picker – a dashed outline and one large button, plus a server gallery entry.
  */
 @Composable
-fun EmptySourcePicker(onPick: () -> Unit, modifier: Modifier = Modifier, onPickFromFiles: (() -> Unit)? = null) {
+fun EmptySourcePicker(
+    onPick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onPickFromFiles: (() -> Unit)? = null,
+    onPickFromServer: (() -> Unit)? = null
+) {
     val outline = MaterialTheme.colorScheme.outline
     Box(
         modifier
@@ -217,6 +231,13 @@ fun EmptySourcePicker(onPick: () -> Unit, modifier: Modifier = Modifier, onPickF
                         Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text(stringResource(R.string.button_pick_source_image_from_files))
+                    }
+                }
+                if (onPickFromServer != null) {
+                    OutlinedButton(onClick = onPickFromServer, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
+                        Icon(Icons.Rounded.Cloud, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text(stringResource(R.string.server_gallery_title))
                     }
                 }
             }

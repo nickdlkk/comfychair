@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -45,8 +47,10 @@ import sh.hnet.comfychair.ui.components.LocalMediaViewer
 import sh.hnet.comfychair.ui.components.ResultHeroImage
 import sh.hnet.comfychair.ui.components.ResultHeroVideo
 import sh.hnet.comfychair.ui.components.ResultsPreview
+import sh.hnet.comfychair.ui.components.ServerImagePickerSheet
 import sh.hnet.comfychair.ui.components.SourceTarget
 import sh.hnet.comfychair.ui.components.VideoPlayer
+import sh.hnet.comfychair.viewmodel.ServerGalleryViewModel
 import sh.hnet.comfychair.ui.components.config.singleWorkflowGroup
 import sh.hnet.comfychair.ui.components.config.toBottomSheetConfig
 import sh.hnet.comfychair.ui.components.generation.EmptyResultState
@@ -139,6 +143,11 @@ fun ImageToVideoScreen(
         }
     }
 
+    // Server gallery (Input/Output) sheet for the source image
+    var showServerPicker by remember { mutableStateOf(false) }
+    val serverPickerViewModel: ServerGalleryViewModel = viewModel()
+    val pickFromServer: () -> Unit = { showServerPicker = true }
+
     val mediaViewer = LocalMediaViewer.current
 
     // Generate from the dock and from the prompt editor
@@ -175,7 +184,6 @@ fun ImageToVideoScreen(
                     // The viewer flies the source image out of the preview and back (a video has no still to fly)
                     .mediaOrigin(
                         SOURCE_ORIGIN.takeIf { uiState.viewMode == ImageToVideoViewMode.SOURCE },
-                        fit = true,
                         corner = 28.dp
                     )
                     .background(MaterialTheme.colorScheme.surfaceContainer)
@@ -185,7 +193,7 @@ fun ImageToVideoScreen(
                         onClick = {
                             when (uiState.viewMode) {
                                 ImageToVideoViewMode.PREVIEW -> {
-                                    videoUri?.let { uri -> mediaViewer.openVideo(uri) }
+                                    videoUri?.let { uri -> mediaViewer.openVideo(uri, originKey = VIDEO_ORIGIN) }
                                 }
                                 ImageToVideoViewMode.SOURCE -> {
                                     // Source image is user-provided, no ComfyUI metadata
@@ -218,13 +226,15 @@ fun ImageToVideoScreen(
                                 SourceToolbar(
                                     onReplace = { imagePickerLauncher.launch("image/*") },
                                     onReplaceFromFiles = { documentPickerLauncher.launch(arrayOf("image/*")) },
+                                    onPickFromServer = pickFromServer,
                                     onRemove = imageToVideoViewModel::clearSourceImage
                                 )
                             }
                         } else {
                             EmptySourcePicker(
                                 onPick = { imagePickerLauncher.launch("image/*") },
-                                onPickFromFiles = { documentPickerLauncher.launch(arrayOf("image/*")) }
+                                onPickFromFiles = { documentPickerLauncher.launch(arrayOf("image/*")) },
+                                onPickFromServer = pickFromServer
                             )
                         }
                     },
@@ -284,7 +294,10 @@ fun ImageToVideoScreen(
                                     isActive = isScreenVisible && !inTransition,
                                     showPlaybackStatus = true,
                                     // The frame that stood in during the swap, so the player shows it right away
-                                    placeholder = videoFrame?.asAndroidBitmap()
+                                    placeholder = videoFrame?.asAndroidBitmap(),
+                                    // The viewer flies the video's first frame out of the preview and back
+                                    originKey = VIDEO_ORIGIN,
+                                    originCorner = 28.dp
                                 )
                                 ResultActionsMenu(
                                     media = ResultMedia.video(videoUri, VideoUtils.GalleryPrefix.IMAGE_TO_VIDEO),
@@ -346,7 +359,26 @@ fun ImageToVideoScreen(
     ) { callbacks -> uiState.toBottomSheetConfig(callbacks) }
 
     PromptPresetDialogs(presetViewModel, presetUiState, uiState.positivePrompt)
+
+    if (showServerPicker) {
+        ModalBottomSheet(
+            onDismissRequest = { showServerPicker = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            // Its content is bounded (tabs + a 520 dp grid), so the sheet stops short of the status bar
+            dragHandle = null
+        ) {
+            ServerImagePickerSheet(
+                viewModel = serverPickerViewModel,
+                onPick = { bitmap ->
+                    showServerPicker = false
+                    imageToVideoViewModel.useAsSource(context, bitmap)
+                },
+                onClose = { showServerPicker = false }
+            )
+        }
+    }
 }
 
 /** Media origin of this screen's source image in the preview. */
 private const val SOURCE_ORIGIN = "itv_source"
+private const val VIDEO_ORIGIN = "itv_video"

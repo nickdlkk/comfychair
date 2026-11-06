@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -45,7 +47,9 @@ import sh.hnet.comfychair.ui.components.MaskPreview
 import sh.hnet.comfychair.ui.components.ResultHeroImage
 import sh.hnet.comfychair.ui.components.ResultHeroVideo
 import sh.hnet.comfychair.ui.components.ResultsPreview
+import sh.hnet.comfychair.ui.components.ServerImagePickerSheet
 import sh.hnet.comfychair.ui.components.SourceTarget
+import sh.hnet.comfychair.viewmodel.ServerGalleryViewModel
 import sh.hnet.comfychair.ui.components.config.toBottomSheetConfig
 import sh.hnet.comfychair.ui.components.config.workflowGroups
 import sh.hnet.comfychair.ui.components.config.workflowIcon
@@ -139,6 +143,11 @@ fun ImageToImageScreen(
         }
     }
 
+    // Server gallery (Input/Output) sheet for the source image
+    var showServerPicker by remember { mutableStateOf(false) }
+    val serverPickerViewModel: ServerGalleryViewModel = viewModel()
+    val pickFromServer: () -> Unit = { showServerPicker = true }
+
     // UI composition
     // Opens the mask editor on the current source; its edits come back through the ViewModel
     fun openMaskEditor(sourceImage: Bitmap) {
@@ -209,7 +218,6 @@ fun ImageToImageScreen(
                     // The viewer flies the image shown (result or source) out of the preview and back
                     .mediaOrigin(
                         if (uiState.viewMode == ImageToImageViewMode.PREVIEW) RESULT_ORIGIN else SOURCE_ORIGIN,
-                        fit = true,
                         corner = 28.dp
                     )
                     .background(MaterialTheme.colorScheme.surfaceContainer)
@@ -270,7 +278,8 @@ fun ImageToImageScreen(
                         } else {
                             EmptySourcePicker(
                                 onPick = { imagePickerLauncher.launch("image/*") },
-                                onPickFromFiles = { documentPickerLauncher.launch(arrayOf("image/*")) }
+                                onPickFromFiles = { documentPickerLauncher.launch(arrayOf("image/*")) },
+                                onPickFromServer = pickFromServer
                             )
                         }
                         // Tools appear once the swap animation is done
@@ -279,6 +288,7 @@ fun ImageToImageScreen(
                                 SourceToolbar(
                                     onReplace = { imagePickerLauncher.launch("image/*") },
                                     onReplaceFromFiles = { documentPickerLauncher.launch(arrayOf("image/*")) },
+                                    onPickFromServer = pickFromServer,
                                     onRemove = imageToImageViewModel::clearSourceImage,
                                     maskTools = if (inpainting) MaskTools(
                                         hasMask = hasMask,
@@ -420,6 +430,24 @@ fun ImageToImageScreen(
         // The mode; the ViewModel applies every other change to the current mode
         extraCallbacks = { callbacks -> callbacks.copy(onModeChange = imageToImageViewModel::onModeChange) }
     ) { callbacks -> uiState.toBottomSheetConfig(callbacks) }
+
+    if (showServerPicker) {
+        ModalBottomSheet(
+            onDismissRequest = { showServerPicker = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            // Its content is bounded (tabs + a 520 dp grid), so the sheet stops short of the status bar
+            dragHandle = null
+        ) {
+            ServerImagePickerSheet(
+                viewModel = serverPickerViewModel,
+                onPick = { bitmap ->
+                    showServerPicker = false
+                    imageToImageViewModel.useAsSource(context, bitmap)
+                },
+                onClose = { showServerPicker = false }
+            )
+        }
+    }
 
     PromptPresetDialogs(presetViewModel, presetUiState, uiState.positivePrompt)
 }
