@@ -55,6 +55,7 @@ import sh.hnet.comfychair.ui.screens.MediaViewerScreen
 import sh.hnet.comfychair.viewmodel.MediaViewerItem
 import sh.hnet.comfychair.viewmodel.MediaViewerViewModel
 import sh.hnet.comfychair.viewmodel.ViewerMode
+import sh.hnet.comfychair.model.ServerImage
 
 /**
  * Opens the full-screen media viewer, shown over the whole main activity (navigation bar included). The viewer's
@@ -134,7 +135,8 @@ private const val LANDING_WAIT_MS = 500L
 @Composable
 fun MediaViewerOverlay(
     viewModel: MediaViewerViewModel,
-    onUseAsSource: (SourceTarget, Bitmap) -> Unit
+    onUseAsSource: (SourceTarget, Bitmap) -> Unit,
+    onUseServerImageAsSource: (SourceTarget, Bitmap, ServerImage) -> Unit = { _, _, _ -> }
 ) {
     val isOpen by viewModel.isOpen.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
@@ -227,7 +229,13 @@ fun MediaViewerOverlay(
                 MediaViewerScreen(
                     viewModel = viewModel,
                     onClose = { viewModel.close() },
-                    onUseAsSource = onUseAsSource,
+                    onUseAsSource = { target, bitmap ->
+                        // Only the viewer's own decode of its current server item carries provenance;
+                        // the item is read again here so it matches exactly the bitmap that was loaded.
+                        val item = viewModel.currentItemDescriptor()
+                        if (item != null) onUseServerImageAsSource(target, bitmap, item)
+                        else onUseAsSource(target, bitmap)
+                    },
                     onRequestClose = requestClose
                 )
             }

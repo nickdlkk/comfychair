@@ -30,6 +30,10 @@ import java.io.IOException
 import java.io.InputStream
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import sh.hnet.comfychair.connection.ImageUploadReuse
+import sh.hnet.comfychair.model.ServerImage
+import sh.hnet.comfychair.model.ServerImageDiscovery
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
@@ -123,7 +127,13 @@ class ComfyUIClient(
      *
      * @param protocol Either "http" or "https"
      */
+    @Synchronized
     fun setWorkingProtocol(protocol: String) {
+        if (workingProtocol != protocol) {
+            // Reuse descriptors are only valid for the protocol they were fetched under
+            imageReuse?.invalidate()
+            imageReuse = null
+        }
         workingProtocol = protocol
     }
 
@@ -139,7 +149,11 @@ class ComfyUIClient(
      *
      * @param credentials The new credentials to use
      */
+    @Synchronized
     fun setCredentials(credentials: AuthCredentials) {
+        // Reuse descriptors are only valid for the credentials they were uploaded with
+        imageReuse?.invalidate()
+        imageReuse = null
         authInterceptor.setCredentials(credentials)
     }
 
@@ -148,6 +162,77 @@ class ComfyUIClient(
      * @return The current authentication credentials
      */
     fun getCredentials(): AuthCredentials = authInterceptor.getCredentials()
+
+    // --- Content-addressed upload reuse (RAM only, one epoch per protocol+credentials) ---
+
+    private var imageReuse: ImageUploadReuse? = null
+
+    @Synchronized
+    private fun imageReuseSession(): ImageUploadReuse = imageReuse ?: run {
+        val base = getBaseUrl()?.toHttpUrl() ?: throw IOException("Not connected")
+        // Freeze authentication for this epoch: an in-flight upload cannot migrate credentials.
+        val client = serverTrust.configure(
+            OkHttpClient.Builder()
+                .addInterceptor(AuthInterceptor(getCredentials()))
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS)
+        ).build()
+        ImageUploadReuse(client, base).also { imageReuse = it }
+    }
+
+    /** The epoch token for upload reuse: callers compare it around a preparation to detect
+     *  protocol/credential changes mid-flight. */
+    fun imageUploadIdentity(): Any = imageReuseSession()
+
+    /**
+     * Upload with content-addressed reuse: identical already-uploaded bytes are not posted again
+     * (a HEAD confirms the server file still exists); the server's returned descriptor is kept.
+     * Returns the reused/uploaded descriptor.
+     */
+    suspend fun uploadImageReusing(
+        imageData: ByteArray,
+        extension: String,
+        onProgress: ((Long, Long) -> Unit)? = null
+    ): ServerImage {
+        val session = imageReuseSession()
+        val result = try {
+            session.upload(imageData, extension, onProgress)
+        } catch (e: IOException) {
+            synchronized(this) {
+                if (imageReuse !== session) {
+                    throw kotlinx.coroutines.CancellationException("Image upload owner changed")
+                }
+            }
+            throw e
+        }
+        synchronized(this) {
+            if (imageReuse !== session) {
+                throw kotlinx.coroutines.CancellationException("Image upload owner changed")
+            }
+        }
+        return result
+    }
+
+    /**
+     * Whether a known input descriptor still exists on this epoch's server (authenticated HEAD).
+     * Only 404 answers "no"; other failures throw rather than quietly claiming existence.
+     * [expectedEpoch] must be the caller's captured [imageUploadIdentity].
+     */
+    suspend fun reuseInputImage(image: ServerImage, expectedEpoch: Any): Boolean {
+        val session = imageReuseSession()
+        if (session !== expectedEpoch) {
+            throw kotlinx.coroutines.CancellationException("Source owner changed")
+        }
+        require(image.type == "input" && ServerImageDiscovery.descriptor(image.path, image.type) == image)
+        val exists = session.exists(image)
+        if (imageReuseSession() !== expectedEpoch) {
+            throw kotlinx.coroutines.CancellationException("Source owner changed")
+        }
+        return exists
+    }
 
     /**
      * Register a callback to be invoked when a Cookie-authenticated session expires.
