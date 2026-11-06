@@ -10,11 +10,13 @@
 | fork 整合 | `main` 已重置为 integration/upstream-20261105（含上游 bfd69ad→825d72a 全量合并），原 main 备份为 `customization/v0.8.26` |
 | 分叉点 | v0.8.11 (`791cd95`)，本地定制 56 commits |
 | PR 拆分方案 | `UPSTREAM-PR-PLAN.md`（PR-A … PR-K） |
-| **PR-B** | **已发 [PR #51](https://github.com/legal-hkr/comfychair/pull/51)（OPEN）** |
-| **Login backup restore** | **已发 [PR #50](https://github.com/legal-hkr/comfychair/pull/50)（OPEN）** |
-| **PR-C** | **topic 分支已就绪**（feat/upload-reuse，未发 PR） |
-| **PR-D** | **topic 分支已就绪**（feat/direct-input-reuse，含 C，未发 PR） |
-| PR-A/E…K | 未开始 |
+| **PR-B** | **已发 [PR #53](https://github.com/legal-hkr/comfychair/pull/53)（OPEN）** |
+| **Login backup restore** | **已发 [PR #52](https://github.com/legal-hkr/comfychair/pull/52)（OPEN）** |
+| **PR-C + PR-D** | **已合并入 feat/direct-input-reuse（2 提交），未发 PR** |
+| **PR-A** | **已发 [PR #55](https://github.com/legal-hkr/comfychair/pull/55)（OPEN）** |
+| **系统文件上传按钮** | **已发 [PR #54](https://github.com/legal-hkr/comfychair/pull/54)（OPEN）** |
+| **服务器图库** | **已发 [PR #57](https://github.com/legal-hkr/comfychair/pull/57)（OPEN；#56 被关闭由 #57 接替）** |
+| PR-E/F…K | 未开始 |
 
 ## PR-B — Import saved ComfyUI server workflows（已发 PR #51）
 
@@ -131,6 +133,30 @@
 - 送上游前需门禁同 PR-B；UI 位置（服务器列表下 vs 行菜单/overflow）可能需维护者讨论
 
 ## 更新记录
+
+### 2026-11-06（末）状态核对：#54/#57 回填 + CD 分支确认
+
+对照上游 GitHub 实际状态核对 PR-STATUS（此前文档滞后）：
+
+**新回填的 PR（此前未记录）：**
+- **PR #54**（feat/system-file-upload-button，OPEN）：源图上传系统文件 API 按钮。worktree `/root/comfychair-wt/file-upload-button`，单提交 65501aa。
+- **PR #57**（feat/gallery-rework，OPEN）：服务器 Input/Output 图库 + 选择 + 永久删除，含 de/es/fr/pl 翻译提交 ca81fb4。**PR #56 已被关闭，由 #57 接替**（同 #50→#52 的重发模式）。worktree `/root/comfychair-wt/gallery`，2 个干净提交（0f426b4 扩展 + 0a253cb Android）。
+
+**当前 OPEN PR 全景（均 0 评论 0 review，待维护者响应）：**
+
+| PR | 内容 | 分支 |
+|---|---|---|
+| #52 | 登录屏备份恢复 | feat/login-restore-backup |
+| #53 | 服务器 workflow 导入 | feat/server-workflow-import |
+| #54 | 系统文件上传按钮 | feat/system-file-upload-button |
+| #55 | PNG 导出默认值修复 | feat/png-export-defaults |
+| #57 | 服务器图库 | feat/gallery-rework |
+
+**PR-C + PR-D 确认已合并入单分支 `feat/direct-input-reuse`**（2 个干净提交：c27d249 upload-reuse + 3c2d966 direct-input-reuse，基于 0c43c47）。**未发 PR**；基线已落后上游（origin/main @ 5bba43e）。发前需：rebase 最新 main → i18n strings 审查（de/es/fr/pl 双向）→ 全量 JVM 测试 → 真机验证 → push 开 PR。注意 integration/feat-merge-test 已 merge 过 feat/gallery-rework 等分支（414c358），可能有交叉冲突（ComfyUIClient epoch API、strings、生成页三入口）。
+
+**所有已发 PR 共同欠账：真机 + 真实 ComfyUI server 端到端验证未做**（#52/#53/#55 文档均标注），需统一补一轮。
+
+**integration 状态**：integration/feat-merge-test @ 414c358 已合并 gallery 等分支；integration2 APK 已 LAN 分发（comfychair-integration2-debug.apk，173 JVM 测试全过）。
 
 ### 2026-11-05（晚）
 
