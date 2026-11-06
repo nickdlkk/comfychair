@@ -201,4 +201,4 @@
 
 **限制**：Log node 461 的现场只在 fork 实例见过——schema 依据来自节点文档与 fork 行为，未对上游用户实例重现；无真机验证；custom-node 默认值是否该内置由维护者决定（PR 描述需附 schema 依据）。
 
-**未推送/未开 PR**，由 Nick 接手。
+**已推送并开 PR：[PR #55](https://github.com/legal-hkr/comfychair/pull/55)（OPEN/MERGEABLE，head=nickdlkk:feat/png-export-defaults → base=main，rebase 到 v0.9.0 tag c40aa36，rebase 后 56 tests 仍全绿）。PR 描述含 schema 依据与"单设备验证"如实声明。**
