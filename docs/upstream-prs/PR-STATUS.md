@@ -184,3 +184,21 @@
 - PR #50/#51 已关闭，由 **PR #52/#53** 接替（feat/ 分支名，内容不变）：GitHub 跨 fork PR 的 head 分支无法用 rename API 换名——rename 级联删旧 ref 会关闭 PR 且 reopen 失败（head 丢失）。可行流程：保留旧 ref → reopen → 建新 PR（feat/ head）→ 关旧 PR 留指针评论 → 删旧 ref
 - PR #52 额外 rebase 到 origin/main 0f5dc25：登录屏对话框适配上游 ConfirmDialog 模式（destructive + SettingsBackupRestore icon）、按钮统一 FilledTonalButton、上游改写的确认文案直接复用
 - cd1 测试包（C+D 合集）已 LAN 分发：comfychair-cd-debug.apk
+
+### 2026-11-06 PR-A 完成（独立 worktree，未推送）
+
+**feat/png-export-defaults @ b7130fb**（worktree /root/comfychair-wt/png-export-defaults，基于 origin/main 5de063f，单提交，3 files +193/−37）
+
+**关键更正**：此前 PR-STATUS 记录"已验证上游缺失"是在 main 工作树 grep 的——结果被 fork 自己的 137b38a（integration 期间已把 finalizer 合入 main 工作树但从未推送上游）污染。本次在干净 worktree 对上游 5de063f 重新验证：上游确实无 SaveImageAdvanced/bit_depth 处理，结论仍成立但证据需用干净树。
+
+**实现**：
+- `util/WorkflowPromptFinalizer.kt`（fork 原样）：fillMissingPngSaveInputs（仅 format 精确=="png" 补 bit_depth=8-bit/input_color_space=sRGB，missing/null/JSONObject.NULL/blank 才补，显式值/JSONArray/占位符/非PNG/大小写变体/其他 widget 全不动，JSON 异常原样返回）+ applyNodeAttributeEdits（widget-only、连接保护、Long/Float/Double/Boolean 标量、prompt/nodes/裸三 wrapper 容忍、空 edits 短路）
+- `WorkflowManager.applyNodeAttributeEdits` 改为委托 finalizer（原实现连接保护/Long 已有，行为不变，新增 wrapper 容忍与空 edits 短路）
+- `prepareWorkflow` 返回前接 fillMissingPngSaveInputs（单出口，在 node edits 与 LoRA 注入之后——修好 edits 刚清空的字段）
+- schema 依据：save-image-advanced 的 format.bit_depth/input_color_space 是 required widget 无内置默认，旧 workflow/手写 JSON 提交即报错
+
+**验证**：56 tests / 0 failures（新增 WorkflowPromptFinalizerTest 6 例：三 wrapper×三缺失形态、显式值/连接/占位符保留、10 节点负例矩阵、edits 后修复、畸形 JSON）；WorkflowPreparationGoldenTest 通过（内置模板无 SaveImageAdvanced，golden 不受影响）；assembleDebug 成功（40/v0.8.13）；diff --check + secret 扫描干净。
+
+**限制**：Log node 461 的现场只在 fork 实例见过——schema 依据来自节点文档与 fork 行为，未对上游用户实例重现；无真机验证；custom-node 默认值是否该内置由维护者决定（PR 描述需附 schema 依据）。
+
+**未推送/未开 PR**，由 Nick 接手。
