@@ -15,9 +15,9 @@
 | **PR-C + PR-D** | **已合并入 feat/direct-input-reuse（2 提交），未发 PR** |
 | **PR-A** | **已发 [PR #55](https://github.com/legal-hkr/comfychair/pull/55)（OPEN）** |
 | **系统文件上传按钮** | **已发 [PR #54](https://github.com/legal-hkr/comfychair/pull/54)（OPEN）** |
-| **服务器图库** | **已发 [PR #57](https://github.com/legal-hkr/comfychair/pull/57)（OPEN；#56 被关闭由 #57 接替）** |
-| PR-E | 只读服务器素材 picker（可拆后端模型/UI 两个 PR） |
-| PR-F | 扩展 source slots + graph bypass（可选高级功能，需先讨论 slot 模型） |
+| **服务器图库（PR-E）** | **已发 [PR #57](https://github.com/legal-hkr/comfychair/pull/57)（OPEN；#56 被关闭由 #57 接替）。#57 覆盖 PR-E 主体（ServerImage/Picker/PreviewCache/ScrollPolicy/Paging 全部落地，测试套齐），但超出计划范围：含永久删除（PR-E 原定只读）、ServerImageListDiskCache（原 PR-H 范围）、服务端物理删除插件 0f426b4（原计划 fork-only 需专门 proposal + 安全 review）——待维护者对超出部分表态 |
+| PR-E | ✅ 已由 PR #57 实现（见上，含超出计划范围的删除/缓存/服务端插件） |
+| PR-F | 扩展 source slots + graph bypass（可选高级功能，需先讨论 slot 模型；历史上 PR #25 slot bypass 被关闭，必须 issue 先行） |
 | PR-G | Editing 前后对比（独立 UX，不依赖 E/F） |
 | PR-H | Opt-in 持久化 picker/upload 缓存（依赖 C/E，需先讨论隐私默认值） |
 | PR-I / PR-J | 素材库 / 独立服务器图库（两项可选 UX，维护者可能认为与已有 gallery 重叠） |
