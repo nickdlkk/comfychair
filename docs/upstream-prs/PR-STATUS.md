@@ -19,7 +19,7 @@
 | PR-E | ✅ 已由 PR #57 实现（见上，含超出计划范围的删除/缓存/服务端插件） |
 | PR-F | 扩展 source slots + graph bypass（可选高级功能，需先讨论 slot 模型；历史上 PR #25 slot bypass 被关闭，必须 issue 先行） |
 | PR-G | Editing 前后对比（独立 UX，不依赖 E/F） |
-| PR-H | Opt-in 持久化 picker/upload 缓存（依赖 C/E，需先讨论隐私默认值） |
+| PR-H | 🚧 规划中，worktree 已建（/root/comfychair-wt/persistent-cache，feat/persistent-image-cache @ origin/main 5bba43e）；见下方 PR-H 实施计划 |
 | PR-I / PR-J | 素材库 / 独立服务器图库（两项可选 UX，维护者可能认为与已有 gallery 重叠） |
 | PR-K | 批量提交（先问维护者是否愿在现有菜单加 Repeat N，而非隐藏长按） |
 | fork-only | 物理删除插件（LAN consent）、前台服务通知、实时日志上传 → 需专门 proposal + 安全 review，暂不送 PR |
@@ -139,6 +139,35 @@
 - 送上游前需门禁同 PR-B；UI 位置（服务器列表下 vs 行菜单/overflow）可能需维护者讨论
 
 ## 更新记录
+
+## PR-H 实施计划（2026-11-06 立项，未开始编码）
+
+**worktree**：/root/comfychair-wt/persistent-cache，分支 feat/persistent-image-cache，当前基于 origin/main 5bba43e。
+
+**上游现状（已验证）**：origin/main 的 cache/ 目录只有内存缓存（MediaCache/PriorityLruCache/ResultThumbnails），无任何磁盘持久缓存、无 ImageCachePolicy——PR-H 确实是上游缺失项。
+
+**依赖问题（核心决策点）**：计划声明 PR-H 依赖 C（feat/direct-input-reuse 未发 PR）与 E（PR #57 未合）。且 #57 已把 ServerImageListDiskCache.kt 送审，PR-H 不得重复实现，否则直接冲突。两种基线策略：
+
+- **策略 A（推荐）：分层拆两步**
+  1. 第一步只做自包含核心层，基 origin/main 即可：PrivateImageDiskCache（HMAC key/namespace/TTL 与 retention 分离/原子发布/IO lock）、PersistentImageCache（noBackupFilesDir/apply/clear/changes flow）、ImageCachePolicy + AppSettings、Settings UI（ImageCacheSettings.kt 73 行）+ SettingsViewModel 接线 + 全套单元测试（fork 的 ImageCacheCleanupTest/PersistentServerImageTest 移植）。这一步不碰 C/E 任何代码。
+  2. 第二步（缓存接入 picker/upload）等 C/E 上游落定后再动：ServerImageListDiskCache 用 #57 版本、上传 descriptor 缓存接 C 的 imageCacheStorage、ITIVM/ServerGalleryViewModel 的 cacheGeneration 门控。若维护者对 C/E 有调整，接入层跟着改，第一步不受影响。
+- **策略 B：栈叠分支**：把 feat/direct-input-reuse + feat/gallery-rework merge 进本分支再全量实现——能立即端到端跑通，但 PR 会捆绑未合代码，违反计划「未经讨论不捆绑其它PR」，只在维护者明确同意时用。
+
+**发 PR 前门禁（计划硬性要求）**：
+- [ ] **先开 issue 与维护者讨论隐私默认值**（显式 opt-in vs 跟随 media policy；上游 MEMORY_ONLY 不得被暗中绕开）——PR-H 是计划里唯一明确要求 issue 先行的 C类 PR
+- [ ] PR 描述说明：存储种类、默认值、清理范围、密钥丢失行为、HMAC 命名≠加密内容
+- [ ] 明确与 #57 的 ServerImageListDiskCache 关系（复用不重写）
+- [ ] i18n：fork 的 image_cache_* strings 有 16 条（en 1026-1035 + stats 系列），需补 de/es/fr/pl 双向检查
+- [ ] 真机验证 SharedPreferences/Keystore 路径 + 进程死亡状态恢复
+
+**fork 移植清单（第一步范围）**：
+- cache/PrivateImageDiskCache.kt（143 行，原样，验收点：TTL 独立于 retention、checksum 校验失败即删、clear 保留 namespace.key、byteLimit 在 automatic=false 时退到 1GB/8192 安全天花）
+- cache/PersistentImageCache.kt（31 行，object）
+- cache/ImageCachePolicy.kt（17 行，含 restore/parse）
+- storage/AppSettings.kt：getImageCachePolicy/setImageCachePolicy
+- ui/components/ImageCacheSettings.kt（73 行）+ SettingsViewModel（imageCachePolicy flow/save/clear/stats）
+- strings：image_cache_* 16 条 × 6 语言
+- 测试：ImageCacheCleanupTest + PersistentServerImageTest 移植
 
 ### 2026-11-06（末）状态核对：#54/#57 回填 + CD 分支确认
 
