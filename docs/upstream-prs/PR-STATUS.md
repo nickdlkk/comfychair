@@ -16,7 +16,13 @@
 | **PR-A** | **已发 [PR #55](https://github.com/legal-hkr/comfychair/pull/55)（OPEN）** |
 | **系统文件上传按钮** | **已发 [PR #54](https://github.com/legal-hkr/comfychair/pull/54)（OPEN）** |
 | **服务器图库** | **已发 [PR #57](https://github.com/legal-hkr/comfychair/pull/57)（OPEN；#56 被关闭由 #57 接替）** |
-| PR-E/F…K | 未开始 |
+| PR-E | 只读服务器素材 picker（可拆后端模型/UI 两个 PR） |
+| PR-F | 扩展 source slots + graph bypass（可选高级功能，需先讨论 slot 模型） |
+| PR-G | Editing 前后对比（独立 UX，不依赖 E/F） |
+| PR-H | Opt-in 持久化 picker/upload 缓存（依赖 C/E，需先讨论隐私默认值） |
+| PR-I / PR-J | 素材库 / 独立服务器图库（两项可选 UX，维护者可能认为与已有 gallery 重叠） |
+| PR-K | 批量提交（先问维护者是否愿在现有菜单加 Repeat N，而非隐藏长按） |
+| fork-only | 物理删除插件（LAN consent）、前台服务通知、实时日志上传 → 需专门 proposal + 安全 review，暂不送 PR |
 
 ## PR-B — Import saved ComfyUI server workflows（已发 PR #51）
 
