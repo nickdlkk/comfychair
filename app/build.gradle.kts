@@ -14,7 +14,6 @@ android {
         targetSdk = 36
         versionCode = 41
         versionName = "v0.9.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
