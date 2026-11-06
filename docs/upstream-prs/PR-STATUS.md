@@ -202,3 +202,12 @@
 **限制**：Log node 461 的现场只在 fork 实例见过——schema 依据来自节点文档与 fork 行为，未对上游用户实例重现；无真机验证；custom-node 默认值是否该内置由维护者决定（PR 描述需附 schema 依据）。
 
 **已推送并开 PR：[PR #55](https://github.com/legal-hkr/comfychair/pull/55)（OPEN/MERGEABLE，head=nickdlkk:feat/png-export-defaults → base=main，rebase 到 v0.9.0 tag c40aa36，rebase 后 56 tests 仍全绿）。PR 描述含 schema 依据与"单设备验证"如实声明。**
+
+### 2026-11-06 多语言补全
+
+应用声明 6 语言（locales_config.xml：en de es fr pl zh）。审查三个 PR 的 strings：
+
+- **PR #52**：新 string 仅 `button_backup_restore_login`，en+zh 有，**补 de/es/fr/pl**（commit d2ebfa3），MERGEABLE
+- **PR #53**：14 个 `server_workflow_*` en+zh 有，**补 de/es/fr/pl**；另发现 en 里混入 10 个 `notification_*` fork 遗留 string（前台服务功能，分支内零引用、非本 PR 范围）→ **删除**（commit 38b45b1→b9074db）；rebase 到 origin/main 2a2f2cd 解决 versionCode 冲突（保上游 41/v0.9.0）与 `_events.emit`→`emitEvent` 重构（上游改了事件发送 API），64 tests 全绿，MERGEABLE
+- **PR #55**：零 string 改动，无需补
+- 教训：fork 移植 PR 提交前应 `git diff origin/main...HEAD -- app/src/main/res/values/strings.xml` 审一遍，fork 大杂烩提交容易把无关 string 带进来；zh 常在冲突解决时部分丢失（本例 notification_* 只进了 en），双向都要查
