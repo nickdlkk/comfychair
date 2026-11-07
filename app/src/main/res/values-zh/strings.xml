@@ -1112,4 +1112,11 @@
     <string name="button_save_to_material_library">添加到素材库</string>
     <string name="menu_materials">素材库</string>
     <string name="server_gallery_material">存入素材</string>
+
+    <!-- Editing comparison -->
+    <string name="comparison_drag_hint">左右拖动分隔线，或调整下方滑块</string>
+    <string name="comparison_original">原图</string>
+    <string name="comparison_result">结果</string>
+    <string name="comparison_open">原图 / 结果对比</string>
+    <string name="comparison_close">关闭对比</string>
 </resources>

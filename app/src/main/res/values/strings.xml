@@ -1180,4 +1180,11 @@
     <string name="button_save_to_material_library">Add to Material Library</string>
     <string name="menu_materials">Materials</string>
     <string name="server_gallery_material">Materials</string>
+
+    <!-- Editing comparison -->
+    <string name="comparison_drag_hint">Drag the divider or adjust the slider</string>
+    <string name="comparison_original">Original</string>
+    <string name="comparison_result">Result</string>
+    <string name="comparison_open">Compare original / result</string>
+    <string name="comparison_close">Close comparison</string>
 </resources>

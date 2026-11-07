@@ -4,9 +4,13 @@ import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.material.icons.rounded.Compare
+import androidx.compose.material.icons.rounded.CompareArrows
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
@@ -51,6 +55,7 @@ import sh.hnet.comfychair.materials.MaterialLibrary
 import sh.hnet.comfychair.ui.components.MaterialLibraryPickerBottomSheet
 import sh.hnet.comfychair.ui.components.ServerImagePickerSheet
 import sh.hnet.comfychair.ui.components.SourceMedia
+import sh.hnet.comfychair.ui.components.shared.TooltipIconButton
 import sh.hnet.comfychair.ui.components.SourceTarget
 import sh.hnet.comfychair.ui.components.UseAsSource
 import sh.hnet.comfychair.viewmodel.MaterialLibraryViewModel
@@ -58,6 +63,7 @@ import sh.hnet.comfychair.viewmodel.ServerGalleryViewModel
 import sh.hnet.comfychair.ui.components.config.toBottomSheetConfig
 import sh.hnet.comfychair.ui.components.config.workflowGroups
 import sh.hnet.comfychair.ui.components.config.workflowIcon
+import sh.hnet.comfychair.ui.components.EditingImageComparison
 import sh.hnet.comfychair.ui.components.generation.EmptyResultState
 import sh.hnet.comfychair.ui.components.generation.EmptySourcePicker
 import sh.hnet.comfychair.ui.components.generation.GenerationControls
@@ -376,14 +382,31 @@ fun ImageToImageScreen(
                                 }
                             }
                         } else if (previewImage != null) {
-                            Image(
-                                bitmap = previewImage.asImageBitmap(),
-                                contentDescription = stringResource(R.string.content_description_preview),
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
+                            var comparisonEnabled by remember(previewImage, uiState.comparisonOriginal) { mutableStateOf(false) }
+                            if (comparisonEnabled && uiState.comparisonOriginal != null && uiState.mode == ImageToImageMode.EDITING) {
+                                EditingImageComparison(
+                                    original = uiState.comparisonOriginal!!,
+                                    result = previewImage,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Image(
+                                    bitmap = previewImage.asImageBitmap(),
+                                    contentDescription = stringResource(R.string.content_description_preview),
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
                             // While generating, the area shows live previews instead of a result
                             if (!isThisScreenExecuting) {
+                                if (uiState.mode == ImageToImageMode.EDITING && uiState.comparisonOriginal != null) {
+                                    TooltipIconButton(
+                                        if (comparisonEnabled) Icons.Rounded.Compare else Icons.Rounded.CompareArrows,
+                                        stringResource(if (comparisonEnabled) R.string.comparison_close else R.string.comparison_open),
+                                        onClick = { comparisonEnabled = !comparisonEnabled },
+                                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp)
+                                    )
+                                }
                                 ResultActionsMenu(
                                     media = ResultMedia.image(
                                         previewImage, uiState.previewImageFilename, uiState.previewImageSubfolder, uiState.previewImageType

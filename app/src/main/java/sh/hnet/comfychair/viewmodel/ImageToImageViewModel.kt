@@ -99,6 +99,11 @@ data class ImageToImageUiState(
     val previewImageSubfolder: String? = null,
     val previewImageType: String? = null,
 
+    // Editing comparison: the decoded original (source) the result came from, and the snapshot
+    // backing the media viewer's own comparison (process-only ticket)
+    val comparisonOriginal: Bitmap? = null,
+    val comparisonSource: sh.hnet.comfychair.viewmodel.EditingViewerSnapshots.Source? = null,
+
     // Workflows offered in each mode
     val availableWorkflows: List<WorkflowItem> = emptyList(),
     val editingWorkflows: List<WorkflowItem> = emptyList(),
@@ -129,6 +134,12 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
      * upload when the same server file still exists.
      */
     private val directSources = mutableMapOf<Int, DirectInputSource>()
+
+    // promptId (prefixed by server) -> the source snapshot file its result compares against (Editing mode)
+    private val comparisonSources = ResultSourceAssociation<java.io.File>()
+    private var comparisonFetchToken = 0
+    // The snapshot of the source of the submission being prepared; bound to its promptId on submit
+    @Volatile private var pendingComparisonSnapshot: java.io.File? = null
 
     private fun imageUploadOwner(): Any =
         (ConnectionManager.clientOrNull as? ComfyUIClient)?.imageUploadIdentity()
@@ -757,6 +768,16 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
             outputStream.toByteArray()
         }
 
+        // Snapshot the source for the result's comparison (Editing mode); cache-owned, never an Intent extra
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val dir = java.io.File(applicationContext!!.cacheDir, "editing-comparison").apply { mkdirs() }
+                java.io.File(dir, "editing-original-${System.currentTimeMillis()}.png").apply {
+                    writeBytes(sourceBytes)
+                }
+            }.getOrNull()
+        }.let { pendingComparisonSnapshot = it }
+
         // Upload source image with content-addressed reuse, or reference the original file directly
         // when this exact bitmap came from this server (provenance held by directSources).
         val uploadedSource = run {
@@ -886,6 +907,11 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
             return
         }
 
+        // A source snapshot from this submission compares against its result (Editing mode)
+        val comparisonSnapshot = pendingComparisonSnapshot
+        pendingComparisonSnapshot = null
+        val comparisonServerId = ConnectionManager.currentServerId
+
         _uiState.update { it.copy(isFetching = true) }
 
         client.fetchHistory(promptId) { historyJson ->
@@ -908,6 +934,19 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
                         // Store in cache (memory or disk based on mode)
                         MediaStateHolder.putBitmap(MediaStateHolder.MediaKey.ItiPreview, bitmap, context)
 
+                        // Decode the original for the comparison, from the submission's snapshot
+                        val original = comparisonSnapshot?.let { snap ->
+                            runCatching {
+                                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                android.graphics.BitmapFactory.decodeFile(snap.absolutePath, bounds)
+                                val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = 1 }
+                                while (maxOf(bounds.outWidth, bounds.outHeight) / options.inSampleSize > 2048) {
+                                    options.inSampleSize = maxOf(1, options.inSampleSize) * 2
+                                }
+                                android.graphics.BitmapFactory.decodeFile(snap.absolutePath, options)
+                            }.getOrNull()
+                        }
+
                         _uiState.value = _uiState.value.copy(
                             previewImage = bitmap,
                             generationOutputs = outputs,
@@ -915,7 +954,11 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
                             previewImageFilename = filename,
                             previewImageSubfolder = subfolder,
                             previewImageType = type,
-                            viewMode = ImageToImageViewMode.PREVIEW
+                            viewMode = ImageToImageViewMode.PREVIEW,
+                            comparisonOriginal = original,
+                            comparisonSource = if (original != null && comparisonServerId != null) EditingViewerSnapshots.Source(
+                                comparisonSnapshot!!, comparisonServerId, promptId, filename, subfolder, type
+                            ) else null
                         )
                         onComplete(true)
                     } else if (failureType == ConnectionFailure.STALLED) {
@@ -934,8 +977,21 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
     }
 
     fun onPreviewBitmapChange(bitmap: Bitmap) {
-        _uiState.value = _uiState.value.copy(previewImage = bitmap)
+        _uiState.value = _uiState.value.copy(previewImage = bitmap, comparisonOriginal = null, comparisonSource = null)
         saveLastPreviewImage(bitmap)
+    }
+
+    /**
+     * A process-only ticket for the media viewer to show the editing comparison: only when the
+     * viewer's item is exactly the compared result (identity, not a capability grant).
+     */
+    fun editingViewerTicket(): String? {
+        val state = _uiState.value
+        val source = state.comparisonSource ?: return null
+        if (state.mode != ImageToImageMode.EDITING || state.comparisonOriginal == null ||
+            source.server != MediaStateHolder.getCurrentServerId() || source.filename != state.previewImageFilename ||
+            source.subfolder != state.previewImageSubfolder || source.type != state.previewImageType) return null
+        return EditingViewerSnapshots.issue(source)
     }
 
     /**
