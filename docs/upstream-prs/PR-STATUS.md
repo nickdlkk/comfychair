@@ -3,19 +3,43 @@
 > 本文档记录 fork（main / customization/v0.8.26）向上游 `legal-hkr/comfychair` 贡献 PR 的实际进展。
 > 拆分依据见 `docs/customizations/UPSTREAM-PR-PLAN.md`（记录在 main 分支，本文档也回填到 main）。
 
-## 当前状态总览
+## 当前状态总览（2026-11-07 更新）
+
+**⚠️ 策略转向：上游拒绝合入，转为 fork 内单独维护**
+
+全部 PR 已被上游关闭（2026-11-07 经 `gh pr list` 确认）：#52/#53/#54/#55/#57 均 CLOSED，上游在 v0.9.1/v0.9.2 自行实现了同类功能：
+
+- **#52（登录恢复备份）** → 上游 6a2c1a1 把 backup restore 做进 welcome wizard + Settings 共用 restore 函数
+- **#53（服务器 workflow 导入）** → 上游 781310b 自己实现了 server workflow import（同一导入流，Import 改名 From file）
+- **#54/#55/#57** → 关闭未采纳
+
+**新策略**：定制功能集合不再走上游 PR，在 fork 分支 `nick/feat-merge-test` 单独维护，并持续合入上游新版本：
+
+| 项目 | 状态 |
+|---|---|
+| **维护分支** | `nick/feat-merge-test`（worktree `/root/comfychair-wt/integration`，基于上游 v0.9.2 @ 57a865f，领先 29 commits） |
+| **上游基线** | origin/main @ 57a865f（Releasing v0.9.2，含 v0.9.1 + v0.9.2 共 43 commits 已合入） |
+| **已合入 feat** | direct-input-reuse、login-restore-backup、server-workflow-import（适配上游 pageEvents/WorkflowImportHost/ServerImportScreen 架构）、system-file-upload-button、png-export-defaults；upload-reuse 与 direct-input-reuse 同 patch 已包含；gallery-rework 已被上游图库重构覆盖 |
+| **fork 功能移植** | 2026-11-07 完成五组：通知系统、实时诊断日志上传、素材库、编辑结果对比、ServerGallerySourceTransfer（各见 INTEGRATION-STATUS.md 2026-11-07 章节；EditingDimensions 系被上游 GenerationParams 通用化覆盖、Transfer 的 activity-result 流程被 Compose viewer 覆盖，均在 commit 中记录判定） |
+| **测试包** | comfychair-v0.9.2-beta2-featmerge-debug-20261107-1519.apk（88,971,343 bytes，aapt 43/v0.9.2-beta2，LAN 9010 双 URL GET 200） |
+| **历史 PR（已关）** | #50→#52（登录恢复备份）、#51→#53（服务器 workflow 导入）、#54（系统文件上传）、#55（PR-A PNG 默认值）、#56→#57（服务器图库）——细节见下方历史记录 |
+| PR-F（slots/bypass） | fork-only，不上游 |
+| PR-H 持久缓存 | 🚧 worktree /root/comfychair-wt/persistent-cache 保留；现随 nick/feat-merge-test 维护 |
+| fork-only | 物理删除插件、前台服务通知、实时日志上传 —— 现已全部合入 nick/feat-merge-test（通知/诊断 2026-11-07 移植完成） |
+
+## 历史状态总览（上游拒绝前，2026-11-06）
 
 | 项目 | 状态 |
 |---|---|
 | fork 整合 | `main` 已重置为 integration/upstream-20261105（含上游 bfd69ad→825d72a 全量合并），原 main 备份为 `customization/v0.8.26` |
 | 分叉点 | v0.8.11 (`791cd95`)，本地定制 56 commits |
 | PR 拆分方案 | `UPSTREAM-PR-PLAN.md`（PR-A … PR-K） |
-| **PR-B** | **已发 [PR #53](https://github.com/legal-hkr/comfychair/pull/53)（OPEN）** |
-| **Login backup restore** | **已发 [PR #52](https://github.com/legal-hkr/comfychair/pull/52)（OPEN）** |
+| **PR-B** | **已发 [PR #53](https://github.com/legal-hkr/comfychair/pull/53)（后被上游关闭）** |
+| **Login backup restore** | **已发 [PR #52](https://github.com/legal-hkr/comfychair/pull/52)（后被上游关闭，功能被上游自行实现）** |
 | **PR-C + PR-D** | **已合并入 feat/direct-input-reuse（2 提交），未发 PR** |
-| **PR-A** | **已发 [PR #55](https://github.com/legal-hkr/comfychair/pull/55)（OPEN）** |
-| **系统文件上传按钮** | **已发 [PR #54](https://github.com/legal-hkr/comfychair/pull/54)（OPEN）** |
-| **服务器图库（PR-E）** | **已发 [PR #57](https://github.com/legal-hkr/comfychair/pull/57)（OPEN；#56 被关闭由 #57 接替）。#57 覆盖 PR-E 主体（ServerImage/Picker/PreviewCache/ScrollPolicy/Paging 全部落地，测试套齐），但超出计划范围：含永久删除（PR-E 原定只读）、ServerImageListDiskCache（原 PR-H 范围）、服务端物理删除插件 0f426b4（原计划 fork-only 需专门 proposal + 安全 review）——待维护者对超出部分表态 |
+| **PR-A** | **已发 [PR #55](https://github.com/legal-hkr/comfychair/pull/55)（后被上游关闭）** |
+| **系统文件上传按钮** | **已发 [PR #54](https://github.com/legal-hkr/comfychair/pull/54)（后被上游关闭）** |
+| **服务器图库（PR-E）** | **已发 [PR #57](https://github.com/legal-hkr/comfychair/pull/57)（后被上游关闭）。#57 覆盖 PR-E 主体（ServerImage/Picker/PreviewCache/ScrollPolicy/Paging 全部落地，测试套齐），但超出计划范围：含永久删除（PR-E 原定只读）、ServerImageListDiskCache（原 PR-H 范围）、服务端物理删除插件 0f426b4（原计划 fork-only 需专门 proposal + 安全 review）** |
 | PR-E | ✅ 已由 PR #57 实现（见上，含超出计划范围的删除/缓存/服务端插件） |
 | PR-F | 扩展 source slots + graph bypass（可选高级功能，需先讨论 slot 模型；历史上 PR #25 slot bypass 被关闭，必须 issue 先行） |
 | PR-G | Editing 前后对比（独立 UX，不依赖 E/F） |
@@ -272,3 +296,32 @@
 - **PR #53**：14 个 `server_workflow_*` en+zh 有，**补 de/es/fr/pl**；另发现 en 里混入 10 个 `notification_*` fork 遗留 string（前台服务功能，分支内零引用、非本 PR 范围）→ **删除**（commit 38b45b1→b9074db）；rebase 到 origin/main 2a2f2cd 解决 versionCode 冲突（保上游 41/v0.9.0）与 `_events.emit`→`emitEvent` 重构（上游改了事件发送 API），64 tests 全绿，MERGEABLE
 - **PR #55**：零 string 改动，无需补
 - 教训：fork 移植 PR 提交前应 `git diff origin/main...HEAD -- app/src/main/res/values/strings.xml` 审一遍，fork 大杂烩提交容易把无关 string 带进来；zh 常在冲突解决时部分丢失（本例 notification_* 只进了 en），双向都要查
+
+### 2026-11-07 上游拒绝合入 → 策略转向 fork 单独维护
+
+**结局**：上游关闭了全部 6 个 PR（#52/#53/#54/#55/#56/#57），无评论说明原因。检查 v0.9.1/v0.9.2（43 commits）发现上游自行实现了 #52/#53 的同类功能（6a2c1a1 welcome wizard 备份恢复、781310b server workflow import），其余未采纳。
+
+**新维护模式**：
+
+- 定制功能集合集中在 `nick/feat-merge-test` 分支（worktree `/root/comfychair-wt/integration`），不再为每个功能发上游 PR
+- 持续跟进上游 release，合入时保留定制（v0.9.2 已合入，17 文件冲突按「两边都保留 + 功能适配」解决）
+- 测试包随版本号发布：v0.8.13-beta3 → v0.9.2-beta2（基线随上游 versionName，beta 序号按测试轮次）
+
+**v0.9.2 合入要点**（c36b81c + 99e7ef5）：
+
+- 上游把 #53 同类功能重构进 `WorkflowImportHost` + 新 `ServerImportScreen` 页面；我们的 `prepareImportJson` 改 public suspend，ServerImportScreen 下载后调它（替代上游 `beginImport`），保留 server origin 门禁
+- 上游新增 `SourceMedia`/`UseAsSource` 体系与 V2V 屏；MainNavHost/MediaViewerHost 采纳新签名，保留 `onUseServerImageAsSource` provenance 直传路径
+- 上游 `RestoreResult` 增加 `Crashed` 分支、skipped 计数改 list；LoginScreen 适配
+- 上游隐私规则（不 log server error message）应用到移植代码
+
+**fork 功能移植完成**（a43d1bb → a160cbe，5 commits）：
+
+1. **通知系统**（a43d1bb）：FGS WebSocket 监控 + 完成通知 + WorkManager 兜底 + 开机自启；点入开 MainActivity（v0.9.2 viewer 是 Compose overlay）
+2. **实时诊断日志上传**（47dd210）：value-free 事件 journal + /events 专用端点 + 指数退避；DiagnosticsApplication 生命周期埋点
+3. **素材库**（18bc2d2）：MaterialLibrary 4 文件 + Settings Materials 页 + ITI 源选择 sheet（From files/server/materials 三入口）
+4. **编辑结果对比**（a8d41e1）：snapshot/association/viewer ticket + ITI 屏对比 toggle；EditingDimensions 系被上游 GenerationParams 通用化覆盖不移植
+5. **ServerGallerySourceTransfer**（a160cbe）：源文件保留兼容；activity-result 流程被 v0.9.2 Compose viewer Use-as-source 原生覆盖
+
+**验证**：每步 compileDebugKotlin + test 全绿；最终 APK comfychair-v0.9.2-beta2-featmerge-debug-20261107-1519.apk（88,971,343 bytes，aapt 43/v0.9.2-beta2，LAN 9010 GET 200）。
+
+**分支命名**：集成维护分支统一 `nick/` 前缀（nick/feat-merge-test）。

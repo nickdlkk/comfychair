@@ -183,3 +183,49 @@
 - 未在真实 ComfyUI 服务器上验收生成/删除/复用；golden 测试不等于服务器正确。
 - fork LoRA 强度无界输入被上游 ±100 控件取代（编辑时钳制，存储值不受影响）——与上游 `94a6a01` 的已知重叠，REVIEW 报告第 4 节既定取舍。
 - 原 stash、untracked skills、pycache 保留未动；未 push/PR/tag/release。
+
+# 2026-11-07 nick/feat-merge-test：上游 v0.9.2 合入 + fork 功能全量移植完成
+
+本节取代上方所有「未完成」章节：那记录的是旧 integration/upstream-20261105 阶段的中间状态，现已全部落定。
+
+## 分支现状
+
+- **nick/feat-merge-test**（原 integration/feat-merge-test，worktree `/root/comfychair-wt/integration`）：基于上游 v0.9.2（origin/main 57a865f），领先 29 commits
+- 上游全部 feat 分支已包含：direct-input-reuse、login-restore-backup、server-workflow-import、system-file-upload-button、png-export-defaults；upload-reuse 与 direct-input-reuse patch-id 相同（重复分支跳过）；gallery-rework 被上游图库重构覆盖
+- 本地 main 仍是 docs 分叉；fork 稳定基线 customization/v0.8.26 保留
+
+## v0.9.2 合入（c36b81c + 99e7ef5）
+
+17 文件冲突，关键决策：
+
+| 路径 | 决策 |
+|---|---|
+| WorkflowManagementViewModel | 保留我们的 prepareImportJson（改 public suspend），弃用上游 beginImport；上游把 import 对话框重构进 WorkflowImportHost、服务器导入移入新 ServerImportScreen 页（已适配调用） |
+| ComfyUIClient / WorkflowManager | 冲突 import 块去重合并 |
+| SourceTools | union：上游 video 源（V2V isVideo）+ 我们的 From files / From server 入口 |
+| MainNavHost / MediaViewerHost | 采纳上游 SourceMedia/UseAsSource + V2V；保留 onUseServerImageAsSource provenance 直传 |
+| LoginScreen | 适配 RestoreResult.Crashed + disconnect()（替代 invalidateForRestore） |
+| 6 个 strings.xml | union 合并 + name 去重（含 image_cache_scope / content_description_replace_source 重复清理） |
+| build.gradle.kts | 上游 versionCode 43 / v0.9.2 |
+
+上游隐私规则适配：移植代码中 ExecutionError 的 server message 不再入日志。
+
+## fork 功能移植（a43d1bb → a160cbe）
+
+1. **通知系统**（a43d1bb）：notification 包 5 文件（FGS WebSocket 监控、完成通知带图、WorkManager 兜底、BootReceiver）、Manifest specialUse FGS + POST_NOTIFICATIONS、GenerationViewModel ExecutionStart→FGS / immediate-fetch 成功→completion 通知接线、MainActivity 重启 pending 生成、work-runtime-ktx 2.10.0、ic_notification。点入开 MainActivity（v0.9.2 无 MediaViewerActivity）。
+2. **实时诊断**（47dd210）：RealtimeDiagnostics（value-free、/events-only、指数退避、journal 轮转）+ DiagnosticsApplication（Manifest Application）+ AppSettings realtime API + tools/log_receiver.py + 单元测试。
+3. **素材库**（18bc2d2）：MaterialLibrary/MaterialLibraryScreen/MaterialLibraryPickerBottomSheet/MaterialLibraryViewModel + SettingsRoute.Materials + MainNavHost/MainContainerActivity 接线 + ITI 屏三入口（From files/server/materials）；AppMenuDropdown 引用按 v0.9.2 移除。
+4. **编辑对比**（a8d41e1）：EditingComparison/EditingViewerComparison/EditingImageComparison + ITIVM（提交时 snapshot、结果到达时解码 original、onPreviewBitmapChange 重置、editingViewerTicket）+ ITI 屏 Compare toggle。**EditingDimensions/SourceDimensionsPreset/DimensionStepperRow 不移植**：上游 GenerationParams 已通用化 width/height（caps.hasWidth/hasHeight 全模式生效），fork 实现是其前身。
+5. **ServerGallerySourceTransfer**（a160cbe）：源文件保留兼容（import 适配 currentMediaIdentity 新位置）。**activity-result 流程不移植**：v0.9.2 server gallery 原图经共享 media viewer 打开，Use as source 由 currentItemDescriptor/ServerImageDiscovery 直接携带 provenance。
+
+## 验证与产物
+
+- 每步 commit 后 compileDebugKotlin 零错误、testDebugUnitTest BUILD SUCCESSFUL
+- 测试包：comfychair-v0.9.2-beta2-featmerge-debug-20261107-1519.apk（88,971,343 bytes，SHA256 cb668a3d0caec60a0e86c47d64792946024bf2498a019920f80b19a49d3e50f9），aapt 确认 43/v0.9.2-beta2，LAN 9010 时间戳名+固定名双 GET 200
+- 版本号临时修改（打包）后 git checkout 还原，未提交
+- 打包注意：Java 17 路径 /nix/store/wy5hcn776.../lib/openjdk（NixOS，非 /usr/lib/jvm）；--no-daemon 必须
+
+## 仍未验证
+
+- 无真机/真实服务器端到端（通知渠道、FGS 前台持久化、诊断上传、素材库导入、对比手势均为 JVM 编译+单测级验证）
+- beta2 包的设备回归由 Nick 执行（重点：通知、素材库入口、对比 toggle、上游 v0.9.2 welcome wizard 与我们的 login restore 并存行为）
