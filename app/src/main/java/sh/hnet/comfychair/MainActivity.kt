@@ -27,6 +27,8 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import sh.hnet.comfychair.cache.InMemoryVideo
+import sh.hnet.comfychair.notification.GenerationForegroundService
+import sh.hnet.comfychair.notification.NotificationHelper
 import sh.hnet.comfychair.storage.PreferencesMaintenance
 import sh.hnet.comfychair.ui.components.ErrorSnackbars
 import sh.hnet.comfychair.ui.components.WhatsNew
@@ -55,6 +57,11 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             PreferencesMaintenance.performMaintenance(applicationContext)
             InMemoryVideo.deleteShareFiles(applicationContext)
+        }
+
+        // Restart foreground service for a generation still pending from the last session
+        if (NotificationHelper.hasPendingGeneration(applicationContext)) {
+            GenerationForegroundService.start(applicationContext)
         }
 
         setContent {

@@ -26,6 +26,8 @@ import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.connection.WebSocketMessage
 import sh.hnet.comfychair.connection.WebSocketState
 import sh.hnet.comfychair.queue.JobRegistry
+import sh.hnet.comfychair.notification.GenerationForegroundService
+import sh.hnet.comfychair.notification.NotificationHelper
 import sh.hnet.comfychair.queue.JobStatus
 import sh.hnet.comfychair.queue.QueueSnapshot
 import sh.hnet.comfychair.storage.AppSettings
@@ -330,6 +332,16 @@ class GenerationViewModel : ViewModel() {
                             contentType = contentType
                         )
 
+                        // Notify the foreground service so it can monitor completion in background
+                        applicationContext?.let { ctx ->
+                            GenerationForegroundService.notifyGenerationStarted(
+                                context = ctx,
+                                ownerId = owner,
+                                contentType = contentType.name,
+                                promptId = promptId
+                            )
+                        }
+
                         // If handler doesn't match new owner, clear it so correct screen can register
                         if (activeEventHandlerOwnerId != null && activeEventHandlerOwnerId != owner) {
                             DebugLogger.w(TAG, "Handler mismatch after ExecutionStart: handler=$activeEventHandlerOwnerId, newOwner=$owner - clearing handler")
@@ -533,7 +545,7 @@ class GenerationViewModel : ViewModel() {
                     }
                 }
                 DebugLogger.i(TAG, "Fetching image immediately for $ownerId (promptId=${Obfuscator.promptId(event.promptId)})")
-                fetchAndStoreImage(client, context, event.promptId, mediaKey)
+                fetchAndStoreImage(client, context, event.promptId, ownerId, mediaKey)
             }
             is GenerationEvent.VideoGenerated -> {
                 val filePrefix = when (ownerId) {
@@ -549,6 +561,14 @@ class GenerationViewModel : ViewModel() {
                 VideoUtils.fetchVideoFromHistory(context, client, event.promptId, filePrefix) { uri, _ ->
                     if (uri != null) {
                         DebugLogger.i(TAG, "Immediate video fetch successful for $ownerId")
+                        // Trigger completion notification
+                        NotificationHelper.onGenerationComplete(
+                            context = context,
+                            promptId = event.promptId,
+                            ownerId = ownerId,
+                            contentType = "VIDEO",
+                            isVideo = true
+                        )
                     } else {
                         DebugLogger.w(TAG, "Immediate video fetch failed for $ownerId")
                     }
@@ -565,6 +585,7 @@ class GenerationViewModel : ViewModel() {
         client: ComfyUIClient,
         context: Context,
         promptId: String,
+        ownerId: String,
         mediaKey: MediaStateHolder.MediaKey
     ) {
         client.fetchHistory(promptId) { historyJson ->
@@ -579,6 +600,14 @@ class GenerationViewModel : ViewModel() {
                             if (bitmap != null) {
                                 MediaStateHolder.putBitmap(mediaKey, bitmap, context)
                                 DebugLogger.i(TAG, "Immediate image fetch successful, stored to ${mediaKey::class.simpleName}")
+                                // Trigger completion notification
+                                NotificationHelper.onGenerationComplete(
+                                    context = context,
+                                    promptId = promptId,
+                                    ownerId = ownerId,
+                                    contentType = "IMAGE",
+                                    isVideo = false
+                                )
                             } else if (failureType == ConnectionFailure.STALLED) {
                                 DebugLogger.w(TAG, "Immediate image fetch stalled")
                                 ConnectionManager.showConnectionAlert(context, failureType)
