@@ -125,6 +125,32 @@ object AppSettings {
             .apply()
     }
 
+    /** Whether value-free diagnostic events are captured for realtime upload. Default: false. */
+    fun isRealtimeLoggingEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean("realtime_logging", false)
+
+    /** Where captured diagnostic events are uploaded to (an /events endpoint), empty when unset. */
+    fun getRealtimeLogUrl(context: Context): String =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString("realtime_log_url", "") ?: ""
+
+    fun setRealtimeLoggingEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("realtime_logging", enabled)
+            .apply()
+        sh.hnet.comfychair.DiagnosticsApplication.refresh()
+    }
+
+    fun setRealtimeLogUrl(context: Context, url: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString("realtime_log_url", url)
+            .apply()
+        sh.hnet.comfychair.DiagnosticsApplication.refresh()
+    }
+
     /**
      * Check if auto-connect is enabled.
      * When enabled (default), the app auto-connects to the last selected server on startup.
