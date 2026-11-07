@@ -100,15 +100,12 @@ fun BoxScope.SourceToolbar(
     onReplace: () -> Unit,
     onRemove: () -> Unit,
     maskTools: MaskTools? = null,
-<<<<<<< HEAD
+    // Video to Video: the source is a video
+    isVideo: Boolean = false,
     // Secondary replace through the system file API (DocumentsUI), covering Downloads and file managers
     onReplaceFromFiles: (() -> Unit)? = null,
     // Pick the replacement from the connected server's Input/Output images
     onPickFromServer: (() -> Unit)? = null
-=======
-    // Video to Video: the source is a video
-    isVideo: Boolean = false
->>>>>>> origin/main
 ) {
     val modifier = Modifier
         .align(Alignment.BottomCenter)
@@ -142,13 +139,9 @@ fun BoxScope.SourceToolbar(
     if (maskTools == null) {
         HorizontalFloatingToolbar(expanded = true, modifier = modifier, colors = colors) {
             replace()
-<<<<<<< HEAD
             replaceFromFiles?.invoke()
             fromServer?.invoke()
-            TooltipIconButton(Icons.Rounded.HideImage, stringResource(R.string.content_description_remove_source), onRemove)
-=======
             removeSource()
->>>>>>> origin/main
         }
     } else {
         HorizontalFloatingToolbar(
@@ -169,13 +162,9 @@ fun BoxScope.SourceToolbar(
             }
         ) {
             replace()
-<<<<<<< HEAD
             replaceFromFiles?.invoke()
             fromServer?.invoke()
-            TooltipIconButton(Icons.Rounded.HideImage, stringResource(R.string.content_description_remove_source), onRemove)
-=======
             removeSource()
->>>>>>> origin/main
             TooltipIconButton(
                 Icons.Rounded.LayersClear,
                 stringResource(R.string.button_clear_mask),
@@ -215,18 +204,15 @@ fun BoxScope.MaskLabel() {
  * Empty source: the preview itself is the picker – a dashed outline and one large button, plus a server gallery entry.
  */
 @Composable
-<<<<<<< HEAD
 fun EmptySourcePicker(
     onPick: () -> Unit,
     modifier: Modifier = Modifier,
+    // Video to Video picks a source video
+    isVideo: Boolean = false,
     onPickFromFiles: (() -> Unit)? = null,
     onPickFromServer: (() -> Unit)? = null
 ) {
-=======
-fun EmptySourcePicker(onPick: () -> Unit, modifier: Modifier = Modifier, isVideo: Boolean = false) {
-    // Video to Video picks a source video
     val pickIcon = if (isVideo) Icons.Rounded.VideoCall else Icons.Rounded.AddPhotoAlternate
->>>>>>> origin/main
     val outline = MaterialTheme.colorScheme.outline
     Box(
         modifier
@@ -253,12 +239,11 @@ fun EmptySourcePicker(onPick: () -> Unit, modifier: Modifier = Modifier, isVideo
                 modifier = Modifier.size(64.dp)
             )
             Spacer(Modifier.height(16.dp))
-<<<<<<< HEAD
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onPick, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
-                    Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                    Icon(pickIcon, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                     Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text(stringResource(R.string.button_pick_source_image))
+                    Text(stringResource(if (isVideo) R.string.button_pick_source_video else R.string.button_pick_source_image))
                 }
                 if (onPickFromFiles != null) {
                     OutlinedButton(onClick = onPickFromFiles, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
@@ -274,12 +259,6 @@ fun EmptySourcePicker(onPick: () -> Unit, modifier: Modifier = Modifier, isVideo
                         Text(stringResource(R.string.server_gallery_title))
                     }
                 }
-=======
-            Button(onClick = onPick, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
-                Icon(pickIcon, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
-                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text(stringResource(if (isVideo) R.string.button_pick_source_video else R.string.button_pick_source_image))
->>>>>>> origin/main
             }
         }
     }

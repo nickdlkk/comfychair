@@ -364,7 +364,7 @@ class WorkflowManagementViewModel : ViewModel() {
      * @param fileName Where it came from, shown under the dialog's headline (a file name, or the server and path)
      * @param suggestedName The name to start from; the user can change it
      */
-    private suspend fun prepareImportJson(jsonContent: String, fileName: String? = null, suggestedName: String? = null,
+    suspend fun prepareImportJson(jsonContent: String, fileName: String? = null, suggestedName: String? = null,
         stillCurrent: () -> Boolean = { true }): Boolean {
         val valid = withContext(Dispatchers.Default) { WorkflowImportPreparation.isImportableJson(jsonContent) }
         if (!stillCurrent()) return false

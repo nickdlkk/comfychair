@@ -45,12 +45,9 @@ import sh.hnet.comfychair.ui.components.LocalMediaViewer
 import sh.hnet.comfychair.ui.components.ResultHeroImage
 import sh.hnet.comfychair.ui.components.ResultHeroVideo
 import sh.hnet.comfychair.ui.components.ResultsPreview
-<<<<<<< HEAD
 import sh.hnet.comfychair.ui.components.ServerImagePickerSheet
 import sh.hnet.comfychair.ui.components.SourceTarget
-=======
 import sh.hnet.comfychair.ui.components.UseAsSource
->>>>>>> origin/main
 import sh.hnet.comfychair.ui.components.VideoPlayer
 import sh.hnet.comfychair.viewmodel.ServerGalleryViewModel
 import sh.hnet.comfychair.ui.components.config.singleWorkflowGroup

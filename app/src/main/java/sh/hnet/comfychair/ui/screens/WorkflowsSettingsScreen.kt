@@ -166,7 +166,7 @@ fun WorkflowsSettingsScreen(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
-    val connectionState by ConnectionManager.connectionState.collectAsState()
+    val connectionState by sh.hnet.comfychair.connection.ConnectionManager.connectionState.collectAsState()
     LaunchedEffect(connectionState) {
         viewModel.onServerConnectionChanged()
         if (uiState.showServerWorkflows) viewModel.refreshServerWorkflows()
@@ -294,167 +294,11 @@ fun WorkflowsSettingsScreen(
             offline = offline,
             onCreate = { createEditorLauncher.launch(WorkflowEditorActivity.createIntentForNewWorkflow(context)) },
             onImport = { jsonPickerLauncher.launch("application/json") },
-<<<<<<< HEAD
-            onImportFromServer = {
-                if (uiState.showServerWorkflows) viewModel.closeServerWorkflows()
-                else viewModel.openServerWorkflows()
-            }
-=======
             onImportFromServer = onImportFromServer
->>>>>>> origin/main
-        )
-
-        // Browse and import workflows saved on the connected server
-        if (uiState.showServerWorkflows) {
-            ServerWorkflowPanel(
-                state = uiState,
-                onSearch = viewModel::setServerSearch,
-                onRefresh = viewModel::refreshServerWorkflows,
-                onClose = viewModel::closeServerWorkflows,
-                onSelect = viewModel::selectServerWorkflow
-            )
-        }
-    }
-
-<<<<<<< HEAD
-    // Import dialog
-    if (uiState.showImportDialog) {
-        WorkflowDetailsDialog(
-            titleRes = R.string.title_import_workflow,
-            confirmLabelRes = R.string.button_continue,
-            fileName = uiState.importFileName,
-            selectedType = uiState.importSelectedType,
-            onTypeSelected = viewModel::onImportTypeSelected,
-            name = uiState.importName,
-            onNameChange = viewModel::onImportNameChange,
-            nameError = uiState.importNameError,
-            description = uiState.importDescription,
-            onDescriptionChange = viewModel::onImportDescriptionChange,
-            isValidating = uiState.isValidatingNodes,
-            warnings = uiState.pendingImportWarnings,
-            onConfirm = {
-                ConnectionManager.clientOrNull?.let { viewModel.proceedWithImport(context, it) }
-                    ?: Toast.makeText(context, R.string.server_workflow_disconnected, Toast.LENGTH_SHORT).show()
-            },
-            onDismiss = viewModel::cancelImport
-        )
-    }
-
-    // Missing nodes dialog
-    if (uiState.showMissingNodesDialog) {
-        MissingNodesDialog(
-            missingNodes = uiState.missingNodes,
-            onDismiss = viewModel::dismissMissingNodesDialog
-        )
-    }
-
-    // Missing fields dialog
-    if (uiState.showMissingFieldsDialog) {
-        MissingFieldsDialog(
-            missingFields = uiState.missingFields,
-            type = uiState.importSelectedType,
-            onDismiss = viewModel::dismissMissingFieldsDialog
         )
     }
 
 }
-
-@Composable
-private fun ServerWorkflowPanel(
-    state: WorkflowManagementUiState,
-    onSearch: (String) -> Unit,
-    onRefresh: () -> Unit,
-    onClose: () -> Unit,
-    onSelect: (ComfyUIClient.SavedWorkflow) -> Unit
-) {
-    Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.server_workflow_import), modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleMedium)
-                IconButton(onClick = onRefresh, enabled = !state.serverLoading && !state.serverDownloading) {
-                    Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.server_workflow_refresh))
-                }
-                IconButton(onClick = onClose) {
-                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.button_cancel))
-                }
-            }
-            OutlinedTextField(
-                value = state.serverSearch, onValueChange = onSearch,
-                label = { Text(stringResource(R.string.server_workflow_search)) },
-                singleLine = true, modifier = Modifier.fillMaxWidth()
-            )
-            if (state.serverLoading || state.serverDownloading) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(if (state.serverDownloading) R.string.server_workflow_downloading
-                        else R.string.server_workflow_loading))
-                }
-            }
-            state.serverError?.let { error ->
-                val message = when (error) {
-                    ComfyUIClient.SavedWorkflowError.DISCONNECTED -> R.string.server_workflow_disconnected
-                    ComfyUIClient.SavedWorkflowError.NOT_FOUND -> R.string.server_workflow_empty
-                    ComfyUIClient.SavedWorkflowError.UNAUTHORIZED -> R.string.server_workflow_unauthorized
-                    ComfyUIClient.SavedWorkflowError.TOO_LARGE -> R.string.server_workflow_too_large
-                    ComfyUIClient.SavedWorkflowError.INVALID_RESPONSE,
-                    ComfyUIClient.SavedWorkflowError.INVALID_PATH -> R.string.server_workflow_invalid
-                    ComfyUIClient.SavedWorkflowError.MULTIUSER_UNSUPPORTED -> R.string.server_workflow_multiuser_unsupported
-                    ComfyUIClient.SavedWorkflowError.NETWORK -> R.string.server_workflow_network_error
-                }
-                Text(stringResource(message), color = MaterialTheme.colorScheme.error)
-            }
-            val filtered = state.serverWorkflows.filter {
-                it.path.contains(state.serverSearch, ignoreCase = true)
-            }
-            if (!state.serverLoading && state.serverError == null && filtered.isEmpty()) {
-                Text(stringResource(R.string.server_workflow_empty))
-            }
-            NoOverscrollContainer(modifier = Modifier.heightIn(max = 280.dp)) {
-                LazyColumn {
-                    items(filtered, key = { it.path }) { file ->
-                        Column(modifier = Modifier.fillMaxWidth()
-                            .clickable(enabled = !state.serverDownloading) { onSelect(file) }
-                            .padding(vertical = 10.dp)) {
-                            Text(file.path, style = MaterialTheme.typography.bodyMedium)
-                            Text(stringResource(R.string.server_workflow_metadata,
-                                file.size / 1024, DateFormat.getDateTimeInstance().format(Date(file.modified))),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        HorizontalDivider()
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Parse field mappings from JSON string
- */
-private fun parseMappingsFromJson(jsonString: String): Map<String, Pair<String, String>> {
-    val mappings = mutableMapOf<String, Pair<String, String>>()
-    try {
-        val json = org.json.JSONObject(jsonString)
-        for (key in json.keys()) {
-            val mapping = json.getJSONObject(key)
-            mappings[key] = Pair(
-                mapping.getString("nodeId"),
-                mapping.getString("inputKey")
-            )
-        }
-    } catch (e: Exception) {
-        // Return empty mappings on error
-    }
-    return mappings
-}
-=======
-
-}
-
->>>>>>> origin/main
 
 /** Order of the sections on the list. */
 private val sectionOrder = listOf(
@@ -707,16 +551,12 @@ private fun WorkflowRow(
  * and Import upward, over a scrim; tapping the scrim or Back closes it.
  */
 @Composable
-<<<<<<< HEAD
 private fun BoxScope.AddWorkflowMenu(
     offline: Boolean,
     onCreate: () -> Unit,
     onImport: () -> Unit,
     onImportFromServer: () -> Unit
 ) {
-=======
-private fun BoxScope.AddWorkflowMenu(offline: Boolean, onCreate: () -> Unit, onImport: () -> Unit, onImportFromServer: () -> Unit) {
->>>>>>> origin/main
     val context = LocalContext.current
     val needsServer = stringResource(R.string.msg_needs_server)
     var expanded by rememberSaveable { mutableStateOf(false) }

@@ -58,6 +58,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -105,6 +107,7 @@ fun ServerImportScreen(
     onOpenDetails: (workflowId: String) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val listViewModel: ServerImportViewModel = viewModel()
     val state by listViewModel.uiState.collectAsState()
     val serverName = remember {
@@ -178,7 +181,13 @@ fun ServerImportScreen(
                     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
                     onOpen = { workflow ->
                         listViewModel.download(context, workflow) { json ->
-                            viewModel.beginImport(json, source = listOf(serverName, workflow.path).filter { it.isNotEmpty() }.joinToString(SEPARATOR), suggestedName = workflow.name)
+                            scope.launch {
+                                viewModel.prepareImportJson(
+                                    json,
+                                    fileName = listOf(serverName, workflow.path).filter { it.isNotEmpty() }.joinToString(SEPARATOR),
+                                    suggestedName = workflow.name
+                                )
+                            }
                         }
                     }
                 )

@@ -4,9 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.JsonReader
-<<<<<<< HEAD
-import okhttp3.HttpUrl.Companion.toHttpUrl
-=======
 import java.io.IOException
 import java.io.InputStream
 import java.util.UUID
@@ -21,9 +18,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
->>>>>>> origin/main
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -45,27 +41,11 @@ import sh.hnet.comfychair.util.NodeErrors
 import sh.hnet.comfychair.util.Obfuscator
 import sh.hnet.comfychair.util.ProgressTrackingRequestBody
 import sh.hnet.comfychair.util.ProgressTrackingResponseBody
-<<<<<<< HEAD
-import java.io.IOException
-import java.io.InputStream
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import sh.hnet.comfychair.connection.ImageUploadReuse
 import sh.hnet.comfychair.model.ServerImage
 import sh.hnet.comfychair.model.ServerImageDiscovery
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-=======
->>>>>>> origin/main
 
 /**
  * ComfyUIClient - Handles communication with ComfyUI server

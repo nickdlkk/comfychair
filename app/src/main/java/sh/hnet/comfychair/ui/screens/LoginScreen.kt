@@ -367,7 +367,7 @@ fun LoginScreen() {
                 is RestoreResult.Success -> {
                     if (result.serversChanged) {
                         // Caches belong to the old servers; disconnect if one is somehow still up
-                        ConnectionManager.invalidateForRestore()
+                        ConnectionManager.disconnect()
                     }
                     // Reload the list and selection in place; the restore toast comes from here
                     servers = serverStorage.getServers()
@@ -375,14 +375,17 @@ fun LoginScreen() {
                         ?.let { id -> servers.find { it.id == id } }
                         ?: servers.firstOrNull()
                     selectedServer?.let { serverStorage.setSelectedServerId(it.id) }
-                    if (result.skippedWorkflows > 0) {
-                        Toast.makeText(context, R.string.msg_backup_restore_partial, Toast.LENGTH_LONG).show()
+                    if (result.skippedWorkflows.isNotEmpty() || result.skippedPrompts.isNotEmpty()) {
+                        Toast.makeText(context, R.string.error_backup_restore_partial, Toast.LENGTH_LONG).show()
                     } else {
                         Toast.makeText(context, R.string.msg_backup_restore_success, Toast.LENGTH_LONG).show()
                     }
                 }
                 is RestoreResult.Failure -> {
                     Toast.makeText(context, result.errorMessageResId, Toast.LENGTH_LONG).show()
+                }
+                is RestoreResult.Crashed -> {
+                    Toast.makeText(context, R.string.error_backup_restore, Toast.LENGTH_LONG).show()
                 }
             }
         }
