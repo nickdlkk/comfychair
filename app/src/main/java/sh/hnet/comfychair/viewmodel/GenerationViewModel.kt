@@ -29,6 +29,8 @@ import sh.hnet.comfychair.queue.JobRegistry
 import sh.hnet.comfychair.queue.JobStatus
 import sh.hnet.comfychair.queue.QueueSnapshot
 import sh.hnet.comfychair.storage.AppSettings
+import sh.hnet.comfychair.util.AppError
+import sh.hnet.comfychair.util.AppErrors
 import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.util.GenerationOutputs
 import sh.hnet.comfychair.util.Obfuscator
@@ -72,7 +74,6 @@ sealed class GenerationEvent {
     data class ImageGenerated(val promptId: String) : GenerationEvent()
     data class VideoGenerated(val promptId: String) : GenerationEvent()
     data class PreviewImage(val bitmap: Bitmap) : GenerationEvent()
-    data class Error(val message: String) : GenerationEvent()
     data object GenerationCancelled : GenerationEvent()
     data object ConnectionLostDuringGeneration : GenerationEvent()
     data object ClearPreviewForResume : GenerationEvent()
@@ -132,6 +133,7 @@ class GenerationViewModel : ViewModel() {
 
     companion object {
         private const val TAG = "Generation"
+        private const val MAX_UNCLAIMED_ERRORS = 8
         private const val PREFS_NAME = "GenerationViewModelPrefs"
         private const val PREF_IS_GENERATING = "isGenerating"
         private const val PREF_CURRENT_PROMPT_ID = "currentPromptId"
@@ -273,13 +275,16 @@ class GenerationViewModel : ViewModel() {
                 }
             }
             is WebSocketMessage.ExecutionError -> {
-                if (message.promptId == currentState.promptId || message.promptId == null) {
-                    // Dispatch error event BEFORE resetting state, so ownerId is still available
-                    // for handler matching in dispatchEvent()
-                    val errorMessage = applicationContext?.getString(R.string.error_generation_failed)
-                        ?: "Generation failed"
-                    dispatchEvent(GenerationEvent.Error(errorMessage))
-                    resetGenerationState()
+                val isCurrent = message.promptId == currentState.promptId || message.promptId == null
+                when {
+                    // The running job, or another of ours waiting in the queue
+                    isCurrent || message.isOwn -> {
+                        applicationContext?.let { reportExecutionError(it, message) }
+                        if (isCurrent) resetGenerationState()
+                    }
+                    // Not known as ours yet: a job can fail before /prompt's answer registers it. Kept until the
+                    // registration claims it; another client's error is never shown and soon drops out.
+                    else -> message.promptId?.let { rememberUnclaimedError(it, message) }
                 }
             }
             // When a job starts executing, update generation state to track it
@@ -534,6 +539,7 @@ class GenerationViewModel : ViewModel() {
                 val filePrefix = when (ownerId) {
                     "TEXT_TO_VIDEO" -> VideoUtils.FilePrefix.TEXT_TO_VIDEO
                     "IMAGE_TO_VIDEO" -> VideoUtils.FilePrefix.IMAGE_TO_VIDEO
+                    "VIDEO_TO_VIDEO" -> VideoUtils.FilePrefix.VIDEO_TO_VIDEO
                     else -> {
                         DebugLogger.w(TAG, "Unknown video owner: $ownerId")
                         return
@@ -584,7 +590,7 @@ class GenerationViewModel : ViewModel() {
                     }
                     DebugLogger.w(TAG, "Immediate image fetch: no images in history output")
                 } catch (e: Exception) {
-                    DebugLogger.e(TAG, "Immediate image fetch failed: ${e.message}")
+                    DebugLogger.e(TAG, "Immediate image fetch failed: ${Obfuscator.error(e)}")
                 }
             } else {
                 DebugLogger.w(TAG, "Immediate image fetch: history is null")
@@ -639,6 +645,34 @@ class GenerationViewModel : ViewModel() {
         }
     }
 
+    // Errors of jobs not known as ours when they came (see the ExecutionError handling), by prompt ID, the latest few
+    private val unclaimedErrors = object : LinkedHashMap<String, WebSocketMessage.ExecutionError>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, WebSocketMessage.ExecutionError>?) =
+            size > MAX_UNCLAIMED_ERRORS
+    }
+
+    private fun rememberUnclaimedError(promptId: String, error: WebSocketMessage.ExecutionError) {
+        synchronized(unclaimedErrors) { unclaimedErrors[promptId] = error }
+    }
+
+    private fun claimError(promptId: String): WebSocketMessage.ExecutionError? =
+        synchronized(unclaimedErrors) { unclaimedErrors.remove(promptId) }
+
+    /** The failed job's error, with the node and the server's message and traceback behind Show. */
+    private fun reportExecutionError(context: Context, error: WebSocketMessage.ExecutionError) {
+        val node = error.nodeType?.let { type ->
+            context.getString(R.string.error_node_failed, error.nodeId?.let { "$type (#$it)" } ?: type)
+        }
+        val message = error.exceptionType?.let { "$it: ${error.message}" } ?: error.message
+        AppErrors.report(
+            AppError(
+                message = context.getString(R.string.error_generation_failed),
+                text = node,
+                details = listOfNotNull(message.trim().takeIf { it.isNotEmpty() }, error.traceback.joinToString("").trim().takeIf { it.isNotEmpty() })
+            )
+        )
+    }
+
     /**
      * Submit workflow to server
      */
@@ -656,17 +690,15 @@ class GenerationViewModel : ViewModel() {
                 DebugLogger.i(TAG, "Workflow submitted successfully (promptId: ${Obfuscator.promptId(promptId)})")
 
                 // ComfyUI queued the job but dropped outputs that failed validation; tell the user
-                // instead of silently delivering an incomplete result (full list in the debug log)
+                // instead of silently delivering an incomplete result (the full list behind Show)
                 if (skippedOutputs.isNotEmpty()) {
-                    mainHandler.post {
-                        applicationContext?.let { ctx ->
-                            val message = if (skippedOutputs.size == 1) {
-                                ctx.getString(R.string.msg_outputs_skipped, skippedOutputs.first())
-                            } else {
-                                ctx.getString(R.string.msg_outputs_skipped_more, skippedOutputs.first(), skippedOutputs.size - 1)
-                            }
-                            Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
+                    applicationContext?.let { ctx ->
+                        val message = if (skippedOutputs.size == 1) {
+                            ctx.getString(R.string.msg_outputs_skipped, skippedOutputs.first())
+                        } else {
+                            ctx.getString(R.string.msg_outputs_skipped_more, skippedOutputs.first(), skippedOutputs.size - 1)
                         }
+                        AppErrors.report(AppError(message, details = skippedOutputs))
                     }
                 }
 
@@ -677,6 +709,14 @@ class GenerationViewModel : ViewModel() {
                     applicationContext?.let { ctx -> JobRegistry.saveState(ctx) }
                 }
 
+                // It failed already, before this answer came: report it, and there's nothing to wait for
+                claimError(promptId)?.let { error ->
+                    JobRegistry.markFailed(promptId)
+                    applicationContext?.let { ctx -> reportExecutionError(ctx, error) }
+                    mainHandler.post { onResult(true, promptId, null) }
+                    return@submitPrompt
+                }
+
                 // Determine if we should set up GenerationState now
                 // There's a race condition: ExecutionStart might fire before we register the job.
                 // Check both:
@@ -684,7 +724,9 @@ class GenerationViewModel : ViewModel() {
                 // 2. This job is already executing (race: ExecutionStart fired before registration)
                 val queueState = JobRegistry.queueState.value
                 val isThisJobExecuting = queueState.executingPromptId == promptId
-                val shouldSetState = isThisJobExecuting || !queueState.isExecuting
+                // Not if it failed right after registration (the registry has let it go already)
+                val stillTracked = JobRegistry.findOwner(promptId) != null
+                val shouldSetState = stillTracked && (isThisJobExecuting || !queueState.isExecuting)
 
                 if (shouldSetState) {
                     _generationState.value = GenerationState(
@@ -700,7 +742,7 @@ class GenerationViewModel : ViewModel() {
                 }
                 mainHandler.post { onResult(true, promptId, null) }
             } else {
-                DebugLogger.e(TAG, "Workflow submission failed: $errorMessage")
+                DebugLogger.e(TAG, "Workflow submission failed: $failureType")
                 // For authentication errors, show the connection alert dialog instead of Toast
                 if (failureType == ConnectionFailure.AUTHENTICATION) {
                     mainHandler.post {

@@ -45,7 +45,7 @@
     <string name="msg_transfer_stalled">Przez 30 sekund nie przesłano żadnych danych. Może to wskazywać na problem z połączeniem.</string>
     <string name="error_upload_stalled">Wysyłanie zatrzymane</string>
     <string name="action_reconnect">Połącz ponownie</string>
-    <string name="msg_reconnect_failed">Nie można połączyć</string>
+    <string name="error_reconnect_failed">Nie można połączyć</string>
     <string name="action_go_offline">Tryb offline</string>
     <string name="action_return_to_login">Powrót do logowania</string>
 
@@ -69,7 +69,7 @@
     <string name="label_offline_mode">Tryb offline</string>
     <string name="desc_offline_mode">Przeglądaj dane z pamięci podręcznej bez połączenia sieciowego</string>
     <string name="msg_offline_mode_requires_disk_cache">Tryb offline wymaga przechowywania „Na urządzeniu”</string>
-    <string name="msg_cannot_go_online">Nie można przejść do trybu online – serwer nie odpowiada</string>
+    <string name="error_cannot_go_online">Nie można przejść do trybu online – serwer nie odpowiada</string>
 
     <!-- Settings section titles -->
     <string name="title_settings_connection">Połączenie</string>
@@ -115,6 +115,7 @@
     <string name="state_closed">Zamknięte</string>
     <string name="state_generate_offline">Tryb offline – generowanie wyłączone</string>
     <string name="state_generate_no_source">Najpierw wybierz obraz źródłowy</string>
+    <string name="state_generate_no_source_video">Najpierw wybierz wideo źródłowe</string>
     <string name="state_generate_invalid">Sprawdź opcje – któraś wartość jest pusta albo niepoprawna</string>
     <string name="label_offline">Offline</string>
     <string name="content_description_queue_empty">Kolejka jest pusta</string>
@@ -179,6 +180,7 @@
     <string name="nav_tab_video">Wideo</string>
     <string name="label_source_text">Tekst</string>
     <string name="label_source_image">Obraz</string>
+    <string name="label_source_video">Wideo</string>
     <string name="content_description_source_switch">Generuj z</string>
     <string name="msg_image_ready">Obraz gotowy</string>
     <string name="msg_video_ready">Wideo gotowe</string>
@@ -249,6 +251,7 @@
 
     <!-- Image to Video fragment strings -->
     <string name="nav_image_to_video">Obraz na wideo</string>
+    <string name="nav_video_to_video">Wideo na wideo</string>
     <string name="label_highnoise_unet">UNET wysokiego szumu</string>
     <string name="label_lownoise_unet">UNET niskiego szumu</string>
     <string name="label_highnoise_lora">LoRA wysokiego szumu</string>
@@ -260,6 +263,7 @@
     <string name="button_edit_mask">Edytuj maskę</string>
     <string name="button_clear_mask">Wyczyść maskę</string>
     <string name="msg_no_source_image">Nie wybrano obrazu źródłowego</string>
+    <string name="msg_no_source_video">Nie wybrano wideo źródłowego</string>
 
     <!-- Generation button states -->
     <string name="button_uploading">Przesyłanie…</string>
@@ -281,6 +285,9 @@
     <string name="error_not_comfyui_server">To nie jest serwer ComfyUI</string>
     <string name="error_invalid_server_response">Nieprawidłowa odpowiedź serwera</string>
     <string name="error_failed_load_workflow">Nie udało się załadować przepływu pracy</string>
+    <string name="error_connection_failed">Nie udało się połączyć z serwerem</string>
+    <string name="error_submit_failed">Serwer nie przyjął zadania</string>
+    <string name="error_node_failed">Błąd w węźle %1$s</string>
     <string name="error_generation_failed">Generowanie nie powiodło się</string>
     <string name="msg_outputs_skipped">Serwer pominął część workflow: %1$s</string>
     <string name="msg_outputs_skipped_more">Serwer pominął część workflow: %1$s (i jeszcze %2$d)</string>
@@ -294,6 +301,9 @@
     <string name="msg_image_saved_to_gallery">Obraz zapisany do galerii</string>
     <string name="msg_video_saved_to_gallery">Wideo zapisane do galerii</string>
     <string name="error_save_image">Nie udało się zapisać obrazu</string>
+    <string name="error_upload_source_video">Nie udało się wysłać wideo na serwer</string>
+    <string name="error_source_video_unreadable">Nie udało się odczytać wideo</string>
+    <string name="error_source_video_too_large">Wideo jest większe niż 100 MB</string>
     <string name="error_save_video">Nie udało się zapisać wideo</string>
     <string name="error_share_image">Nie udało się udostępnić obrazu</string>
     <string name="error_failed_load_image">Nie udało się wczytać obrazu</string>
@@ -346,9 +356,9 @@
     <string name="button_cancel_selection">Anuluj zaznaczenie</string>
     <string name="label_item_selected">Zaznaczono</string>
     <string name="msg_items_saved_to_gallery">Elementy zapisane do galerii</string>
-    <string name="msg_some_items_failed_to_save">Niektóre elementy nie zostały zapisane</string>
+    <string name="error_some_items_failed_to_save">Niektóre elementy nie zostały zapisane</string>
     <string name="error_share_items">Nie udało się udostępnić elementów</string>
-    <string name="msg_some_items_failed_to_delete">Niektóre elementy nie zostały usunięte</string>
+    <string name="error_some_items_failed_to_delete">Niektóre elementy nie zostały usunięte</string>
 
     <!-- Mask editor strings -->
     <string name="button_invert_mask">Odwróć maskę</string>
@@ -443,16 +453,25 @@
     <string name="error_steps_range">Musi być 1–255</string>
     <string name="error_cfg_range">Musi być 0,0–100,0</string>
     <string name="error_megapixels_range">Musi być 0,1–8,3</string>
-    <string name="error_length_range">Musi być 1–129</string>
-    <string name="error_length_step">Musi być 1, 5, 9, 13… (co 4)</string>
+    <string name="error_length_range">Musi wynosić co najmniej 1</string>
+    <string name="error_length_min">Musi wynosić co najmniej %1$d</string>
+    <string name="error_length_step">Musi być %1$d, %2$d, %3$d… (co %4$d)</string>
     <string name="error_fps_range">Musi być 1–120</string>
     <string name="error_invalid_number">Nieprawidłowa liczba</string>
 
     <!-- Node attribute editor -->
     <string name="label_nodes_list">Lista węzłów</string>
+    <string name="label_node_sockets">Gniazda węzła %1$s</string>
+    <string name="label_connection_targets">Cele połączenia</string>
+    <string name="label_socket_input">Wejście</string>
+    <string name="label_socket_output">Wyjście</string>
     <string name="button_reset_node">Resetuj węzeł</string>
     <string name="label_value_changed">Zmieniono – domyślnie %1$s</string>
     <string name="content_description_reset_value">Przywróć %1$s do %2$s</string>
+    <string name="title_node_values_linked">Połączone</string>
+    <string name="desc_node_values_linked">Ich wartości przychodzą z innych węzłów.</string>
+    <string name="label_node_values_linked_from">Z %1$s w %2$s</string>
+    <string name="content_description_open_node">Otwórz %1$s</string>
     <string name="title_from_generation_screen">Z ekranu generowania</string>
     <string name="desc_from_generation_screen">Aplikacja wypełnia je sama przy generowaniu.</string>
     <plurals name="label_node_changed_count">
@@ -485,6 +504,7 @@
     <string name="workflow_section_iti_editing">Obraz na obraz: Edycja</string>
     <string name="workflow_section_ttv">Tekst na wideo</string>
     <string name="workflow_section_itv">Obraz na wideo</string>
+    <string name="workflow_section_v2v">Wideo na wideo</string>
     <string name="workflow_section_empty">Brak przepływów pracy</string>
     <string name="label_workflows_enabled_count">Włączone: %1$d z %2$d</string>
     <string name="label_workflows_filter_all">Wszystkie</string>
@@ -515,7 +535,6 @@
     <string name="label_workflow_name">Nazwa</string>
     <string name="label_workflow_description">Opis</string>
     <string name="title_import_workflow">Importuj przepływ pracy</string>
-    <string name="button_import">Importuj</string>
     <string name="button_save">Zapisz</string>
     <string name="button_delete">Usuń</string>
     <string name="button_cancel">Anuluj</string>
@@ -537,6 +556,7 @@
     <string name="workflow_menu_duplicate">Duplikuj</string>
     <string name="title_duplicate_workflow">Duplikuj przepływ pracy</string>
     <string name="msg_workflow_export_success">Przepływ pracy wyeksportowany</string>
+    <string name="error_workflow_duplicate">Nie udało się zduplikować przepływu</string>
     <string name="error_workflow_export">Nie udało się wyeksportować przepływu pracy</string>
     <plurals name="msg_litegraph_conversion_notes">
         <item quantity="one">Konwersja zakończona – %d uwaga</item>
@@ -559,12 +579,32 @@
     <string name="content_description_previous_result">Poprzedni wynik</string>
     <string name="button_edit_this_image">Edytuj ten obraz</string>
     <string name="button_animate_it">Animuj</string>
+    <string name="button_edit_this_video">Edytuj to wideo</string>
+    <string name="button_animate_last_frame">Animuj ostatnią klatkę</string>
+    <string name="button_edit_this_frame">Edytuj tę klatkę</string>
+    <string name="button_animate_this_frame">Animuj tę klatkę</string>
+    <string name="error_frame_unreadable">Nie udało się odczytać tej klatki</string>
+    <string name="error_last_frame_unreadable">Nie udało się odczytać ostatniej klatki</string>
     <string name="button_use_as_reference">Dodaj jako referencję</string>
     <string name="button_details">Szczegóły</string>
     <string name="button_share_result">Udostępnij</string>
     <string name="button_save_result">Zapisz</string>
     <string name="content_description_result_actions">Akcje wyniku</string>
     <string name="content_description_video_actions">Akcje wideo</string>
+    <string name="video_time_display" translatable="false">%1$s / %2$s</string>
+    <string name="video_previous_frame">Poprzednia klatka</string>
+    <string name="video_next_frame">Następna klatka</string>
+    <string name="video_loop">Pętla</string>
+    <string name="video_loop_on">Włączona</string>
+    <string name="video_loop_off">Wyłączona</string>
+    <string name="video_position">Pozycja</string>
+    <string name="video_back_5s">5 sekund do tyłu</string>
+    <string name="video_forward_5s">5 sekund do przodu</string>
+    <string name="video_sound">Dźwięk</string>
+    <string name="video_sound_on">Włączony</string>
+    <string name="video_sound_off">Wyłączony</string>
+    <string name="video_no_sound">Bez dźwięku</string>
+    <string name="video_loading">Wczytywanie wideo</string>
     <string name="content_description_play_video">Odtwórz wideo</string>
     <string name="content_description_pause_video">Wstrzymaj wideo</string>
     <string name="content_description_video_position">%1$s z %2$s</string>
@@ -574,8 +614,11 @@
     <string name="label_pip_source">Źródło</string>
     <string name="msg_results_appear_here">Tu pojawią się wyniki</string>
     <string name="button_pick_source_image">Wybierz obraz źródłowy</string>
+    <string name="button_pick_source_video">Wybierz wideo źródłowe</string>
     <string name="content_description_replace_source">Zamień obraz źródłowy</string>
+    <string name="content_description_replace_source_video">Zamień wideo źródłowe</string>
     <string name="content_description_remove_source">Usuń obraz źródłowy</string>
+    <string name="content_description_remove_source_video">Usuń wideo źródłowe</string>
     <string name="content_description_show_mask">Pokaż maskę</string>
     <string name="content_description_hide_mask">Ukryj maskę</string>
     <string name="label_mask">Maska</string>
@@ -600,6 +643,7 @@
     <string name="content_description_reference_image_1">Obraz referencyjny 1</string>
     <string name="content_description_reference_image_2">Obraz referencyjny 2</string>
     <string name="content_description_source_image">Obraz źródłowy</string>
+    <string name="content_description_source_video">Wideo źródłowe</string>
     <string name="content_description_decrease">Zmniejsz wartość</string>
     <string name="content_description_increase">Zwiększ wartość</string>
 
@@ -639,6 +683,20 @@
     <string name="label_editor_connecting">Łączenie: %1$s</string>
     <string name="hint_editor_tap_input">Dotknij podświetlonego wejścia</string>
     <string name="hint_editor_tap_output">Dotknij podświetlonego wyjścia</string>
+    <string name="label_editor_linking">Podłączanie %1$s</string>
+    <string name="hint_editor_tap_input_or_value">Dotknij podświetlonego wejścia lub wartości</string>
+    <string name="hint_editor_no_target">Nic w tym przepływie nie przyjmuje %1$s</string>
+    <string name="label_editor_socket_menu_header">&lt;b>%1$s&lt;/b> – z %2$s</string>
+    <string name="menu_editor_connect">Połącz</string>
+    <string name="menu_editor_disconnect">Rozłącz</string>
+    <string name="label_editor_socket_menu_free">&lt;b>%1$s&lt;/b> – niepodłączone</string>
+    <string name="label_editor_output_menu_header">&lt;b>%1$s&lt;/b> – do %2$s</string>
+    <string name="label_editor_socket_in">&lt;b>%1$s&lt;/b> w &lt;b>%2$s&lt;/b></string>
+    <string name="menu_editor_add_node">Dodaj węzeł</string>
+    <string name="msg_editor_link_mapped_new_node">Po podłączeniu wartość &lt;b>%1$s&lt;/b> przyjdzie z nowego węzła, a pole &lt;b>%2$s&lt;/b> przestanie ją zmieniać.</string>
+    <string name="title_editor_link_mapped">Podłączyć %1$s?</string>
+    <string name="msg_editor_link_mapped">Po podłączeniu wartość &lt;b>%1$s&lt;/b> przyjdzie z węzła &lt;b>%3$s&lt;/b>, a pole &lt;b>%2$s&lt;/b> przestanie ją zmieniać.</string>
+    <string name="button_link">Podłącz</string>
     <string name="content_description_cancel_connection">Anuluj łączenie</string>
     <string name="button_edit_structure">Edytuj strukturę</string>
     <string name="content_description_clear_selection">Wyczyść zaznaczenie</string>
@@ -657,7 +715,6 @@
     <!-- Workflow import dialog strings -->
     <string name="label_workflow_type">Typ przepływu pracy</string>
     <string name="button_continue">Kontynuuj</string>
-    <string name="title_whats_new">Co nowego w %1$s</string>
     <string name="button_dismiss">Zamknij</string>
     <string name="button_done">Gotowe</string>
 
@@ -755,7 +812,7 @@
     <string name="msg_backup_created_success">Kopia zapasowa utworzona pomyślnie</string>
     <string name="error_backup_create">Nie udało się utworzyć kopii zapasowej</string>
     <string name="msg_backup_restore_success">Ustawienia przywrócone pomyślnie</string>
-    <string name="msg_backup_restore_partial">Ustawienia częściowo przywrócone. Niektóre przepływy pracy zostały pominięte.</string>
+    <string name="error_backup_restore_partial">Kopia przywrócona częściowo. Niektóre przepływy pracy lub prompty zostały pominięte.</string>
     <string name="error_backup_restore">Nie udało się przywrócić kopii zapasowej</string>
     <string name="error_backup_invalid_json">Nieprawidłowy format pliku kopii zapasowej</string>
     <string name="error_backup_unsupported_version">Nieobsługiwana wersja kopii zapasowej</string>
@@ -849,7 +906,6 @@
     <string name="msg_workflow_editor_select_input">%1$s ma kilka pasujących wejść.</string>
     <string name="title_workflow_editor_select_output">Z którego wyjścia połączyć?</string>
     <string name="msg_workflow_editor_select_output">%1$s ma kilka pasujących wyjść.</string>
-    <string name="workflow_editor_edit_mode_hint">Dotknij gniazda, aby połączyć, przytrzymaj dla przeglądarki</string>
 
     <!-- Field display names for workflow editor -->
     <string name="field_positive_prompt">Pozytywny prompt</string>
@@ -857,6 +913,7 @@
     <string name="field_cfg_scale">Skala CFG</string>
     <string name="field_unet_model">Model UNET</string>
     <string name="field_input_image">Obraz wejściowy</string>
+    <string name="field_input_video">Wideo wejściowe</string>
     <string name="field_frame_rate">Liczba klatek</string>
 
     <!-- Field descriptions for workflow editor -->
@@ -864,6 +921,8 @@
     <string name="field_desc_negative_prompt">Tekst opisujący, czego unikać</string>
     <string name="field_desc_checkpoint">Model checkpoint do użycia</string>
     <string name="field_desc_unet">Model dyfuzyjny</string>
+    <string name="label_audio_vae">VAE audio</string>
+    <string name="field_desc_audio_vae">VAE, który dekoduje dźwięk</string>
     <string name="field_desc_vae">Koder/dekoder VAE</string>
     <string name="field_desc_clip">Koder tekstowy CLIP</string>
     <string name="field_desc_clip1">Pierwszy koder tekstowy CLIP</string>
@@ -881,6 +940,7 @@
     <string name="field_desc_length">Długość wideo w klatkach</string>
     <string name="field_desc_frame_rate">Klatki na sekundę wideo</string>
     <string name="field_desc_image">Obraz źródłowy do generowania</string>
+    <string name="field_desc_video">Wideo źródłowe do generowania</string>
     <string name="field_desc_seed">Losowy seed do generowania</string>
     <string name="field_desc_denoise">Siła odszumiania (0,0–1,0)</string>
     <string name="field_desc_batch_size">Liczba obrazów w partii</string>
@@ -930,6 +990,7 @@
     <string name="screen_type_image_to_image">Obraz na obraz</string>
     <string name="screen_type_text_to_video">Tekst na wideo</string>
     <string name="screen_type_image_to_video">Obraz na wideo</string>
+    <string name="screen_type_video_to_video">Wideo na wideo</string>
 
     <!-- Metadata actions -->
     <string name="metadata_save_prompt">Zapisz prompt do biblioteki</string>
@@ -1002,4 +1063,112 @@
     <string name="server_delete_key_saved">Klucz jest zapisany (%1$d znaków). Wpisz nowy, aby go zastąpić, lub zapisz pusty, aby go usunąć.</string>
     <string name="server_delete_key_empty">Brak zapisanego klucza: trwałe usuwanie jest niedostępne.</string>
     <string name="hint_media_deletion_setup">Trwałe usuwanie wymaga klucza: Ustawienia → Serwer → Usuwanie multimediów</string>
+    <string name="whats_new_title">Co nowego</string>
+    <plurals name="whats_new_row_supporting">
+        <item quantity="one">Wersja %1$s, %2$d zmiana</item>
+        <item quantity="few">Wersja %1$s, %2$d zmiany</item>
+        <item quantity="many">Wersja %1$s, %2$d zmian</item>
+        <item quantity="other">Wersja %1$s, %2$d zmiany</item>
+    </plurals>
+    <string name="whats_new_updated_snackbar">Zaktualizowano do %1$s</string>
+    <string name="whats_new_badge">Nowe</string>
+    <string name="whats_new_all_releases">Wszystkie wydania</string>
+    <string name="whats_new_on_github">Na GitHubie</string>
+
+    <!-- Welcome wizard (first run) -->
+    <string name="title_welcome">Witaj w ComfyChair</string>
+    <string name="label_welcome_intro">Mobilny klient Twojego własnego serwera ComfyUI. Wygenerowane obrazy i filmy trzymane są tylko w pamięci telefonu, chyba że zdecydujesz inaczej.</string>
+    <string name="label_welcome_question">Co chcesz zrobić?</string>
+    <string name="label_welcome_add_server">Dodaj serwer</string>
+    <string name="desc_welcome_add_server">Połącz się z serwerem ComfyUI</string>
+    <string name="label_welcome_restore">Przywróć kopię zapasową</string>
+    <string name="desc_welcome_restore">Odzyskaj serwery, przepływy pracy i ustawienia</string>
+    <string name="button_next">Dalej</string>
+    <string name="title_welcome_add_server">Dodaj serwer</string>
+    <string name="title_welcome_restore">Przywróć kopię zapasową</string>
+    <string name="button_backup_choose_file">Wybierz plik kopii</string>
+    <string name="label_backup_unnamed_file">bez nazwy</string>
+    <string name="label_server_credentials_missing_basic">Wpisz nazwę użytkownika i hasło, aby się połączyć</string>
+    <string name="label_server_credentials_missing_token">Wpisz token, aby się połączyć</string>
+    <string name="label_credentials_not_in_backup">Kopie zapasowe nie zawierają danych logowania – trzeba je wpisać ponownie.</string>
+    <string name="button_save_and_connect">Zapisz i połącz</string>
+    <string name="label_backup_brings_back">Wybierz plik kopii zapasowej wyeksportowany z ComfyChair. Przywrócone zostaną:</string>
+    <string name="label_backup_item_servers">Serwery</string>
+    <string name="desc_backup_item_servers">Nazwa, adres i sposób logowania</string>
+    <string name="label_backup_item_workflows">Przepływy pracy</string>
+    <string name="label_backup_item_prompts">Zapisane prompty</string>
+    <string name="label_backup_item_settings">Ustawienia</string>
+    <string name="label_backup_no_credentials_title">Kopia nie zawiera haseł ani tokenów.</string>
+    <string name="label_backup_no_credentials_body">Trzeba je będzie wpisać ponownie przy każdym serwerze, który ich wymaga.</string>
+    <string name="button_backup_choose_another">Wybierz inny plik</string>
+    <string name="button_backup_change">Zmień</string>
+    <string name="label_backup_settings_only">Tylko ustawienia</string>
+    <string name="content_description_backup_file_contents">Plik kopii %1$s, %2$s</string>
+    <string name="error_backup_unreadable_title">Nie można odczytać pliku</string>
+    <string name="error_backup_unreadable_body">Nie udało się otworzyć pliku %1$s. Wybierz inny.</string>
+    <string name="error_backup_not_backup_title">To nie jest kopia ComfyChair</string>
+    <string name="error_backup_not_backup_body">Plik %1$s nie zawiera ustawień ComfyChair. Wybierz kopię zrobioną w Ustawieniach.</string>
+    <string name="error_backup_unsupported_title">Tej kopii nie da się przywrócić</string>
+    <string name="error_backup_unsupported_body">Plik %1$s pochodzi z wersji ComfyChair, której ta nie potrafi odczytać. Wybierz inny plik.</string>
+    <string name="error_backup_no_servers_title">Kopia nie zawiera serwerów</string>
+    <string name="error_backup_no_servers_body">Wybierz inny plik albo wróć i dodaj serwer.</string>
+    <string name="error_backup_failed_title">Nie udało się przywrócić kopii</string>
+    <string name="error_backup_failed_body">Spróbuj ponownie albo wybierz inny plik.</string>
+    <string name="label_backup_skipped_workflows">Przepływy pracy: %1$s</string>
+    <string name="label_backup_skipped_prompts">Prompty: %1$s</string>
+    <string name="msg_backup_restored">Kopia zapasowa przywrócona</string>
+    <plurals name="label_backup_servers_count">
+        <item quantity="one">%d serwer</item>
+        <item quantity="few">%d serwery</item>
+        <item quantity="many">%d serwerów</item>
+        <item quantity="other">%d serwera</item>
+    </plurals>
+    <plurals name="label_backup_workflows_count">
+        <item quantity="one">%d przepływ pracy</item>
+        <item quantity="few">%d przepływy pracy</item>
+        <item quantity="many">%d przepływów pracy</item>
+        <item quantity="other">%d przepływu pracy</item>
+    </plurals>
+    <plurals name="label_backup_prompts_count">
+        <item quantity="one">%d prompt</item>
+        <item quantity="few">%d prompty</item>
+        <item quantity="many">%d promptów</item>
+        <item quantity="other">%d promptu</item>
+    </plurals>
+
+    <!-- Import from server -->
+    <string name="button_workflow_from_file">Z pliku</string>
+    <string name="button_workflow_from_server">Z serwera</string>
+    <string name="title_server_import">Import z serwera</string>
+    <string name="msg_server_import_no_match">Brak przepływów pasujących do „%1$s”</string>
+    <string name="label_server_workflow_too_large">za duży do importu (%1$s)</string>
+    <string name="label_server_workflow_imported">Zaimportowany</string>
+    <string name="content_description_downloading">Pobieranie</string>
+    <string name="title_server_import_empty">Na serwerze nie ma przepływów</string>
+    <string name="desc_server_import_empty">Zapisz przepływ w ComfyUI (Workflow › Save), a pojawi się tutaj.</string>
+    <string name="button_refresh">Odśwież</string>
+    <string name="button_retry">Ponów</string>
+    <string name="title_server_import_failed">Nie udało się wczytać przepływów</string>
+    <string name="desc_server_import_failed">Serwer nie odpowiedział. Sprawdź, czy działa, i spróbuj ponownie.</string>
+    <string name="title_server_import_multiuser">Ten serwer ma konta użytkowników</string>
+    <string name="desc_server_import_multiuser">Import z serwerów z wieloma użytkownikami nie jest jeszcze obsługiwany. Wyeksportuj przepływ w ComfyUI i zaimportuj plik.</string>
+    <string name="button_import_from_file">Importuj z pliku</string>
+    <string name="error_server_workflows_refresh">Nie udało się odświeżyć listy</string>
+    <string name="error_server_workflow_too_large">Przepływ %1$s jest za duży do importu (limit %2$s)</string>
+    <string name="error_server_workflow_not_workflow">%1$s to nie jest przepływ ComfyUI</string>
+    <string name="error_server_workflow_download">Nie udało się pobrać przepływu %1$s</string>
+    <plurals name="hint_server_import_search">
+        <item quantity="one">Szukaj w %d przepływie</item>
+        <item quantity="few">Szukaj w %d przepływach</item>
+        <item quantity="many">Szukaj w %d przepływach</item>
+        <item quantity="other">Szukaj w %d przepływu</item>
+    </plurals>
+    <plurals name="label_server_import_count">
+        <item quantity="one">%1$d z %2$d przepływu</item>
+        <item quantity="few">%1$d z %2$d przepływów</item>
+        <item quantity="many">%1$d z %2$d przepływów</item>
+        <item quantity="other">%1$d z %2$d przepływu</item>
+    </plurals>
+    <string name="state_expanded">Rozwinięty</string>
+    <string name="state_collapsed">Zwinięty</string>
 </resources>

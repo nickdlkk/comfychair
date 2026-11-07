@@ -247,6 +247,7 @@ object FieldDisplayRegistry {
         "ckpt_name" to Pair(R.string.label_checkpoint, R.string.field_desc_checkpoint),
         "unet_name" to Pair(R.string.field_unet_model, R.string.field_desc_unet),
         "vae_name" to Pair(R.string.label_vae, R.string.field_desc_vae),
+        "audio_vae_name" to Pair(R.string.label_audio_vae, R.string.field_desc_audio_vae),
         "clip_name" to Pair(R.string.label_clip, R.string.field_desc_clip),
         "clip_name1" to Pair(R.string.label_clip1, R.string.field_desc_clip1),
         "clip_name2" to Pair(R.string.label_clip2, R.string.field_desc_clip2),
@@ -275,6 +276,8 @@ object FieldDisplayRegistry {
         // Image fields
         "image" to Pair(R.string.field_input_image, R.string.field_desc_image),
         "image_filename" to Pair(R.string.field_input_image, R.string.field_desc_image),
+        "video" to Pair(R.string.field_input_video, R.string.field_desc_video),
+        "video_filename" to Pair(R.string.field_input_video, R.string.field_desc_video),
         // Advanced generation fields
         "seed" to Pair(R.string.label_seed, R.string.field_desc_seed),
         "denoise" to Pair(R.string.label_denoise, R.string.field_desc_denoise),

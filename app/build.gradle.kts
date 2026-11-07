@@ -12,8 +12,9 @@ android {
         applicationId = "sh.hnet.comfychair"
         minSdk = 33
         targetSdk = 36
-        versionCode = 41
-        versionName = "v0.9.0"
+        versionCode = 43
+        versionName = "v0.9.2"
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -107,29 +108,32 @@ dependencies {
 }
 
 /**
- * Copies this version's F-Droid changelog (metadata/en-US/changelogs/<versionCode>.txt) into the app's assets as
- * whats_new.txt, for the "What's new" dialog. English only, from the file written for the release anyway; without one,
- * the app shows no dialog.
+ * Copies this version's F-Droid changelogs (metadata/<locale>/changelogs/<versionCode>.txt, English and any
+ * translations written for the release) into the app's assets as whats_new/<locale>.txt, for the What's new page.
+ * Without an English one, the app shows no What's new.
  */
 abstract class WhatsNewAssetTask : DefaultTask() {
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val changelog: ConfigurableFileCollection
+    abstract val changelogs: ConfigurableFileCollection
 
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
     @TaskAction
     fun copy() {
-        val dir = outputDir.get().asFile
-        dir.deleteRecursively()
+        val dir = File(outputDir.get().asFile, "whats_new")
+        outputDir.get().asFile.deleteRecursively()
         dir.mkdirs()
-        changelog.files.firstOrNull { it.isFile }?.copyTo(File(dir, "whats_new.txt"))
+        // metadata/<locale>/changelogs/<versionCode>.txt -> whats_new/<locale>.txt
+        changelogs.files.filter { it.isFile }.forEach { it.copyTo(File(dir, "${it.parentFile.parentFile.name}.txt")) }
     }
 }
 
 val whatsNewAsset = tasks.register<WhatsNewAssetTask>("whatsNewAsset") {
-    changelog.from(rootProject.file("metadata/en-US/changelogs/${android.defaultConfig.versionCode}.txt"))
+    changelogs.from(
+        rootProject.fileTree("metadata") { include("*/changelogs/${android.defaultConfig.versionCode}.txt") }
+    )
 }
 
 androidComponents {

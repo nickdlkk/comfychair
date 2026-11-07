@@ -3,7 +3,6 @@ package sh.hnet.comfychair.viewmodel
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
-import android.widget.Toast
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.lifecycle.ViewModel
@@ -16,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import sh.hnet.comfychair.R
@@ -23,13 +23,18 @@ import sh.hnet.comfychair.cache.MediaCache
 import sh.hnet.comfychair.cache.MediaCacheKey
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.repository.GalleryRepository
+import sh.hnet.comfychair.ui.components.SourceMedia
 import sh.hnet.comfychair.ui.components.mediaOriginKey
+import sh.hnet.comfychair.ui.components.readShownVideo
+import sh.hnet.comfychair.util.AppErrors
 import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.util.GenerationMetadata
 import sh.hnet.comfychair.util.GenerationMetadataLoader
 import sh.hnet.comfychair.util.MediaExport
 import sh.hnet.comfychair.model.ServerImage
 import sh.hnet.comfychair.model.ServerImageDiscovery
+import sh.hnet.comfychair.util.VideoFrames
+import sh.hnet.comfychair.ui.components.SharedVideoPlayer
 
 /**
  * Viewer mode
@@ -251,6 +256,11 @@ class MediaViewerViewModel : ViewModel() {
 
     fun toggleUiVisibility() {
         _uiState.value = _uiState.value.copy(isUiVisible = !_uiState.value.isUiVisible)
+    }
+
+    /** Show or hide the overlays (the playback card's auto-hide, and a video ending). */
+    fun setUiVisible(visible: Boolean) {
+        if (_uiState.value.isUiVisible != visible) _uiState.value = _uiState.value.copy(isUiVisible = visible)
     }
 
     fun setCurrentIndex(index: Int) {
@@ -569,7 +579,7 @@ class MediaViewerViewModel : ViewModel() {
 
     /** No connection: nothing reaches the server, so say so rather than let the items come back unannounced. */
     private fun reportNoConnection() {
-        applicationContext?.let { Toast.makeText(it, R.string.error_history_item_delete, Toast.LENGTH_SHORT).show() }
+        applicationContext?.let { AppErrors.report(it, R.string.error_history_item_delete) }
     }
 
     private fun showItems(items: List<MediaViewerItem>, index: Int) {
@@ -611,6 +621,29 @@ class MediaViewerViewModel : ViewModel() {
         return state.currentBitmap
             ?: MediaCache.getBitmap(key)
             ?: if (state.mode == ViewerMode.GALLERY) MediaCache.fetchImage(key, item.subfolder, item.type) else null
+    }
+
+        /**
+     * The medium shown, for "Use as source": its image, or its video read up to the source limit (RAM only in
+     * memory-first mode). Null when it can't be loaded.
+     */
+    suspend fun currentSourceMedia(): SourceMedia? {
+        val state = _uiState.value
+        if (!state.showsVideo()) return currentImage()?.let { SourceMedia.Image(it) }
+        val context = applicationContext ?: return null
+        state.currentVideoUri?.let { return readShownVideo(context, it) }
+        val item = state.currentItem ?: return null
+        if (state.mode != ViewerMode.GALLERY) return null
+        return MediaCache.fetchVideoBytes(item.toCacheKey(), item.subfolder, item.type)?.let { SourceMedia.Video(it) }
+    }
+
+    /** The frame of the video shown at [positionMs] (Use as source with this frame); null for an image or unreadable. */
+    suspend fun currentFrame(positionMs: Long, frameRate: Float?): Bitmap? {
+        val context = applicationContext ?: return null
+        val uri = _uiState.value.currentVideoUri ?: return null
+        return withContext(Dispatchers.IO) {
+            VideoFrames.frameAt(context, uri, positionMs, frameRate, SharedVideoPlayer::frameIndexAt)
+        }
     }
 
     /**

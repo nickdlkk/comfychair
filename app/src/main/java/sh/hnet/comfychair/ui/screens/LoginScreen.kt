@@ -8,7 +8,6 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +28,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.SettingsBackupRestore
 import androidx.compose.material3.ButtonDefaults
@@ -50,9 +50,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layout
+import sh.hnet.comfychair.ui.components.ServerFormError
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -60,7 +60,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
-import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import sh.hnet.comfychair.BrowserAuthActivity
@@ -71,6 +70,7 @@ import sh.hnet.comfychair.connection.ConnectionFailure
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.connection.PendingCertificate
 import sh.hnet.comfychair.connection.ServerTrustStore
+import sh.hnet.comfychair.connection.connectionError
 import sh.hnet.comfychair.model.AuthCredentials
 import sh.hnet.comfychair.model.AuthType
 import sh.hnet.comfychair.model.Server
@@ -78,6 +78,7 @@ import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.storage.CredentialStorage
 import sh.hnet.comfychair.storage.MediaStorageMode
 import sh.hnet.comfychair.storage.ServerStorage
+import sh.hnet.comfychair.ui.components.AppLogo
 import sh.hnet.comfychair.ui.components.CertificateTrustDialog
 import sh.hnet.comfychair.ui.components.ConnectionSplitButton
 import sh.hnet.comfychair.ui.components.InsecureFallbackDialog
@@ -89,6 +90,7 @@ import sh.hnet.comfychair.ui.components.settings.SettingsRadioRow
 import sh.hnet.comfychair.storage.BackupManager
 import sh.hnet.comfychair.storage.RestoreResult
 import sh.hnet.comfychair.ui.components.shared.TooltipIconButton
+import sh.hnet.comfychair.util.AppErrors
 import sh.hnet.comfychair.util.ServerUrlUtils
 
 /**
@@ -130,6 +132,16 @@ fun LoginScreen() {
 
     // Dialog state
     var showServerDialog by remember { mutableStateOf(false) }
+    // The form of a server whose credentials are missing (opened by Connect or Edit) saves and connects: it stays open
+    // until connected, showing a failure in its fields
+    var connectAfterSave by remember { mutableStateOf(false) }
+    var serverFormError by remember { mutableStateOf<ServerFormError?>(null) }
+    // Servers whose credentials aren't on this device (restored from a backup); recounted when credentials are saved,
+    // which leaves the server list as it was
+    var credentialsVersion by remember { mutableIntStateOf(0) }
+    val missingCredentials = remember(servers, credentialsVersion) {
+        servers.filter { credentialStorage.isMissingCredentials(it.id, it.authType) }.map { it.id }.toSet()
+    }
     var serverToEdit by remember { mutableStateOf<Server?>(null) }
     var serverToDelete by remember { mutableStateOf<Server?>(null) }
     var showOfflinePrompt by remember { mutableStateOf(false) }
@@ -173,11 +185,7 @@ fun LoginScreen() {
                 retryAfterAuthServer = server  // Triggers retry via LaunchedEffect below
             } else {
                 // User tapped Done before completing sign-in
-                Toast.makeText(
-                    context,
-                    R.string.error_browser_auth_cancelled,
-                    Toast.LENGTH_SHORT
-                ).show()
+                AppErrors.report(context, R.string.error_browser_auth_cancelled)
                 connectionState = ConnectionState.IDLE
             }
         } else {
@@ -228,6 +236,11 @@ fun LoginScreen() {
                 connectionState = ConnectionState.IDLE
             } else if (success) {
                 connectionState = ConnectionState.CONNECTED
+                if (connectAfterSave) {
+                    showServerDialog = false
+                    serverToEdit = null
+                    connectAfterSave = false
+                }
 
                 delay(500L)
 
@@ -260,15 +273,19 @@ fun LoginScreen() {
             } else {
                 connectionState = ConnectionState.FAILED
 
-                // Check if offline cache exists - offer offline mode
-                if (ConnectionManager.hasOfflineCache(context, server.id)) {
+                // A server that doesn't answer can wait: offer what's kept on this device. One that answered (refused
+                // the credentials, or isn't ComfyUI) needs fixing first, so say why.
+                val unreachable = failureType == ConnectionFailure.NETWORK || failureType == ConnectionFailure.STALLED
+                if (connectAfterSave && showServerDialog) {
+                    // Saved from the form: it stays open, the failure in the field to fix
+                    serverFormError = ServerFormError.of(context, failureType, attempt = (serverFormError?.attempt ?: 0) + 1)
+                    connectionState = ConnectionState.IDLE
+                    return@launch
+                } else if (unreachable && ConnectionManager.hasOfflineCache(context, server.id)) {
                     offlinePromptServer = server
                     showOfflinePrompt = true
                 } else {
-                    // No cache available, just show error Toast
-                    errorMessage?.let { msg ->
-                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                    }
+                    AppErrors.report(connectionError(context, failureType, errorMessage))
                 }
 
                 delay(2000)
@@ -295,7 +312,7 @@ fun LoginScreen() {
     fun attemptOfflineConnection(server: Server) {
         // Check if cache exists for this server
         if (!ConnectionManager.hasOfflineCache(context, server.id)) {
-            Toast.makeText(context, R.string.error_no_offline_cache, Toast.LENGTH_LONG).show()
+            AppErrors.report(context, R.string.error_no_offline_cache)
             return
         }
 
@@ -318,7 +335,7 @@ fun LoginScreen() {
                 context.startActivity(intent)
             } else {
                 connectionState = ConnectionState.FAILED
-                Toast.makeText(context, R.string.error_no_offline_cache, Toast.LENGTH_LONG).show()
+                AppErrors.report(context, R.string.error_no_offline_cache)
                 delay(2000)
                 connectionState = ConnectionState.IDLE
             }
@@ -402,7 +419,8 @@ fun LoginScreen() {
         val shouldAutoConnect = isAutoConnectEnabled && !ConnectionManager.isUserInitiatedLogout && !isOfflineMode
         ConnectionManager.clearLogoutFlag()
 
-        if (!hasAutoConnected && shouldAutoConnect && selectedServer != null) {
+        // Not without the credentials: the row asks for them, Connect opens the form
+        if (!hasAutoConnected && shouldAutoConnect && selectedServer != null && selectedServer!!.id !in missingCredentials) {
             hasAutoConnected = true
             delay(500)
             if (connectionState == ConnectionState.IDLE) {
@@ -430,12 +448,18 @@ fun LoginScreen() {
         ServerDialog(
             server = serverToEdit,
             existingCredentials = existingCredentials,
+            missingCredentials = serverToEdit?.id in missingCredentials,
+            connect = connectAfterSave,
+            busy = connectAfterSave && connectionState != ConnectionState.IDLE,
+            error = serverFormError,
             isNameTaken = { name, excludeServerId ->
                 serverStorage.isServerNameTaken(name, excludeServerId)
             },
             onDismiss = {
                 showServerDialog = false
                 serverToEdit = null
+                connectAfterSave = false
+                serverFormError = null
             },
             onSave = { name, hostname, port, authType, credentials ->
                 if (serverToEdit != null) {
@@ -450,12 +474,21 @@ fun LoginScreen() {
 
                     // Save credentials
                     credentialStorage.saveCredentials(updatedServer.id, credentials)
+                    credentialsVersion++
 
                     servers = serverStorage.getServers()
 
                     // If editing the selected server, update selection
                     if (selectedServer?.id == updatedServer.id) {
                         selectedServer = updatedServer
+                    }
+                    // Credentials entered after a restore: connect, the form open until connected
+                    if (connectAfterSave) {
+                        selectedServer = updatedServer
+                        serverStorage.setSelectedServerId(updatedServer.id)
+                        serverFormError = null
+                        attemptConnection(updatedServer)
+                        return@ServerDialog
                     }
                 } else {
                     // Add new server
@@ -473,6 +506,7 @@ fun LoginScreen() {
                 }
                 showServerDialog = false
                 serverToEdit = null
+                connectAfterSave = false
             }
         )
     }
@@ -581,22 +615,7 @@ fun LoginScreen() {
                 .verticalScroll(rememberScrollState())
         ) {
             Spacer(Modifier.height(16.dp))
-            // The logo file is the launcher icon's foreground, with the safe zone around the mark: the mark is moved
-            // to start on the title's line, and the empty band below it doesn't push the title down
-            Image(
-                painter = painterResource(R.drawable.ic_launcher_foreground),
-                contentDescription = null,
-                modifier = Modifier
-                    .size(LOGO_SIZE)
-                    .layout { measurable, constraints ->
-                        val placeable = measurable.measure(constraints)
-                        val markStart = (placeable.width * LOGO_MARK_START).roundToInt()
-                        val emptyBelow = (placeable.height * LOGO_EMPTY_BELOW).roundToInt()
-                        layout(placeable.width, placeable.height - emptyBelow) {
-                            placeable.place(TITLE_INSET.roundToPx() - markStart, 0)
-                        }
-                    }
-            )
+            AppLogo(titleInset = TITLE_INSET)
             Text(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.displaySmall,
@@ -627,6 +646,13 @@ fun LoginScreen() {
                                 shapes = shapes,
                                 title = server.name,
                                 supporting = "${server.hostname}:${server.port}",
+                                note = if (server.id in missingCredentials) {
+                                    stringResource(
+                                        if (server.authType == AuthType.BASIC) R.string.label_server_credentials_missing_basic
+                                        else R.string.label_server_credentials_missing_token
+                                    )
+                                } else null,
+                                noteIcon = Icons.Rounded.Key,
                                 selected = server.id == selectedServer?.id,
                                 enabled = !busy,
                                 onSelect = {
@@ -638,6 +664,7 @@ fun LoginScreen() {
                                         enabled = !busy,
                                         onEdit = {
                                             serverToEdit = server
+                                            connectAfterSave = server.id in missingCredentials
                                             showServerDialog = true
                                         },
                                         onDelete = { serverToDelete = server }
@@ -689,7 +716,15 @@ fun LoginScreen() {
             canConnectOffline = canConnectOffline,
             onConnect = {
                 selectedServer?.let { server ->
-                    if (isOfflineMode) attemptOfflineConnection(server) else attemptConnection(server)
+                    when {
+                        isOfflineMode -> attemptOfflineConnection(server)
+                        server.id in missingCredentials -> {
+                            serverToEdit = server
+                            connectAfterSave = true
+                            showServerDialog = true
+                        }
+                        else -> attemptConnection(server)
+                    }
                 }
             },
             onConnectOffline = {
@@ -744,14 +779,6 @@ private fun ServerRowMenu(enabled: Boolean, onEdit: () -> Unit, onDelete: () -> 
         }
     }
 }
-
-private val LOGO_SIZE = 144.dp
-
-/** Where the mark starts in the logo file, as a share of its width (measured from the icon's artwork). */
-private const val LOGO_MARK_START = 0.30f
-
-/** The empty band below the mark in the logo file, as a share of its height. */
-private const val LOGO_EMPTY_BELOW = 0.265f
 
 /** Start inset of the title and subtitle, which the mark lines up with. */
 private val TITLE_INSET = 8.dp

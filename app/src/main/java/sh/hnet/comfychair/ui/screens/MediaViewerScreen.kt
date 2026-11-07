@@ -4,14 +4,17 @@ package sh.hnet.comfychair.ui.screens
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.widget.Toast
+import android.view.accessibility.AccessibilityManager
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -32,6 +35,7 @@ import androidx.compose.material.icons.rounded.Animation
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.MovieFilter
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.DropdownMenuGroup
@@ -56,6 +60,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -73,23 +78,28 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import sh.hnet.comfychair.R
 import sh.hnet.comfychair.cache.MediaCache
 import sh.hnet.comfychair.cache.MediaCacheKey
+import sh.hnet.comfychair.ui.components.ErrorSnackbars
 import sh.hnet.comfychair.ui.components.ImageViewer
 import sh.hnet.comfychair.ui.components.MetadataBottomSheet
 import sh.hnet.comfychair.ui.components.SharedVideoPlayer
+import sh.hnet.comfychair.ui.components.SourceMedia
 import sh.hnet.comfychair.ui.components.SourceTarget
 import sh.hnet.comfychair.ui.components.VideoPlayer
 import sh.hnet.comfychair.ui.components.VideoScaleMode
 import sh.hnet.comfychair.ui.components.ViewerCloseFrom
+import sh.hnet.comfychair.ui.components.ViewerPlaybackCard
 import sh.hnet.comfychair.ui.components.dialogs.ConfirmDialog
 import sh.hnet.comfychair.ui.components.rememberLazyBitmap
 import sh.hnet.comfychair.ui.components.rememberViewerDismissState
 import sh.hnet.comfychair.ui.components.shared.CircleArrowButton
 import sh.hnet.comfychair.ui.components.shared.TooltipIconButton
 import sh.hnet.comfychair.ui.components.viewerSwipeToDismiss
+import sh.hnet.comfychair.util.AppErrors
 import sh.hnet.comfychair.viewmodel.MediaViewerEvent
 import sh.hnet.comfychair.viewmodel.MediaViewerViewModel
 import sh.hnet.comfychair.viewmodel.ViewerMode
@@ -99,7 +109,7 @@ import sh.hnet.comfychair.viewmodel.ViewerMode
 fun MediaViewerScreen(
     viewModel: MediaViewerViewModel,
     onClose: () -> Unit,
-    onUseAsSource: (SourceTarget, Bitmap) -> Unit,
+    onUseAsSource: (SourceTarget, SourceMedia) -> Unit,
     onRequestClose: (ViewerCloseFrom) -> Boolean = { false },
     modifier: Modifier = Modifier
 ) {
@@ -134,8 +144,17 @@ fun MediaViewerScreen(
     // Metadata bottom sheet state
     var showMetadataSheet by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+    // The app's errors while the viewer is open (the main screens' snackbars are under it)
+    ErrorSnackbars(snackbarHostState)
+    // Each opening of the viewer starts with the sound on
+    LaunchedEffect(Unit) { SharedVideoPlayer.startViewerSession() }
     // Results of the job about to be deleted, while asking (only when there's more than the one shown)
     var confirmJobDeletion by remember { mutableStateOf<Int?>(null) }
+    // Playback card: uses of its controls (restart the auto-hide), the slider being held, an open toolbar menu
+    var playbackInteractions by remember { mutableIntStateOf(0) }
+    var seeking by remember { mutableStateOf(false) }
+    var toolbarMenuOpen by remember { mutableStateOf(false) }
+    var bottomControlsHeight by remember { mutableIntStateOf(0) }
     val resources = LocalResources.current
 
     // Load metadata when sheet is shown
@@ -166,7 +185,7 @@ fun MediaViewerScreen(
         viewModel.events.collect { event ->
             when (event) {
                 is MediaViewerEvent.ShowToast -> {
-                    Toast.makeText(context, event.messageResId, Toast.LENGTH_SHORT).show()
+                    AppErrors.notify(context, event.messageResId)
                 }
                 is MediaViewerEvent.ItemDeleted -> {
                     // Items list changed, pager will recompose with new key
@@ -399,53 +418,114 @@ fun MediaViewerScreen(
             }
         }
 
-        // Actions on the item, centred at the bottom
-        AnimatedVisibility(
-            visible = overlaysShown,
-            enter = fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
-            exit = fadeOut(MaterialTheme.motionScheme.defaultEffectsSpec()),
+        // Playback of a video page: the overlays hide after a few seconds of playback without interaction (as the
+        // system's "time to take action" says), never while paused, ended, seeking, with a menu open or with TalkBack
+        val playback by SharedVideoPlayer.state.collectAsState()
+        val accessibility = remember { context.getSystemService(AccessibilityManager::class.java) }
+        LaunchedEffect(
+            currentIsVideo, playback.isPlaying, uiState.isUiVisible, playbackInteractions, seeking, toolbarMenuOpen,
+            showMetadataSheet, confirmJobDeletion
+        ) {
+            if (!currentIsVideo || !playback.isPlaying || !uiState.isUiVisible || seeking || toolbarMenuOpen ||
+                showMetadataSheet || confirmJobDeletion != null || accessibility?.isTouchExplorationEnabled == true
+            ) return@LaunchedEffect
+            val timeout = accessibility?.getRecommendedTimeoutMillis(
+                AUTO_HIDE_MS, AccessibilityManager.FLAG_CONTENT_CONTROLS
+            ) ?: AUTO_HIDE_MS
+            delay(timeout.toLong())
+            viewModel.setUiVisible(false)
+        }
+        // A video that ended (looping off) brings the overlays back
+        LaunchedEffect(playback.ended) {
+            if (playback.ended && currentIsVideo) viewModel.setUiVisible(true)
+        }
+
+        // At the bottom: the playback card (video pages only) above the item's actions, which never move
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
                 .padding(bottom = toolbarBottomPadding)
+                .onSizeChanged { bottomControlsHeight = it.height }
         ) {
-            MediaViewerFloatingToolbar(
-                // Videos can't be a source yet. Decided by the item alone: loading state changes with every
-                // page and would make the button flicker
-                canUseAsSource = uiState.currentItem?.isVideo == false,
-                // Gallery items only (a result on a generation screen isn't deleted from here)
-                onDelete = if (uiState.mode == ViewerMode.GALLERY) {
-                    {
-                        // The server deletes whole jobs: with more results than this one, ask first
-                        val job = uiState.currentItem?.promptId
-                        val count = uiState.items.count { it.promptId == job }
-                        if (count > 1) confirmJobDeletion = count else viewModel.deleteCurrentItem()
-                    }
-                } else null,
-                onSave = { viewModel.saveCurrentItem() },
-                onShare = { viewModel.shareCurrentItem() },
-                onUseAsSource = { target ->
-                    scope.launch {
-                        val bitmap = viewModel.currentImage()
-                        if (bitmap != null) {
-                            onUseAsSource(target, bitmap)
-                            onClose()
-                        } else {
-                            Toast.makeText(context, R.string.error_failed_load_image, Toast.LENGTH_SHORT).show()
+            AnimatedVisibility(
+                visible = overlaysShown && currentIsVideo,
+                enter = fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()) +
+                    expandVertically(MaterialTheme.motionScheme.defaultSpatialSpec(), expandFrom = Alignment.Bottom),
+                exit = fadeOut(MaterialTheme.motionScheme.defaultEffectsSpec()) +
+                    shrinkVertically(MaterialTheme.motionScheme.defaultSpatialSpec(), shrinkTowards = Alignment.Bottom)
+            ) {
+                ViewerPlaybackCard(
+                    onInteraction = { playbackInteractions++ },
+                    onDraggingChange = { seeking = it },
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+            // Actions on the item
+            AnimatedVisibility(
+                visible = overlaysShown,
+                enter = fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
+                exit = fadeOut(MaterialTheme.motionScheme.defaultEffectsSpec())
+            ) {
+                MediaViewerFloatingToolbar(
+                    // Decided by the item alone: loading state changes with every page and would make the menu flicker
+                    isVideo = uiState.currentItem?.isVideo == true,
+                    // Gallery items only (a result on a generation screen isn't deleted from here)
+                    onDelete = if (uiState.mode == ViewerMode.GALLERY) {
+                        {
+                            // The server deletes whole jobs: with more results than this one, ask first
+                            val job = uiState.currentItem?.promptId
+                            val count = uiState.items.count { it.promptId == job }
+                            if (count > 1) confirmJobDeletion = count else viewModel.deleteCurrentItem()
                         }
+                    } else null,
+                    onSave = { viewModel.saveCurrentItem() },
+                    onShare = { viewModel.shareCurrentItem() },
+                    onUseAsSource = { target, currentFrame ->
+                        scope.launch {
+                            // Read before closing: the viewer's state is cleared on close
+                            val media = if (currentFrame) {
+                                // The frame on screen (playback paused when the menu opened)
+                                viewModel.currentFrame(SharedVideoPlayer.positionMs(), SharedVideoPlayer.state.value.frameRate)
+                                    ?.let { SourceMedia.Image(it) }
+                                    ?: run {
+                                        AppErrors.report(context, R.string.error_frame_unreadable)
+                                        return@launch
+                                    }
+                            } else {
+                                viewModel.currentSourceMedia()
+                            }
+                            if (media != null) {
+                                onUseAsSource(target, media)
+                                onClose()
+                            } else {
+                                val messageRes = if (uiState.currentItem?.isVideo == true) {
+                                    R.string.error_source_video_unreadable
+                                } else {
+                                    R.string.error_failed_load_image
+                                }
+                                AppErrors.report(context, messageRes)
+                            }
+                        }
+                    },
+                    onInfo = { showMetadataSheet = true },
+                    // A video stops on the frame shown, which Edit/Animate this frame take
+                    onMenuOpenChange = { open ->
+                        toolbarMenuOpen = open
+                        if (open && currentIsVideo) SharedVideoPlayer.pause()
                     }
-                },
-                onInfo = { showMetadataSheet = true }
-            )
+                )
+            }
         }
 
-        // Undo of a deletion, above the toolbar
+        // Undo of a deletion, above the toolbar (and the playback card)
         SnackbarHost(
             snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(bottom = toolbarBottomPadding + 72.dp)
+                .padding(bottom = toolbarBottomPadding + with(density) { bottomControlsHeight.toDp() } + 8.dp)
         ) { data ->
             Snackbar(data, shape = MaterialTheme.shapes.extraLarge, modifier = Modifier.padding(horizontal = 12.dp))
         }
@@ -477,47 +557,58 @@ fun MediaViewerScreen(
 
 /**
  * The viewer's actions, in the same order as everywhere: Save, Share, Use as source, Details, then Delete last.
- * Use as source opens a small menu upward with the screens that take an image.
+ * Use as source opens a small menu upward with the screens that take the medium: for an image Image to Image and
+ * Image to Video; for a video Video to Video, Image to Video from its last frame, and the frame shown to Image to Image
+ * or Image to Video.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun MediaViewerFloatingToolbar(
-    canUseAsSource: Boolean,
+    isVideo: Boolean,
     onDelete: (() -> Unit)?,
     onSave: () -> Unit,
     onShare: () -> Unit,
-    onUseAsSource: (SourceTarget) -> Unit,
+    onUseAsSource: (target: SourceTarget, currentFrame: Boolean) -> Unit,
     onInfo: () -> Unit,
+    onMenuOpenChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var sourceMenuOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(sourceMenuOpen) { onMenuOpenChange(sourceMenuOpen) }
     HorizontalFloatingToolbar(expanded = true, modifier = modifier) {
         TooltipIconButton(Icons.Rounded.Download, stringResource(R.string.media_viewer_save), onSave)
         TooltipIconButton(Icons.Rounded.Share, stringResource(R.string.media_viewer_share), onShare)
-        if (canUseAsSource) {
-            Box {
-                TooltipIconButton(
-                    Icons.AutoMirrored.Rounded.Input,
-                    stringResource(R.string.button_use_as_source),
-                    { sourceMenuOpen = true }
-                )
-                DropdownMenuPopup(expanded = sourceMenuOpen, onDismissRequest = { sourceMenuOpen = false }) {
-                    DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 1)) {
-                        val targets = listOf(
-                            Triple(SourceTarget.IMAGE_TO_IMAGE, R.string.button_edit_this_image, Icons.Rounded.Edit),
-                            Triple(SourceTarget.IMAGE_TO_VIDEO, R.string.button_animate_it, Icons.Rounded.Animation)
+        Box {
+            TooltipIconButton(
+                Icons.AutoMirrored.Rounded.Input,
+                stringResource(R.string.button_use_as_source),
+                { sourceMenuOpen = true }
+            )
+            DropdownMenuPopup(expanded = sourceMenuOpen, onDismissRequest = { sourceMenuOpen = false }) {
+                DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 1)) {
+                    val targets = if (isVideo) {
+                        listOf(
+                            SourceChoice(SourceTarget.IMAGE_TO_IMAGE, R.string.button_edit_this_frame, Icons.Rounded.Edit, currentFrame = true),
+                            SourceChoice(SourceTarget.VIDEO_TO_VIDEO, R.string.button_edit_this_video, Icons.Rounded.MovieFilter),
+                            SourceChoice(SourceTarget.IMAGE_TO_VIDEO, R.string.button_animate_this_frame, Icons.Rounded.Animation, currentFrame = true),
+                            SourceChoice(SourceTarget.IMAGE_TO_VIDEO, R.string.button_animate_last_frame, Icons.Rounded.Animation)
                         )
-                        targets.forEachIndexed { index, (target, label, icon) ->
-                            DropdownMenuItem(
-                                text = { Text(stringResource(label)) },
-                                shape = MenuDefaults.itemShape(index, targets.size).shape,
-                                leadingIcon = { Icon(icon, contentDescription = null) },
-                                onClick = {
-                                    sourceMenuOpen = false
-                                    onUseAsSource(target)
-                                }
-                            )
-                        }
+                    } else {
+                        listOf(
+                            SourceChoice(SourceTarget.IMAGE_TO_IMAGE, R.string.button_edit_this_image, Icons.Rounded.Edit),
+                            SourceChoice(SourceTarget.IMAGE_TO_VIDEO, R.string.button_animate_it, Icons.Rounded.Animation)
+                        )
+                    }
+                    targets.forEachIndexed { index, (target, label, icon, currentFrame) ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(label)) },
+                            shape = MenuDefaults.itemShape(index, targets.size).shape,
+                            leadingIcon = { Icon(icon, contentDescription = null) },
+                            onClick = {
+                                sourceMenuOpen = false
+                                onUseAsSource(target, currentFrame)
+                            }
+                        )
                     }
                 }
             }
@@ -554,6 +645,8 @@ private fun MediaContent(
                 VideoPlayer(
                     videoUri = videoUri,
                     modifier = Modifier.fillMaxSize(),
+                    // The viewer's sound (on when it opens) and its loop setting
+                    surface = SharedVideoPlayer.Surface.VIEWER,
                     scaleMode = VideoScaleMode.FIT,
                     enableZoom = true,
                     onSingleTap = onSingleTap,
@@ -595,3 +688,14 @@ private fun pauseVideo(context: Context, isVideo: Boolean): Boolean {
 private fun resumeVideo(context: Context) {
     SharedVideoPlayer.getPlayer(context).play()
 }
+
+// Overlays hide after this long of playback without interaction (adjusted by the system's accessibility timeout)
+private const val AUTO_HIDE_MS = 3000
+
+/** An entry of the viewer's Use as source menu: the screen, its label and icon, and whether it takes the frame shown. */
+private data class SourceChoice(
+    val target: SourceTarget,
+    val label: Int,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val currentFrame: Boolean = false
+)

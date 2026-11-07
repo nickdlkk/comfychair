@@ -94,36 +94,32 @@ object ValidationUtils {
     }
 
     /**
-     * Validate video length in frames.
-     * @param value The length value as string
-     * @param context Optional context for localized error message
-     * @param min Minimum allowed value (default 1)
-     * @param max Maximum allowed value (default 500)
-     * @return Error message if invalid, null if valid
+     * Validate a length: a whole number of at least 1, with no upper limit of the app's own (the workflow's nodes have
+     * theirs, which the server checks).
      */
-    fun validateLength(
-        value: String,
-        context: Context? = null,
-        min: Int = 1,
-        max: Int = 500
-    ): String? {
+    fun validateLength(value: String, context: Context? = null): String? {
         if (value.isEmpty()) return null
         val intValue = value.toIntOrNull()
-        return if (intValue == null || intValue !in min..max) {
-            context?.getString(R.string.error_length_range) ?: "Must be $min-$max"
+        return if (intValue == null || intValue < 1) {
+            context?.getString(R.string.error_length_range) ?: "Must be at least 1"
         } else null
     }
 
     /**
-     * Validate video length in frames: 1-129 in steps of 4 (1, 5, 9, 13...), as video latents require.
+     * Validate video length in frames on the grid of the workflow's latent node: [min], then steps of [step] (1, 5,
+     * 9, 13... for most video models; 5, 22, 39... for MiniMax H3), with no upper limit of the app's own (the
+     * workflow's nodes have theirs, which the server checks).
      */
-    fun validateVideoLength(value: String, context: Context? = null): String? {
+    fun validateVideoLength(value: String, context: Context? = null, min: Int = 1, step: Int = 4): String? {
         val num = value.toIntOrNull()
+        val validStep = step.coerceAtLeast(1)
         return when {
             value.isEmpty() -> context?.getString(R.string.error_required) ?: "Required"
             num == null -> context?.getString(R.string.error_invalid_number) ?: "Invalid number"
-            num !in 1..129 -> context?.getString(R.string.error_length_range) ?: "Must be 1-129"
-            (num - 1) % 4 != 0 -> context?.getString(R.string.error_length_step) ?: "Must be 1, 5, 9, 13... (steps of 4)"
+            num < min -> context?.getString(R.string.error_length_min, min) ?: "Must be at least $min"
+            (num - min) % validStep != 0 -> context?.getString(
+                R.string.error_length_step, min, min + validStep, min + 2 * validStep, validStep
+            ) ?: "Must be $min, ${min + validStep}, ${min + 2 * validStep}… (steps of $validStep)"
             else -> null
         }
     }
@@ -275,6 +271,19 @@ object ValidationUtils {
      * @param max Maximum allowed value (nullable = no limit)
      * @return Error message if invalid, null if valid
      */
+    /**
+     * Validate a whole number against bounds that may need 64 bits (ComfyUI's INT inputs: PrimitiveInt allows
+     * ±9223372036854775807, which [validateInt] can't hold).
+     */
+    fun validateWholeNumber(value: String, context: Context? = null, min: Long? = null, max: Long? = null): String? {
+        if (value.isEmpty()) return null
+        val number = value.toLongOrNull()
+            ?: return context?.getString(R.string.error_invalid_integer) ?: "Must be a whole number"
+        if (min != null && number < min) return context?.getString(R.string.error_value_min, min) ?: "Minimum: $min"
+        if (max != null && number > max) return context?.getString(R.string.error_value_max, max) ?: "Maximum: $max"
+        return null
+    }
+
     fun validateInt(
         value: String,
         context: Context? = null,

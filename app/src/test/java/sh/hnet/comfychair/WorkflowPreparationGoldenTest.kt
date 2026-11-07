@@ -91,7 +91,8 @@ class WorkflowPreparationGoldenTest {
             ModelSlot.LORA to "mandatory_lora.safetensors",
             ModelSlot.HIGHNOISE_UNET to "high_unet.safetensors", ModelSlot.LOWNOISE_UNET to "low_unet.safetensors",
             ModelSlot.HIGHNOISE_LORA to "high_lora_m.safetensors", ModelSlot.LOWNOISE_LORA to "low_lora_m.safetensors",
-            ModelSlot.VAE to "vae.safetensors", ModelSlot.CLIP to "clip.safetensors",
+            ModelSlot.VAE to "vae.safetensors", ModelSlot.AUDIO_VAE to "audio_vae.safetensors",
+            ModelSlot.CLIP to "clip.safetensors",
             ModelSlot.CLIP1 to "clip1.safetensors", ModelSlot.CLIP2 to "clip2.safetensors",
             ModelSlot.CLIP3 to "clip3.safetensors", ModelSlot.CLIP4 to "clip4.safetensors",
             ModelSlot.TEXT_ENCODER to "te.safetensors", ModelSlot.LATENT_UPSCALE_MODEL to "lu.safetensors"
@@ -106,12 +107,15 @@ class WorkflowPreparationGoldenTest {
     /** The workflow JSON the app sends for a template; variants where inputs differ. */
     private fun prepare(workflow: WorkflowManager.Workflow): List<Pair<String?, String>> {
         val id = workflow.id
-        val isVideo = workflow.type == WorkflowType.TTV || workflow.type == WorkflowType.ITV
+        val isVideo = workflow.type == WorkflowType.TTV || workflow.type == WorkflowType.ITV || workflow.type == WorkflowType.V2V
         val p = params(if (isVideo) "480" else "1216")
         val source = WorkflowManager.WorkflowImages(source = "source_upload.png")
         return when (workflow.type) {
             WorkflowType.TTI, WorkflowType.TTV -> listOf(null to WorkflowManager.prepareWorkflow(id, p)!!)
             WorkflowType.ITI_INPAINTING, WorkflowType.ITV -> listOf(null to WorkflowManager.prepareWorkflow(id, p, source)!!)
+            WorkflowType.V2V -> listOf(
+                null to WorkflowManager.prepareWorkflow(id, p, WorkflowManager.WorkflowImages(video = "source_upload.mp4"))!!
+            )
             WorkflowType.ITI_EDITING -> listOf(
                 "no_refs" to WorkflowManager.prepareWorkflow(id, p, source)!!,
                 "two_refs" to WorkflowManager.prepareWorkflow(

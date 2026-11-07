@@ -3,7 +3,6 @@
 package sh.hnet.comfychair.ui.screens
 
 import android.app.Activity
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,6 +56,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.OpenInFull
@@ -136,7 +136,6 @@ import sh.hnet.comfychair.R
 import sh.hnet.comfychair.WorkflowEditorActivity
 import sh.hnet.comfychair.WorkflowManager
 import sh.hnet.comfychair.WorkflowType
-import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.ui.components.LocalAppSnackbarHostState
 import sh.hnet.comfychair.ui.components.WorkflowGraphPreview
@@ -149,9 +148,8 @@ import sh.hnet.comfychair.ui.components.settings.SettingsPage
 import sh.hnet.comfychair.ui.components.settings.SettingsSwitchRow
 import sh.hnet.comfychair.ui.components.shared.NoOverscrollContainer
 import sh.hnet.comfychair.ui.components.shared.TooltipIconButton
-import sh.hnet.comfychair.ui.components.workflow.MissingFieldsDialog
-import sh.hnet.comfychair.ui.components.workflow.MissingNodesDialog
-import sh.hnet.comfychair.ui.components.workflow.WorkflowDetailsDialog
+import sh.hnet.comfychair.ui.components.workflow.WorkflowImportHost
+import sh.hnet.comfychair.util.AppErrors
 import sh.hnet.comfychair.viewmodel.ExportFormat
 import sh.hnet.comfychair.viewmodel.WorkflowFilter
 import sh.hnet.comfychair.viewmodel.WorkflowManagementEvent
@@ -163,7 +161,8 @@ import sh.hnet.comfychair.viewmodel.WorkflowManagementUiState
 fun WorkflowsSettingsScreen(
     viewModel: WorkflowManagementViewModel,
     onNavigateBack: () -> Unit,
-    onOpenDetails: (workflowId: String) -> Unit
+    onOpenDetails: (workflowId: String) -> Unit,
+    onImportFromServer: () -> Unit
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
@@ -180,22 +179,6 @@ fun WorkflowsSettingsScreen(
     ) { uri ->
         uri?.let {
             viewModel.onFileSelected(context, it)
-        }
-    }
-
-    // Editor launcher for mapping mode
-    val editorLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val mappingsJson = result.data?.getStringExtra(WorkflowEditorActivity.EXTRA_RESULT_MAPPINGS)
-            if (mappingsJson != null) {
-                // Parse mappings and complete import
-                val mappings = parseMappingsFromJson(mappingsJson)
-                viewModel.completeImport(mappings)
-            }
-        } else {
-            viewModel.cancelMapping()
         }
     }
 
@@ -229,54 +212,21 @@ fun WorkflowsSettingsScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    // Handle events, only while this page is on top (the detail page handles its own)
-    val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-          viewModel.pageEvents.collect { event ->
-            when (event) {
-                is WorkflowManagementEvent.ShowToast -> {
-                    Toast.makeText(context, event.messageResId, Toast.LENGTH_SHORT).show()
-                }
-                is WorkflowManagementEvent.ShowToastMessage -> {
-                    Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
-                }
-                is WorkflowManagementEvent.LaunchEditor -> {
-                    val pending = event.pendingUpload
-                    val mappingState = pending.mappingState
-                    if (mappingState != null) {
-                        val intent = WorkflowEditorActivity.createIntentForMapping(
-                            context = context,
-                            jsonContent = pending.jsonContent,
-                            name = pending.name,
-                            description = pending.description,
-                            mappingState = mappingState
-                        )
-                        editorLauncher.launch(intent)
-                    }
-                }
-                is WorkflowManagementEvent.WorkflowImported -> {
-                    val id = event.workflowId
-                    highlightedId = id
-                    // Its section's item first, so the row is composed and can bring itself into view
-                    val type = WorkflowManager.getWorkflowById(id)?.type
-                    val sectionIndex = sectionOrder.filter { it in viewModel.uiState.value.filter.types }.indexOf(type)
-                    if (sectionIndex >= 0) listState.scrollToItem(1 + sectionIndex)
-                    scope.launch {
-                        val result = snackbar?.showSnackbar(
-                            message = resources.getString(R.string.msg_workflow_import_success),
-                            actionLabel = resources.getString(R.string.button_open),
-                            duration = SnackbarDuration.Short
-                        )
-                        if (result == SnackbarResult.ActionPerformed) onOpenDetails(id)
-                    }
-                }
-                // From the detail page
-                is WorkflowManagementEvent.LaunchExportFilePicker,
-                is WorkflowManagementEvent.DuplicateCreated,
-                is WorkflowManagementEvent.WorkflowDeleted -> Unit
-            }
-          }
+    // The import's dialogs and the field mapping, shared with the server's list; a finished import is shown in the
+    // list and offered to open
+    WorkflowImportHost(viewModel) { id ->
+        highlightedId = id
+        // Its section's item first, so the row is composed and can bring itself into view
+        val type = WorkflowManager.getWorkflowById(id)?.type
+        val sectionIndex = sectionOrder.filter { it in viewModel.uiState.value.filter.types }.indexOf(type)
+        if (sectionIndex >= 0) listState.scrollToItem(1 + sectionIndex)
+        scope.launch {
+            val result = snackbar?.showSnackbar(
+                message = resources.getString(R.string.msg_workflow_import_success),
+                actionLabel = resources.getString(R.string.button_open),
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) onOpenDetails(id)
         }
     }
 
@@ -288,7 +238,8 @@ fun WorkflowsSettingsScreen(
         WorkflowSectionData(WorkflowType.ITI_EDITING, R.string.workflow_section_iti_editing, uiState.itiEditingWorkflows),
         WorkflowSectionData(WorkflowType.ITI_INPAINTING, R.string.workflow_section_iti_inpainting, uiState.itiInpaintingWorkflows),
         WorkflowSectionData(WorkflowType.TTV, R.string.workflow_section_ttv, uiState.ttvWorkflows),
-        WorkflowSectionData(WorkflowType.ITV, R.string.workflow_section_itv, uiState.itvWorkflows)
+        WorkflowSectionData(WorkflowType.ITV, R.string.workflow_section_itv, uiState.itvWorkflows),
+        WorkflowSectionData(WorkflowType.V2V, R.string.workflow_section_v2v, uiState.v2vWorkflows)
     )
     val allWorkflows = allSections.flatMap { it.workflows }
     val enabledTotal = allWorkflows.count { it.id !in uiState.disabledWorkflowIds }
@@ -343,10 +294,14 @@ fun WorkflowsSettingsScreen(
             offline = offline,
             onCreate = { createEditorLauncher.launch(WorkflowEditorActivity.createIntentForNewWorkflow(context)) },
             onImport = { jsonPickerLauncher.launch("application/json") },
+<<<<<<< HEAD
             onImportFromServer = {
                 if (uiState.showServerWorkflows) viewModel.closeServerWorkflows()
                 else viewModel.openServerWorkflows()
             }
+=======
+            onImportFromServer = onImportFromServer
+>>>>>>> origin/main
         )
 
         // Browse and import workflows saved on the connected server
@@ -361,6 +316,7 @@ fun WorkflowsSettingsScreen(
         }
     }
 
+<<<<<<< HEAD
     // Import dialog
     if (uiState.showImportDialog) {
         WorkflowDetailsDialog(
@@ -494,9 +450,16 @@ private fun parseMappingsFromJson(jsonString: String): Map<String, Pair<String, 
     }
     return mappings
 }
+=======
+
+}
+
+>>>>>>> origin/main
 
 /** Order of the sections on the list. */
-private val sectionOrder = listOf(WorkflowType.TTI, WorkflowType.ITI_EDITING, WorkflowType.ITI_INPAINTING, WorkflowType.TTV, WorkflowType.ITV)
+private val sectionOrder = listOf(
+    WorkflowType.TTI, WorkflowType.ITI_EDITING, WorkflowType.ITI_INPAINTING, WorkflowType.TTV, WorkflowType.ITV, WorkflowType.V2V
+)
 
 /** How long a just-imported workflow's row stays highlighted before fading back. */
 private const val HIGHLIGHT_MS = 1000L
@@ -509,7 +472,8 @@ private val filterLabels = listOf(
     WorkflowFilter.TTI to R.string.workflow_section_tti,
     WorkflowFilter.ITI to R.string.label_workflows_filter_iti,
     WorkflowFilter.TTV to R.string.workflow_section_ttv,
-    WorkflowFilter.ITV to R.string.workflow_section_itv
+    WorkflowFilter.ITV to R.string.workflow_section_itv,
+    WorkflowFilter.V2V to R.string.workflow_section_v2v
 )
 
 /** Which types the page shows: one choice, scrolled into view when picked. */
@@ -743,19 +707,23 @@ private fun WorkflowRow(
  * and Import upward, over a scrim; tapping the scrim or Back closes it.
  */
 @Composable
+<<<<<<< HEAD
 private fun BoxScope.AddWorkflowMenu(
     offline: Boolean,
     onCreate: () -> Unit,
     onImport: () -> Unit,
     onImportFromServer: () -> Unit
 ) {
+=======
+private fun BoxScope.AddWorkflowMenu(offline: Boolean, onCreate: () -> Unit, onImport: () -> Unit, onImportFromServer: () -> Unit) {
+>>>>>>> origin/main
     val context = LocalContext.current
     val needsServer = stringResource(R.string.msg_needs_server)
     var expanded by rememberSaveable { mutableStateOf(false) }
     // Both need the server (imports are checked against it, the editor saves through it): offline, they say why
     fun act(action: () -> Unit) {
         expanded = false
-        if (offline) Toast.makeText(context, needsServer, Toast.LENGTH_SHORT).show() else action()
+        if (offline) AppErrors.report(needsServer) else action()
     }
     BackHandler(enabled = expanded) { expanded = false }
 
@@ -806,7 +774,14 @@ private fun BoxScope.AddWorkflowMenu(
         FloatingActionButtonMenuItem(
             onClick = { act(onImport) },
             icon = { Icon(Icons.Rounded.UploadFile, contentDescription = null) },
-            text = { Text(stringResource(R.string.button_import)) },
+            text = { Text(stringResource(R.string.button_workflow_from_file)) },
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+        FloatingActionButtonMenuItem(
+            onClick = { act(onImportFromServer) },
+            icon = { Icon(Icons.Rounded.Dns, contentDescription = null) },
+            text = { Text(stringResource(R.string.button_workflow_from_server)) },
             containerColor = MaterialTheme.colorScheme.primaryContainer,
             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
         )
@@ -827,6 +802,7 @@ private fun WorkflowType.titleRes(): Int = when (this) {
     WorkflowType.ITI_INPAINTING -> R.string.workflow_section_iti_inpainting
     WorkflowType.TTV -> R.string.workflow_section_ttv
     WorkflowType.ITV -> R.string.workflow_section_itv
+    WorkflowType.V2V -> R.string.workflow_section_v2v
 }
 
 /** The generation screen that offers workflows of a type. */
@@ -835,6 +811,7 @@ private fun WorkflowType.screenRes(): Int = when (this) {
     WorkflowType.ITI_EDITING, WorkflowType.ITI_INPAINTING -> R.string.nav_image_to_image
     WorkflowType.TTV -> R.string.nav_text_to_video
     WorkflowType.ITV -> R.string.nav_image_to_video
+    WorkflowType.V2V -> R.string.nav_video_to_video
 }
 
 /**
@@ -858,8 +835,10 @@ fun WorkflowDetailPage(
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { viewModel.initialize(context) }
     val current = remember(uiState, workflowId) {
-        listOf(uiState.ttiWorkflows, uiState.itiEditingWorkflows, uiState.itiInpaintingWorkflows, uiState.ttvWorkflows, uiState.itvWorkflows)
-            .flatten()
+        listOf(
+            uiState.ttiWorkflows, uiState.itiEditingWorkflows, uiState.itiInpaintingWorkflows, uiState.ttvWorkflows,
+            uiState.itvWorkflows, uiState.v2vWorkflows
+        ).flatten()
             .firstOrNull { it.id == workflowId }
     }
     // After deleting, the page goes back to the list and shows the workflow as it was until the transition ends
@@ -868,11 +847,12 @@ fun WorkflowDetailPage(
     val workflow = current ?: lastShown.value
     var confirmDelete by remember { mutableStateOf(false) }
 
+    val savedMessage = stringResource(R.string.msg_workflow_saved)
     val editLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         // The editor saved the workflow's structure
         if (result.resultCode == Activity.RESULT_OK) {
             viewModel.reloadAndRefreshWorkflows()
-            snackbar?.let { host -> scope.launch { host.showSnackbar(context.getString(R.string.msg_workflow_saved)) } }
+            snackbar?.let { host -> scope.launch { host.showSnackbar(savedMessage) } }
         }
     }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -885,8 +865,7 @@ fun WorkflowDetailPage(
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             viewModel.pageEvents.collect { event ->
                 when (event) {
-                    is WorkflowManagementEvent.ShowToast -> Toast.makeText(context, event.messageResId, Toast.LENGTH_SHORT).show()
-                    is WorkflowManagementEvent.ShowToastMessage -> Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
+                    is WorkflowManagementEvent.ShowToast -> AppErrors.notify(context, event.messageResId)
                     is WorkflowManagementEvent.LaunchExportFilePicker -> exportLauncher.launch(event.suggestedFilename)
                     is WorkflowManagementEvent.DuplicateCreated -> {
                         onOpenDetails(event.workflowId)

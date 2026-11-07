@@ -22,8 +22,11 @@ import sh.hnet.comfychair.WorkflowManager
 import sh.hnet.comfychair.WorkflowType
 import sh.hnet.comfychair.WorkflowValidationResult
 import sh.hnet.comfychair.connection.ConnectionManager
+import sh.hnet.comfychair.util.AppError
+import sh.hnet.comfychair.util.AppErrors
 import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.util.LiteGraphConverter
+import sh.hnet.comfychair.util.Obfuscator
 import sh.hnet.comfychair.util.ValidationUtils
 import sh.hnet.comfychair.util.WorkflowImportPreparation
 import sh.hnet.comfychair.util.ServerImportOrigin
@@ -49,7 +52,8 @@ enum class WorkflowFilter(val types: Set<WorkflowType>) {
     TTI(setOf(WorkflowType.TTI)),
     ITI(setOf(WorkflowType.ITI_EDITING, WorkflowType.ITI_INPAINTING)),
     TTV(setOf(WorkflowType.TTV)),
-    ITV(setOf(WorkflowType.ITV))
+    ITV(setOf(WorkflowType.ITV)),
+    V2V(setOf(WorkflowType.V2V))
 }
 
 /**
@@ -62,6 +66,7 @@ data class WorkflowManagementUiState(
     val itiEditingWorkflows: List<WorkflowManager.Workflow> = emptyList(),
     val ttvWorkflows: List<WorkflowManager.Workflow> = emptyList(),
     val itvWorkflows: List<WorkflowManager.Workflow> = emptyList(),
+    val v2vWorkflows: List<WorkflowManager.Workflow> = emptyList(),
     // Workflows switched off by the user (not offered on the generation screens)
     val disabledWorkflowIds: Set<String> = emptySet(),
     // Types shown; kept while the app runs (the view model belongs to the activity), not saved
@@ -123,7 +128,6 @@ data class WorkflowManagementUiState(
  */
 sealed class WorkflowManagementEvent {
     data class ShowToast(val messageResId: Int) : WorkflowManagementEvent()
-    data class ShowToastMessage(val message: String) : WorkflowManagementEvent()
     data class LaunchEditor(val pendingUpload: PendingWorkflowUpload) : WorkflowManagementEvent()
     data class LaunchExportFilePicker(val suggestedFilename: String) : WorkflowManagementEvent()
     /** A workflow was imported; the list shows it and offers its details. */
@@ -151,6 +155,14 @@ class WorkflowManagementViewModel : ViewModel() {
     // nothing is lost on the way back from the editor or between pages, and each event is handled once
     private val _pageEvents = Channel<WorkflowManagementEvent>(Channel.BUFFERED)
     val pageEvents: Flow<WorkflowManagementEvent> = _pageEvents.receiveAsFlow()
+
+    /** A failed workflow operation: what failed, with the reason (e.g. the workflow's problem) behind Show. */
+    private fun reportFailure(messageRes: Int, cause: Throwable?) {
+        val context = applicationContext ?: return
+        AppErrors.report(
+            AppError(context.getString(messageRes), details = listOfNotNull(cause?.message?.trim()?.takeIf { it.isNotEmpty() }))
+        )
+    }
 
     private suspend fun emitEvent(event: WorkflowManagementEvent) {
         _pageEvents.send(event)
@@ -278,7 +290,8 @@ class WorkflowManagementViewModel : ViewModel() {
             itiInpaintingWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.ITI_INPAINTING),
             itiEditingWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.ITI_EDITING),
             ttvWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.TTV),
-            itvWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.ITV)
+            itvWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.ITV),
+            v2vWorkflows = WorkflowManager.getWorkflowsByType(WorkflowType.V2V)
         )
     }
 
@@ -344,6 +357,13 @@ class WorkflowManagementViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Validates, converts (LiteGraph→API) and opens the Import workflow dialog for a workflow read from a file or
+     * downloaded from the server; everything after it is the same for both.
+     *
+     * @param fileName Where it came from, shown under the dialog's headline (a file name, or the server and path)
+     * @param suggestedName The name to start from; the user can change it
+     */
     private suspend fun prepareImportJson(jsonContent: String, fileName: String? = null, suggestedName: String? = null,
         stillCurrent: () -> Boolean = { true }): Boolean {
         val valid = withContext(Dispatchers.Default) { WorkflowImportPreparation.isImportableJson(jsonContent) }
@@ -576,33 +596,29 @@ class WorkflowManagementViewModel : ViewModel() {
             } else {
                 val candidates = mutableListOf<FieldCandidate>()
 
-                // Get the actual JSON input key for this placeholder
-                // e.g., "highnoise_unet_name" -> "unet_name", "lownoise_lora_name" -> "lora_name"
-                val jsonInputKey = TemplateKeyRegistry.getJsonKeyForPlaceholder(fieldKey)
+                // Every node input that can hold the field: its JSON key and the alternatives
+                // (e.g. "highnoise_unet_name" -> "unet_name"; "video" -> also LoadVideo's "file")
+                val inputKeys = TemplateKeyRegistry.inputKeysForField(fieldKey)
 
-                // Find all nodes that have this input key
                 for (nodeId in nodesJson.keys()) {
                     val node = nodesJson.optJSONObject(nodeId) ?: continue
                     val inputs = node.optJSONObject("inputs") ?: continue
 
-                    if (inputs.has(jsonInputKey)) {
-                        val currentValue = inputs.opt(jsonInputKey)
-
-                        if (TemplateKeyRegistry.doesValueMatchPlaceholder(fieldKey, currentValue)) {
-                            val classType = node.optString("class_type", "Unknown")
-                            val meta = node.optJSONObject("_meta")
-                            val title = meta?.optString("title") ?: classType
-
-                            candidates.add(
-                                FieldCandidate(
-                                    nodeId = nodeId,
-                                    nodeName = title,
-                                    classType = classType,
-                                    inputKey = jsonInputKey,
-                                    currentValue = currentValue
-                                )
+                    for (inputKey in inputKeys) {
+                        if (!inputs.has(inputKey)) continue
+                        val currentValue = inputs.opt(inputKey)
+                        if (!TemplateKeyRegistry.doesValueMatchPlaceholder(fieldKey, currentValue)) continue
+                        val classType = node.optString("class_type", "Unknown")
+                        val title = node.optJSONObject("_meta")?.optString("title") ?: classType
+                        candidates.add(
+                            FieldCandidate(
+                                nodeId = nodeId,
+                                nodeName = title,
+                                classType = classType,
+                                inputKey = inputKey,
+                                currentValue = currentValue
                             )
-                        }
+                        )
                     }
                 }
 
@@ -932,16 +948,15 @@ class WorkflowManagementViewModel : ViewModel() {
                         warnings.size,
                         warnings.size
                     ) ?: "Conversion completed with ${warnings.size} note(s)"
-                    emitEvent(WorkflowManagementEvent.ShowToastMessage(warningMessage))
+                    // The notes themselves behind Show
+                    AppErrors.report(AppError(warningMessage, details = warnings))
                 }
                 // Shown where it now sits; its type may not be the one filtered
                 if (imported.type !in _uiState.value.filter.types) onFilterChange(WorkflowFilter.ALL)
                 loadWorkflows()
                 emitEvent(WorkflowManagementEvent.WorkflowImported(imported.id))
             } else {
-                emitEvent(WorkflowManagementEvent.ShowToastMessage(
-                    result.exceptionOrNull()?.message ?: "Import failed"
-                ))
+                reportFailure(R.string.error_workflow_import, result.exceptionOrNull())
             }
 
             _uiState.value = _uiState.value.copy(
@@ -1125,9 +1140,7 @@ class WorkflowManagementViewModel : ViewModel() {
                 // The detail page opens the copy's details
                 emitEvent(WorkflowManagementEvent.DuplicateCreated(copy.id))
             } else {
-                emitEvent(WorkflowManagementEvent.ShowToastMessage(
-                    result.exceptionOrNull()?.message ?: "Duplicate failed"
-                ))
+                reportFailure(R.string.error_workflow_duplicate, result.exceptionOrNull())
             }
 
             _uiState.value = _uiState.value.copy(
@@ -1194,9 +1207,7 @@ class WorkflowManagementViewModel : ViewModel() {
                     emitEvent(WorkflowManagementEvent.ShowToast(R.string.error_workflow_export))
                 }
             } else {
-                emitEvent(WorkflowManagementEvent.ShowToastMessage(
-                    result.exceptionOrNull()?.message ?: "Export failed"
-                ))
+                reportFailure(R.string.error_workflow_export, result.exceptionOrNull())
             }
 
             _uiState.value = _uiState.value.copy(exportingWorkflow = null)

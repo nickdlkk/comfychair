@@ -57,6 +57,7 @@ import sh.hnet.comfychair.viewmodel.MediaViewerItem
 import sh.hnet.comfychair.viewmodel.MediaViewerViewModel
 import sh.hnet.comfychair.viewmodel.ViewerMode
 import sh.hnet.comfychair.model.ServerImage
+import sh.hnet.comfychair.ui.components.SourceMedia
 
 /**
  * Opens the full-screen media viewer, shown over the whole main activity (navigation bar included). The viewer's
@@ -137,12 +138,12 @@ private const val LANDING_WAIT_MS = 500L
  * back into it on close (a fade when the origin isn't on screen or there's no still), hides the system bars with its
  * overlays and uses light bar icons on its dark backdrop, restoring both when it closes.
  *
- * @param onUseAsSource Sends the image shown to a generation screen as its source
+ * @param onUseAsSource Sends the medium shown to a generation screen as its source
  */
 @Composable
 fun MediaViewerOverlay(
     viewModel: MediaViewerViewModel,
-    onUseAsSource: (SourceTarget, Bitmap) -> Unit,
+    onUseAsSource: (SourceTarget, SourceMedia) -> Unit,
     onUseServerImageAsSource: (SourceTarget, Bitmap, ServerImage) -> Unit = { _, _, _ -> }
 ) {
     val isOpen by viewModel.isOpen.collectAsState()
@@ -237,12 +238,13 @@ fun MediaViewerOverlay(
                     MediaViewerScreen(
                         viewModel = viewModel,
                         onClose = { viewModel.close() },
-                        onUseAsSource = { target, bitmap ->
+                        onUseAsSource = { target, media ->
                             // Only the viewer's own decode of its current server item carries provenance;
                             // the item is read again here so it matches exactly the bitmap that was loaded.
-                            val item = viewModel.currentItemDescriptor()
+                            val bitmap = (media as? SourceMedia.Image)?.bitmap
+                            val item = bitmap?.let { viewModel.currentItemDescriptor() }
                             if (item != null) onUseServerImageAsSource(target, bitmap, item)
-                            else onUseAsSource(target, bitmap)
+                            else onUseAsSource(target, media)
                         },
                         onRequestClose = requestClose
                     )

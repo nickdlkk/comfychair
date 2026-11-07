@@ -1,6 +1,5 @@
 package sh.hnet.comfychair.ui.components.generation
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -82,6 +81,8 @@ import sh.hnet.comfychair.ui.components.config.CommonGenerationState
 import sh.hnet.comfychair.ui.components.config.ConfigBottomSheetContent
 import sh.hnet.comfychair.ui.components.config.UnifiedCallbacks
 import sh.hnet.comfychair.ui.components.config.optionsLayout
+import sh.hnet.comfychair.util.AppError
+import sh.hnet.comfychair.util.AppErrors
 import sh.hnet.comfychair.viewmodel.ContentType
 import sh.hnet.comfychair.viewmodel.GenerationScreenEvent
 import sh.hnet.comfychair.viewmodel.GenerationViewModel
@@ -166,10 +167,9 @@ fun GenerationScreenEffects(
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
-                is GenerationScreenEvent.ShowToast ->
-                    Toast.makeText(context, resources.getString(event.messageResId), Toast.LENGTH_SHORT).show()
-                is GenerationScreenEvent.ShowToastMessage ->
-                    Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+                is GenerationScreenEvent.ShowToast -> AppErrors.notify(context, event.messageResId)
+                // Only problems come as text (e.g. the connection lost during a job)
+                is GenerationScreenEvent.ShowToastMessage -> AppErrors.report(event.message)
             }
         }
     }
@@ -178,10 +178,9 @@ fun GenerationScreenEffects(
         presetViewModel.events.collect { event ->
             when (event) {
                 is PromptPresetEvent.PresetApplied -> viewModel.onPositivePromptChange(event.prompt)
-                is PromptPresetEvent.ShowToast ->
-                    Toast.makeText(context, resources.getString(event.messageResId), Toast.LENGTH_SHORT).show()
+                is PromptPresetEvent.ShowToast -> AppErrors.notify(context, event.messageResId)
                 is PromptPresetEvent.MaxFavoritesReached ->
-                    Toast.makeText(context, resources.getString(R.string.prompt_preset_max_favorites), Toast.LENGTH_SHORT).show()
+                    AppErrors.report(context, R.string.prompt_preset_max_favorites)
                 is PromptPresetEvent.ResetPrompt -> viewModel.resetPromptToDefault()
             }
         }
@@ -367,23 +366,25 @@ fun rememberJobSubmitter(
         { front ->
             scope.launch {
                 blocker()?.let { messageRes ->
-                    Toast.makeText(context, resources.getString(messageRes), Toast.LENGTH_SHORT).show()
+                    AppErrors.notify(context, messageRes)
                     return@launch
                 }
                 val workflowJson = prepare()
                 if (workflowJson == null) {
-                    Toast.makeText(context, resources.getString(R.string.error_failed_load_workflow), Toast.LENGTH_SHORT).show()
+                    AppErrors.report(context, R.string.error_failed_load_workflow)
                     return@launch
                 }
                 val description = describe()
                 generationViewModel.startGeneration(workflowJson, ownerId, contentType, front) { success, promptId, errorMessage ->
                     if (success && promptId != null && description != null) JobRegistry.describeJob(promptId, description)
                     if (!success) {
-                        Toast.makeText(
-                            context,
-                            errorMessage ?: resources.getString(R.string.error_generation_failed),
-                            Toast.LENGTH_LONG
-                        ).show()
+                        // The server's reasons (e.g. the inputs that failed validation) behind Show
+                        AppErrors.report(
+                            AppError(
+                                message = resources.getString(R.string.error_submit_failed),
+                                details = errorMessage?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+                            )
+                        )
                     }
                 }
             }
@@ -430,6 +431,7 @@ fun RecipeChips(
  * @param generationBlocker Message shown instead of generating, e.g. a missing mask; null to generate
  * @param hasPositivePrompt Without the prompt field above, the controls keep the gap it provided
  * @param missingSource The screen needs a source image it doesn't have yet (the reason given for a disabled button)
+ * @param sourceIsVideo The missing source is a video (Video to Video)
  * @param describeJob What the queue sheet shows for a submitted job (prompt and workflow), read when submitting
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -444,7 +446,8 @@ fun GenerationControls(
     onOpenOptions: () -> Unit,
     submit: (front: Boolean) -> Unit,
     isUploading: Boolean = false,
-    missingSource: Boolean = false
+    missingSource: Boolean = false,
+    sourceIsVideo: Boolean = false
 ) {
     val context = LocalContext.current
     val queueState by JobRegistry.queueState.collectAsState()
@@ -461,7 +464,7 @@ fun GenerationControls(
         GenerationButton(
             disabledReason = when {
                 isOfflineMode -> stringResource(R.string.state_generate_offline)
-                missingSource -> stringResource(R.string.state_generate_no_source)
+                missingSource -> stringResource(if (sourceIsVideo) R.string.state_generate_no_source_video else R.string.state_generate_no_source)
                 !isEnabled -> stringResource(R.string.state_generate_invalid)
                 else -> null
             },
@@ -521,6 +524,7 @@ fun generationCallbacks(viewModel: BaseGenerationViewModel<*>) = UnifiedCallback
     onClip4Change = viewModel::onClip4Change,
     onTextEncoderChange = viewModel::onTextEncoderChange,
     onLatentUpscaleModelChange = viewModel::onLatentUpscaleModelChange,
+    onAudioVaeChange = viewModel::onAudioVaeChange,
     onMandatoryLoraChange = viewModel::onMandatoryLoraChange,
     onHighnoiseUnetChange = viewModel::onHighnoiseUnetChange,
     onLownoiseUnetChange = viewModel::onLownoiseUnetChange,

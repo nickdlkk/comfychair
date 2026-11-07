@@ -1,143 +1,100 @@
 package sh.hnet.comfychair.ui.components
 
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import android.content.Context
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.NewReleases
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.paneTitle
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
-import sh.hnet.comfychair.BuildConfig
-import sh.hnet.comfychair.R
+import android.content.pm.PackageManager
 import java.io.IOException
+import sh.hnet.comfychair.BuildConfig
+import sh.hnet.comfychair.util.Changelog
 
 /**
- * The release notes of this version, shown once on the first start after an install or update. They come from the
- * F-Droid changelog written for the release (copied into the assets at build time, see app/build.gradle.kts), so
- * they're in English. Remembered in their own preferences, so Restore defaults doesn't show them again.
+ * This version's release notes, from the F-Droid changelogs written for the release (copied into the assets at build
+ * time, see app/build.gradle.kts): in the phone's language where one was written, otherwise in English. Shown on the
+ * What's new page (Settings › About); after an update, a one-time snackbar on the first main screen offers it. Kept in
+ * their own preferences, so Restore defaults doesn't bring the snackbar or the New badge back.
  */
 object WhatsNew {
     private const val PREFS = "WhatsNewPrefs"
-    private const val KEY_SHOWN = "shownVersionCode"
-    private const val ASSET = "whats_new.txt"
+    // Version code of the previous start
+    private const val KEY_LAST_RUN = "lastRunVersionCode"
+    // Version code the What's new page was opened for (the About row's New badge until then)
+    private const val KEY_SEEN = "seenVersionCode"
+    // Version code whose update snackbar is still to be shown
+    private const val KEY_NOTICE = "noticeVersionCode"
+    // Written by versions up to 0.9.0 when their What's new dialog was closed: they ran before
+    private const val KEY_LEGACY_SHOWN = "shownVersionCode"
+    private const val ASSET_DIR = "whats_new"
+    private const val DEFAULT_LOCALE = "en-US"
 
-    /** A part of the notes: its heading ("New features") and its lines, bulleted ("- …") or plain. */
-    data class Section(val title: String?, val lines: List<Line>)
-    data class Line(val text: String, val bullet: Boolean)
+    /** Release notes as written ([text]) and as read ([changelog]). */
+    class Notes(val text: String, val changelog: Changelog) {
+        /** The version they name, else the app's. */
+        val version: String get() = changelog.version ?: BuildConfig.VERSION_NAME.removePrefix("v")
+    }
 
-    /** This version's notes, or null when they were shown already or the build has none. */
-    fun pending(context: Context): List<Section>? {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (prefs.getInt(KEY_SHOWN, 0) == BuildConfig.VERSION_CODE) return null
-        val text = try {
-            context.assets.open(ASSET).bufferedReader().use { it.readText() }
+    /** This version's notes, or null when the build has none. */
+    fun notes(context: Context): Notes? {
+        val files = try {
+            context.assets.list(ASSET_DIR)?.map { it.removeSuffix(".txt") }.orEmpty()
         } catch (_: IOException) {
             return null
         }
-        return parse(text).takeIf { it.isNotEmpty() }
-    }
-
-    fun markShown(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_SHOWN, BuildConfig.VERSION_CODE).apply()
+        if (DEFAULT_LOCALE !in files) return null
+        val locale = context.resources.configuration.locales[0]
+        // The exact language and region (pt-BR), else the language in any region (pl for pl-PL), else English
+        val name = files.firstOrNull { it.equals(locale.toLanguageTag(), ignoreCase = true) }
+            ?: files.firstOrNull { it.substringBefore('-').equals(locale.language, ignoreCase = true) }
+            ?: DEFAULT_LOCALE
+        return try {
+            val text = context.assets.open("$ASSET_DIR/$name.txt").bufferedReader().use { it.readText() }
+            Notes(text, Changelog.parse(text))
+        } catch (_: IOException) {
+            null
+        }
     }
 
     /**
-     * The changelog's format: the version on the first line (the dialog's title has it already), then sections, each a
-     * line ending in a colon followed by "- " items.
+     * Notes this start of the app: after an update (from a version that ran before, or an install that was updated)
+     * the snackbar is due, unless the page was opened already; a fresh install gets neither the snackbar nor the badge.
+     * Called by both activities; only the first call after an install or update changes anything.
      */
-    fun parse(text: String): List<Section> {
-        val lines = text.lines().map { it.trim() }.dropWhile { it.isEmpty() }.drop(1)
-        val sections = mutableListOf<Section>()
-        var title: String? = null
-        var current = mutableListOf<Line>()
-        fun close() {
-            if (title != null || current.isNotEmpty()) sections += Section(title, current)
-            title = null
-            current = mutableListOf()
-        }
-        for (line in lines) {
-            when {
-                line.isEmpty() -> Unit
-                line.startsWith("- ") || line.startsWith("* ") -> current += Line(line.drop(2).trim(), bullet = true)
-                line.endsWith(":") -> {
-                    close()
-                    title = line.dropLast(1)
-                }
-                else -> current += Line(line, bullet = false)
+    fun recordStart(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val current = BuildConfig.VERSION_CODE
+        val last = prefs.getInt(KEY_LAST_RUN, 0)
+        if (last == current) return
+        val updated = last != 0 || prefs.contains(KEY_LEGACY_SHOWN) || wasUpdated(context)
+        prefs.edit().apply {
+            putInt(KEY_LAST_RUN, current)
+            if (!updated) {
+                putInt(KEY_SEEN, current)
+            } else if (prefs.getInt(KEY_SEEN, 0) != current && (notes(context)?.changelog?.itemCount ?: 0) > 0) {
+                putInt(KEY_NOTICE, current)
             }
-        }
-        close()
-        return sections
+        }.apply()
     }
-}
 
-/**
- * Shows this version's notes once (first start after an install or update); closing them marks them seen. Used by the
- * login screen and the main screens: each checks again when it comes to the front, so notes closed in one don't
- * reappear in the other.
- */
-@Composable
-fun WhatsNewDialog() {
-    val context = LocalContext.current
-    var sections by remember { mutableStateOf<List<WhatsNew.Section>?>(null) }
-    LifecycleResumeEffect(Unit) {
-        sections = WhatsNew.pending(context)
-        onPauseOrDispose { }
+    /** The version to announce in the update snackbar, once: null when it's not due or was shown already. */
+    fun takeUpdateNotice(context: Context): String? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getInt(KEY_NOTICE, 0) != BuildConfig.VERSION_CODE) return null
+        prefs.edit().remove(KEY_NOTICE).apply()
+        if (isSeen(context)) return null
+        return notes(context)?.version
     }
-    val shown = sections ?: return
-    val title = stringResource(R.string.title_whats_new, BuildConfig.VERSION_NAME)
-    val close = {
-        WhatsNew.markShown(context)
-        sections = null
+
+    /** Whether the What's new page was opened for this version (the About row's New badge until then). */
+    fun isSeen(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_SEEN, 0) == BuildConfig.VERSION_CODE
+
+    fun markSeen(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_SEEN, BuildConfig.VERSION_CODE).apply()
     }
-    AlertDialog(
-        onDismissRequest = close,
-        icon = { Icon(Icons.Rounded.NewReleases, contentDescription = null) },
-        title = { Text(title) },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            ) {
-                shown.forEach { section ->
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        section.title?.let {
-                            Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                        }
-                        section.lines.forEach { line ->
-                            if (line.bullet) {
-                                Row {
-                                    Text("•", modifier = Modifier.padding(end = 8.dp))
-                                    Text(line.text)
-                                }
-                            } else {
-                                Text(line.text)
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = close) { Text(stringResource(R.string.button_dismiss)) } },
-        modifier = Modifier.semantics { paneTitle = title }
-    )
+
+    // An installed app that was updated since (for versions before the last-start record)
+    private fun wasUpdated(context: Context): Boolean = try {
+        val info = context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+        info.lastUpdateTime != info.firstInstallTime
+    } catch (_: Exception) {
+        false
+    }
 }

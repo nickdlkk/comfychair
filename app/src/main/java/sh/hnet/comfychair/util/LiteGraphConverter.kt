@@ -4,6 +4,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import sh.hnet.comfychair.workflow.InputDefinition
 import sh.hnet.comfychair.workflow.NodeTypeDefinition
+import sh.hnet.comfychair.workflow.getEffectiveDefault
+import sh.hnet.comfychair.workflow.isWidget
 
 /**
  * Converts LiteGraph workflow format (ComfyUI's default "Save" format) to
@@ -446,7 +448,7 @@ class LiteGraphConverter(
                 outputNodeId = outputNodeId
             )
 
-            DebugLogger.d(TAG, "Parsed subgraph '$name': ${nodes.length()} nodes, ${links.size} links, ${inputs.size} inputs, ${outputs.size} outputs")
+            DebugLogger.d(TAG, "Parsed subgraph ${Obfuscator.title(name)}: ${nodes.length()} nodes, ${links.size} links, ${inputs.size} inputs, ${outputs.size} outputs")
         }
 
         return subgraphs
@@ -471,7 +473,7 @@ class LiteGraphConverter(
         warnings: MutableList<String>
     ): FlattenResult {
         val subgraphNodeId = subgraphNode.optInt("id", -1)
-        DebugLogger.d(TAG, "Flattening subgraph '${subgraphDef.name}' (node #$subgraphNodeId) with offset $nodeIdOffset")
+        DebugLogger.d(TAG, "Flattening subgraph ${Obfuscator.title(subgraphDef.name)} (node #$subgraphNodeId) with offset $nodeIdOffset")
 
         val apiNodes = mutableMapOf<String, JSONObject>()
         val nodePositions = mutableMapOf<Int, NodePosition>()
@@ -595,9 +597,9 @@ class LiteGraphConverter(
             val inputs = JSONObject()
 
             // 1. Map widget values from internal node
-            val internalWidgetValues = node.optJSONArray("widgets_values")
-            if (internalWidgetValues != null && nodeDef != null) {
-                mapWidgetValues(internalWidgetValues, nodeDef.inputs, inputs, nodeType, newNodeId, warnings)
+            val internalWidgetValues = node.opt("widgets_values")?.takeIf { it is JSONArray || it is JSONObject }
+            if (nodeDef != null) {
+                mapWidgetValues(internalWidgetValues ?: JSONArray(), nodeDef.inputs, inputs, nodeType, newNodeId, warnings)
             }
 
             // 2. Add connections from internal node's inputs array
@@ -733,11 +735,12 @@ class LiteGraphConverter(
         // Build inputs map
         val inputs = JSONObject()
 
-        // 1. Map widget values to named inputs
-        val widgetValues = node.optJSONArray("widgets_values")
-        if (widgetValues != null && nodeDef != null) {
-            mapWidgetValues(widgetValues, nodeDef.inputs, inputs, nodeType, nodeId, warnings)
-        } else if (widgetValues != null && nodeDef == null) {
+        // 1. Map widget values to named inputs (a list in widget order, or by name for nodes that save them so); a node
+        // saved without any gets its widgets' defaults, as in ComfyUI
+        val widgetValues = node.opt("widgets_values")?.takeIf { it is JSONArray || it is JSONObject }
+        if (nodeDef != null) {
+            mapWidgetValues(widgetValues ?: JSONArray(), nodeDef.inputs, inputs, nodeType, nodeId, warnings)
+        } else if (widgetValues != null) {
             // Unknown node - can't map widget values
             DebugLogger.w(TAG, "Node #$nodeId ($nodeType): no definition found, cannot map widget values")
             warnings.add("Node \"$nodeType\" (#$nodeId): inputs could not be fully mapped")
@@ -791,61 +794,80 @@ class LiteGraphConverter(
     }
 
     /**
-     * Map LiteGraph widgets_values array to named inputs using node definition
+     * Map LiteGraph widgets_values to named inputs using node definition: a list in the frontend's widget order, or an
+     * object by widget name, as some extensions save them (e.g. VideoHelperSuite: {"frame_rate": 24, …}), whose
+     * other keys (previews, buttons) are left out. A widget with no saved value (a workflow saved before the node had
+     * it, e.g. a dynamic combo option's fields) gets the node's default, as ComfyUI's frontend gives it when loading.
      */
     private fun mapWidgetValues(
-        widgetValues: JSONArray,
+        widgetValues: Any,
         inputDefs: List<InputDefinition>,
         inputs: JSONObject,
         nodeType: String,
         nodeId: Int,
         warnings: MutableList<String>
     ) {
-        // Filter to only editable inputs (not connection-only inputs)
-        val editableInputs = inputDefs.filter { !it.forceInput && !isConnectionOnlyType(it.type) }
-
+        if (widgetValues is JSONObject) {
+            mapNamedWidgetValues(widgetValues, inputDefs, inputs, prefix = "")
+            return
+        }
+        if (widgetValues !is JSONArray) return
         var widgetIndex = 0
-        for (inputDef in editableInputs) {
-            if (widgetIndex >= widgetValues.length()) break
 
-            val value = widgetValues.opt(widgetIndex)
+        // The frontend's widget order: the node's widgets in input order, sockets left out; a dynamic combo's chosen
+        // option adds its own widgets right after it, named "combo.input" (and so on, for nested combos)
+        fun mapWidgets(defs: List<InputDefinition>, prefix: String) {
+            for (inputDef in defs) {
+                if (!inputDef.isWidget) continue
+                val name = prefix + inputDef.name
+                // The saved values have run out: the rest are widgets the file doesn't know
+                val saved = widgetIndex < widgetValues.length()
 
-            // Skip control widgets defined in server (rare, but handle it)
-            if (inputDef.name == "control_after_generate" ||
-                inputDef.name.startsWith("control_")) {
-                widgetIndex++
-                continue
-            }
+                // Skip control widgets defined in server (rare, but handle it)
+                if (inputDef.name == "control_after_generate" ||
+                    inputDef.name.startsWith("control_")) {
+                    if (saved) widgetIndex++
+                    continue
+                }
 
-            // Map the value
-            if (value != null && value != JSONObject.NULL) {
-                inputs.put(inputDef.name, value)
-            }
+                val value = if (saved) widgetValues.opt(widgetIndex) else inputDef.getEffectiveDefault()
 
-            widgetIndex++
+                // Map the value
+                if (value != null && value != JSONObject.NULL) {
+                    inputs.put(name, value)
+                }
 
-            // After mapping a seed input, check if next widget value is a control value
-            // (control_after_generate is frontend-only and not in server's /object_info)
-            if (inputDef.name in SEED_INPUT_NAMES && widgetIndex < widgetValues.length()) {
-                val nextValue = widgetValues.opt(widgetIndex)
-                if (nextValue is String && nextValue in CONTROL_WIDGET_VALUES) {
-                    widgetIndex++
+                if (saved) widgetIndex++
+
+                inputDef.dynamicOptions?.get(value as? String)?.let { optionInputs -> mapWidgets(optionInputs, "$name.") }
+
+                // After mapping a seed input, check if next widget value is a control value
+                // (control_after_generate is frontend-only and not in server's /object_info)
+                if (inputDef.name in SEED_INPUT_NAMES && widgetIndex < widgetValues.length()) {
+                    val nextValue = widgetValues.opt(widgetIndex)
+                    if (nextValue is String && nextValue in CONTROL_WIDGET_VALUES) {
+                        widgetIndex++
+                    }
                 }
             }
         }
+        mapWidgets(inputDefs, prefix = "")
     }
 
     /**
-     * Check if an input type is connection-only (not a widget)
+     * Widget values saved by name: each widget of the definition (a dynamic combo's chosen option too), with the node's
+     * default where the file has no value.
      */
-    private fun isConnectionOnlyType(type: String): Boolean {
-        // Common connection-only types (not widgets)
-        return type in setOf(
-            "MODEL", "CLIP", "VAE", "CONDITIONING", "LATENT", "IMAGE",
-            "MASK", "CONTROL_NET", "STYLE_MODEL", "CLIP_VISION", "CLIP_VISION_OUTPUT",
-            "GLIGEN", "UPSCALE_MODEL", "SAMPLER", "SIGMAS", "NOISE", "GUIDER",
-            "*"  // Wildcard type
-        )
+    private fun mapNamedWidgetValues(values: JSONObject, defs: List<InputDefinition>, inputs: JSONObject, prefix: String) {
+        for (inputDef in defs) {
+            if (!inputDef.isWidget) continue
+            val name = prefix + inputDef.name
+            val value = values.opt(name)?.takeIf { it != JSONObject.NULL } ?: inputDef.getEffectiveDefault()
+            inputs.put(name, value)
+            inputDef.dynamicOptions?.get(value as? String)?.let { optionInputs ->
+                mapNamedWidgetValues(values, optionInputs, inputs, "$name.")
+            }
+        }
     }
 
     /**

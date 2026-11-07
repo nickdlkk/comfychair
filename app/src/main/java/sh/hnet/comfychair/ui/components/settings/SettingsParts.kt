@@ -21,6 +21,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -148,7 +150,7 @@ fun SettingsGroup(title: String? = null, subordinate: Boolean = false, content: 
  * the library's pressed and focused shapes.
  */
 @Composable
-private fun groupShapes(index: Int, count: Int): ListItemShapes {
+internal fun groupShapes(index: Int, count: Int): ListItemShapes {
     val segmented = ListItemDefaults.segmentedShapes(index, count)
     if (count > 1) return segmented
     val first = ListItemDefaults.segmentedShapes(0, 2).shape as? CornerBasedShape ?: return segmented
@@ -196,16 +198,33 @@ private fun rowColors(highlightSelected: Boolean = false): ListItemColors {
     )
 }
 
-/** The row keeps its place's shape when selected (checked), so the group stays one block. */
+/**
+ * The row keeps its place's shape when selected (checked) or focused, so the group stays one block; only a press
+ * morphs it. Focus lands on a row without the user aiming at it (coming back to a page), and the library's focused
+ * shape would leave one rounded row among square-cornered ones.
+ */
 @Composable
 private fun steadyShapes(shapes: ListItemShapes): ListItemShapes = ListItemDefaults.shapes(
     shape = shapes.shape,
     selectedShape = shapes.shape,
     pressedShape = shapes.pressedShape,
-    focusedShape = shapes.focusedShape,
+    focusedShape = shapes.shape,
     hoveredShape = shapes.hoveredShape,
     draggedShape = shapes.draggedShape
 )
+
+/** A short line under a row's description, in primary, with an optional small icon. */
+@Composable
+private fun RowNote(text: String, icon: ImageVector?) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.padding(top = 2.dp)
+    ) {
+        icon?.let { Icon(it, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+        Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    }
+}
 
 /** The tonal leading icon of a row. */
 @Composable
@@ -221,7 +240,11 @@ private fun RowIcon(icon: ImageVector) {
     }
 }
 
-/** A row opening a page. */
+/**
+ * A row opening a page.
+ *
+ * @param badge A short label before the arrow (e.g. New), in a badge
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SettingsNavigationRow(
@@ -229,6 +252,7 @@ fun SettingsNavigationRow(
     icon: ImageVector,
     title: String,
     supporting: String? = null,
+    badge: String? = null,
     onClick: () -> Unit
 ) {
     SegmentedListItem(
@@ -236,7 +260,19 @@ fun SettingsNavigationRow(
         shapes = shapes,
         colors = rowColors(),
         leadingContent = { RowIcon(icon) },
-        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null) },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                badge?.let {
+                    Badge(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ) {
+                        Text(it, modifier = Modifier.padding(horizontal = 4.dp))
+                    }
+                }
+                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null)
+            }
+        },
         supportingContent = supporting?.let { { Text(it) } }
     ) {
         Text(title)
@@ -279,6 +315,8 @@ fun SettingsRadioRow(
     onSelect: () -> Unit,
     supporting: String? = null,
     enabled: Boolean = true,
+    note: String? = null,
+    noteIcon: ImageVector? = null,
     trailing: (@Composable () -> Unit)? = null
 ) {
     SegmentedListItem(
@@ -290,7 +328,15 @@ fun SettingsRadioRow(
         colors = rowColors(highlightSelected = true),
         leadingContent = { RadioButton(selected = selected, onClick = null, enabled = enabled) },
         trailingContent = trailing,
-        supportingContent = supporting?.let { { Text(it) } }
+        supportingContent = if (supporting == null && note == null) null else {
+            {
+                Column {
+                    supporting?.let { Text(it) }
+                    // Something to do before the option works, in primary, under its description
+                    note?.let { RowNote(it, noteIcon) }
+                }
+            }
+        }
     ) {
         Text(title)
     }
@@ -330,18 +376,51 @@ fun SettingsActionRow(
     }
 }
 
-/** A value to read (e.g. a version): not a button, in a segment of the group. */
+/**
+ * A value to read (e.g. a version): not a button, in a segment of the group.
+ *
+ * @param icon In the same tonal container as the other rows' icons, so a group with icons lines up
+ */
 @Composable
-fun SettingsInfoRow(shapes: ListItemShapes, title: String, value: String) {
+fun SettingsInfoRow(shapes: ListItemShapes, title: String, value: String, icon: ImageVector? = null) {
     Surface(
         shape = shapes.shape,
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            icon?.let { RowIcon(it) }
+            Column {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
+    }
+}
+
+/** A row opening a web page in the browser: the topic's icon first, the open-in-new mark last. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun SettingsLinkRow(
+    shapes: ListItemShapes,
+    icon: ImageVector,
+    title: String,
+    supporting: String? = null,
+    onClick: () -> Unit
+) {
+    SegmentedListItem(
+        onClick = onClick,
+        shapes = shapes,
+        colors = rowColors(),
+        leadingContent = { RowIcon(icon) },
+        trailingContent = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null) },
+        supportingContent = supporting?.let { { Text(it) } }
+    ) {
+        Text(title)
     }
 }
 

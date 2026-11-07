@@ -7,6 +7,7 @@ import androidx.security.crypto.MasterKey
 import sh.hnet.comfychair.model.AuthCredentials
 import sh.hnet.comfychair.model.AuthType
 import sh.hnet.comfychair.util.DebugLogger
+import sh.hnet.comfychair.util.Obfuscator
 
 /**
  * Secure storage for authentication credentials using EncryptedSharedPreferences.
@@ -37,7 +38,7 @@ class CredentialStorage(context: Context) {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
         } catch (e: Exception) {
-            DebugLogger.e(TAG, "Failed to create encrypted prefs, using fallback: ${e.message}")
+            DebugLogger.e(TAG, "Failed to create encrypted prefs, using fallback: ${Obfuscator.error(e)}")
             // Fallback to regular SharedPreferences if encryption fails
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         }
@@ -125,6 +126,13 @@ class CredentialStorage(context: Context) {
         }
         DebugLogger.d(TAG, "Deleted credentials for server $serverId")
     }
+
+    /**
+     * Whether a server signs in with a username and password or a token that this device doesn't have: restored from a
+     * backup or moved to a new phone, which carry no credentials. Browser sign-in isn't counted: Connect signs in.
+     */
+    fun isMissingCredentials(serverId: String, authType: AuthType): Boolean =
+        (authType == AuthType.BASIC || authType == AuthType.BEARER) && !hasCredentials(serverId, authType)
 
     /**
      * Check if credentials exist for a server.

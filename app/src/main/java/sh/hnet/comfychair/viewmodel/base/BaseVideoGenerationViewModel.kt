@@ -23,6 +23,7 @@ import sh.hnet.comfychair.viewmodel.GenerationEvent
 import sh.hnet.comfychair.viewmodel.GenerationScreenEvent
 import sh.hnet.comfychair.viewmodel.GenerationViewModel
 import sh.hnet.comfychair.viewmodel.WorkflowItem
+import sh.hnet.comfychair.workflow.WorkflowConstraintsProvider
 
 /** Fallback values of the video screens; a workflow's saved values and template defaults come first. */
 val videoScreenDefaults = GenerationParams(width = "848", height = "480")
@@ -55,7 +56,21 @@ abstract class BaseVideoGenerationViewModel<UiState> : BaseGenerationViewModel<U
 
     override val fallbackParams: GenerationParams get() = videoScreenDefaults
 
-    override fun validateLength(length: String) = ValidationUtils.validateVideoLength(length, applicationContext)
+    // The selected workflow's length grid, found once per workflow (read from its JSON and the server's node types)
+    private var lengthGrid: Pair<String, WorkflowConstraintsProvider.NumericConstraints>? = null
+
+    /** On the frame grid of the selected workflow's latent node (its minimum and step, e.g. 17k+5 for MiniMax H3). */
+    override fun validateLength(length: String): String? {
+        val workflow = currentParams.selectedWorkflow
+        val constraints = lengthGrid?.takeIf { it.first == workflow }?.second
+            ?: WorkflowConstraintsProvider.getConstraints("length", workflow).also { found ->
+                // Not before the server's node types are known: until then it's the fallback grid
+                if (ConnectionManager.nodeTypeRegistry.isPopulated()) lengthGrid = workflow to found
+            }
+        return ValidationUtils.validateVideoLength(
+            length, applicationContext, min = constraints.min.toInt().coerceAtLeast(1), step = constraints.step.toInt()
+        )
+    }
 
     private fun updateVideo(transform: (VideoResult) -> VideoResult) {
         _uiState.update { it.withVideo(transform(it.video())) }
@@ -310,13 +325,6 @@ abstract class BaseVideoGenerationViewModel<UiState> : BaseGenerationViewModel<U
                     val message = applicationContext?.getString(R.string.msg_connection_lost_generation_may_continue)
                         ?: "Connection lost. Will check for completion when reconnected."
                     _events.emit(GenerationScreenEvent.ShowToastMessage(message))
-                }
-            }
-            is GenerationEvent.Error -> {
-                // DON'T complete the generation - this may just be a connection error and the
-                // server might still finish it
-                viewModelScope.launch {
-                    _events.emit(GenerationScreenEvent.ShowToastMessage(event.message))
                 }
             }
             is GenerationEvent.ClearPreviewForResume -> {

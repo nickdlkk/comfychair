@@ -1,6 +1,5 @@
 package sh.hnet.comfychair
 
-import sh.hnet.comfychair.ui.components.WhatsNewDialog
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
@@ -30,6 +29,7 @@ import sh.hnet.comfychair.storage.CredentialStorage
 import sh.hnet.comfychair.storage.GalleryMetadataCache
 import sh.hnet.comfychair.storage.MediaStorageMode
 import sh.hnet.comfychair.ui.components.ConnectionAlertDialog
+import sh.hnet.comfychair.ui.components.WhatsNew
 import sh.hnet.comfychair.ui.components.dialogs.ActionDialog
 import sh.hnet.comfychair.ui.components.dialogs.DialogAction
 import sh.hnet.comfychair.ui.navigation.MainNavHost
@@ -47,6 +47,7 @@ import sh.hnet.comfychair.viewmodel.SettingsEvent
 import sh.hnet.comfychair.viewmodel.SettingsViewModel
 import sh.hnet.comfychair.viewmodel.TextToImageViewModel
 import sh.hnet.comfychair.viewmodel.TextToVideoViewModel
+import sh.hnet.comfychair.viewmodel.VideoToVideoViewModel
 import sh.hnet.comfychair.viewmodel.WorkflowManagementViewModel
 
 /**
@@ -67,6 +68,7 @@ class MainContainerActivity : ComponentActivity() {
     private val imageToImageViewModel: ImageToImageViewModel by viewModels()
     private val textToVideoViewModel: TextToVideoViewModel by viewModels()
     private val imageToVideoViewModel: ImageToVideoViewModel by viewModels()
+    private val videoToVideoViewModel: VideoToVideoViewModel by viewModels()
     private val galleryViewModel: GalleryViewModel by viewModels()
     private val serverGalleryViewModel: ServerGalleryViewModel by viewModels()
     private val mediaViewerViewModel: MediaViewerViewModel by viewModels()
@@ -104,6 +106,8 @@ class MainContainerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // Before anything is shown: after an update, the main screens offer What's new once
+        WhatsNew.recordStart(this)
 
         // Guard check - redirect to login if not connected (unless in offline mode)
         val isOfflineMode = AppSettings.isOfflineMode(this)
@@ -158,6 +162,7 @@ class MainContainerActivity : ComponentActivity() {
             ImageToImageViewModel.OWNER_ID -> MainRoute.ImageToImage.route
             TextToVideoViewModel.OWNER_ID -> MainRoute.TextToVideo.route
             ImageToVideoViewModel.OWNER_ID -> MainRoute.ImageToVideo.route
+            VideoToVideoViewModel.OWNER_ID -> MainRoute.VideoToVideo.route
             else -> MainRoute.TextToImage.route
         }
 
@@ -172,7 +177,7 @@ class MainContainerActivity : ComponentActivity() {
                 // Settings changes reach the screens in place (workflows by themselves, through WorkflowManager);
                 // only offline mode, a change of the connection, restarts when leaving the Settings tab
                 LaunchedEffect(Unit) {
-                    val screens = listOf(textToImageViewModel, imageToImageViewModel, textToVideoViewModel, imageToVideoViewModel)
+                    val screens = listOf(textToImageViewModel, imageToImageViewModel, textToVideoViewModel, imageToVideoViewModel, videoToVideoViewModel)
                     settingsViewModel.events.collect { event ->
                         when (event) {
                             is SettingsEvent.SavedStateChanged -> screens.forEach { it.reloadSavedState() }
@@ -195,6 +200,7 @@ class MainContainerActivity : ComponentActivity() {
                         imageToImageViewModel = imageToImageViewModel,
                         textToVideoViewModel = textToVideoViewModel,
                         imageToVideoViewModel = imageToVideoViewModel,
+                        videoToVideoViewModel = videoToVideoViewModel,
                         galleryViewModel = galleryViewModel,
                         serverGalleryViewModel = serverGalleryViewModel,
                         mediaViewerViewModel = mediaViewerViewModel,
@@ -205,7 +211,6 @@ class MainContainerActivity : ComponentActivity() {
                         startDestination = startDestination
                     )
                 }
-                WhatsNewDialog()
 
                 // Session-expired dialog for browser-based (Cookie) authentication.
                 // Shown when the AuthInterceptor detects a 401/403 or SSO redirect.

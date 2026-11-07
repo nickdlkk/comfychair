@@ -45,7 +45,7 @@
     <string name="msg_transfer_stalled">30 秒内没有数据传输。这可能表示连接存在问题。</string>
     <string name="error_upload_stalled">上传停滞</string>
     <string name="action_reconnect">重新连接</string>
-    <string name="msg_reconnect_failed">无法重新连接</string>
+    <string name="error_reconnect_failed">无法重新连接</string>
     <string name="action_go_offline">离线模式</string>
     <string name="action_return_to_login">返回登录</string>
 
@@ -69,7 +69,7 @@
     <string name="label_offline_mode">离线模式</string>
     <string name="desc_offline_mode">无需网络连接即可浏览缓存数据</string>
     <string name="msg_offline_mode_requires_disk_cache">选择“设备存储”以启用离线模式</string>
-    <string name="msg_cannot_go_online">无法上线：服务器无法访问</string>
+    <string name="error_cannot_go_online">无法上线：服务器无法访问</string>
 
     <!-- Settings section titles -->
     <string name="title_settings_connection">连接</string>
@@ -115,6 +115,7 @@
     <string name="state_closed">已关闭</string>
     <string name="state_generate_offline">离线模式 – 已停用生成</string>
     <string name="state_generate_no_source">请先选择源图像</string>
+    <string name="state_generate_no_source_video">请先选择源视频</string>
     <string name="state_generate_invalid">请检查选项 – 有值缺失或无效</string>
     <string name="label_offline">离线</string>
     <string name="content_description_queue_empty">队列为空</string>
@@ -167,6 +168,7 @@
     <string name="nav_tab_video">视频</string>
     <string name="label_source_text">文本</string>
     <string name="label_source_image">图像</string>
+    <string name="label_source_video">视频</string>
     <string name="content_description_source_switch">生成来源</string>
     <string name="msg_image_ready">图像已生成</string>
     <string name="msg_video_ready">视频已生成</string>
@@ -237,6 +239,7 @@
 
     <!-- Image to Video fragment strings -->
     <string name="nav_image_to_video">图生视频</string>
+    <string name="nav_video_to_video">视频生视频</string>
     <string name="label_highnoise_unet">高噪声 UNET</string>
     <string name="label_lownoise_unet">低噪声 UNET</string>
     <string name="label_highnoise_lora">高噪声 LoRA</string>
@@ -248,6 +251,7 @@
     <string name="button_edit_mask">编辑蒙版</string>
     <string name="button_clear_mask">清除蒙版</string>
     <string name="msg_no_source_image">未选择原图</string>
+    <string name="msg_no_source_video">未选择源视频</string>
 
     <!-- Generation button states -->
     <string name="button_uploading">上传中…</string>
@@ -269,6 +273,9 @@
     <string name="error_not_comfyui_server">不是 ComfyUI 服务器</string>
     <string name="error_invalid_server_response">无效的服务器响应</string>
     <string name="error_failed_load_workflow">加载工作流失败</string>
+    <string name="error_connection_failed">无法连接到服务器</string>
+    <string name="error_submit_failed">服务器未接受该任务</string>
+    <string name="error_node_failed">节点 %1$s 出错</string>
     <string name="error_generation_failed">生成失败</string>
     <string name="msg_outputs_skipped">服务器跳过了部分工作流：%1$s</string>
     <string name="msg_outputs_skipped_more">服务器跳过了部分工作流：%1$s（另有 %2$d 项）</string>
@@ -282,6 +289,9 @@
     <string name="msg_image_saved_to_gallery">图片已保存到相册</string>
     <string name="msg_video_saved_to_gallery">视频已保存到相册</string>
     <string name="error_save_image">保存图片失败</string>
+    <string name="error_upload_source_video">无法将视频发送到服务器</string>
+    <string name="error_source_video_unreadable">无法读取视频</string>
+    <string name="error_source_video_too_large">视频超过 100 MB</string>
     <string name="error_save_video">保存视频失败</string>
     <string name="error_share_image">分享图片失败</string>
     <string name="error_failed_load_image">无法加载图像</string>
@@ -322,9 +332,9 @@
     <string name="button_cancel_selection">取消选择</string>
     <string name="label_item_selected">已选择</string>
     <string name="msg_items_saved_to_gallery">项目已保存到相册</string>
-    <string name="msg_some_items_failed_to_save">部分项目保存失败</string>
+    <string name="error_some_items_failed_to_save">部分项目保存失败</string>
     <string name="error_share_items">分享项目失败</string>
-    <string name="msg_some_items_failed_to_delete">部分项目删除失败</string>
+    <string name="error_some_items_failed_to_delete">部分项目删除失败</string>
 
     <!-- Mask editor strings -->
     <string name="button_invert_mask">反转蒙版</string>
@@ -407,16 +417,25 @@
     <string name="error_steps_range">必须在 1–255 之间</string>
     <string name="error_cfg_range">必须在 0.0–100.0 之间</string>
     <string name="error_megapixels_range">必须在 0.1–8.3 之间</string>
-    <string name="error_length_range">必须在 1–129 之间</string>
-    <string name="error_length_step">必须为 1、5、9、13…（间隔为 4）</string>
+    <string name="error_length_range">必须至少为 1</string>
+    <string name="error_length_min">必须至少为 %1$d</string>
+    <string name="error_length_step">必须为 %1$d、%2$d、%3$d…（间隔为 %4$d）</string>
     <string name="error_fps_range">必须在 1–120 之间</string>
     <string name="error_invalid_number">无效的数字</string>
 
     <!-- Node attribute editor -->
     <string name="label_nodes_list">节点列表</string>
+    <string name="label_node_sockets">%1$s 的接口</string>
+    <string name="label_connection_targets">连接目标</string>
+    <string name="label_socket_input">输入</string>
+    <string name="label_socket_output">输出</string>
     <string name="button_reset_node">重置节点</string>
     <string name="label_value_changed">已更改 – 默认 %1$s</string>
     <string name="content_description_reset_value">将 %1$s 重置为 %2$s</string>
+    <string name="title_node_values_linked">已连接</string>
+    <string name="desc_node_values_linked">它们的值来自其他节点。</string>
+    <string name="label_node_values_linked_from">来自 %2$s 的 %1$s</string>
+    <string name="content_description_open_node">打开 %1$s</string>
     <string name="title_from_generation_screen">来自生成界面</string>
     <string name="desc_from_generation_screen">生成时由应用自动填写。</string>
     <plurals name="label_node_changed_count">
@@ -446,6 +465,7 @@
     <string name="workflow_section_iti_editing">图生图：编辑</string>
     <string name="workflow_section_ttv">文生视频</string>
     <string name="workflow_section_itv">图生视频</string>
+    <string name="workflow_section_v2v">视频生视频</string>
     <string name="workflow_section_empty">暂无工作流</string>
     <string name="label_workflows_enabled_count">已启用 %1$d/%2$d</string>
     <string name="label_workflows_filter_all">全部</string>
@@ -476,7 +496,6 @@
     <string name="label_workflow_name">名称</string>
     <string name="label_workflow_description">描述</string>
     <string name="title_import_workflow">导入工作流</string>
-    <string name="button_import">导入</string>
     <string name="button_save">保存</string>
     <string name="button_delete">删除</string>
     <string name="button_cancel">取消</string>
@@ -498,6 +517,7 @@
     <string name="workflow_menu_duplicate">复制</string>
     <string name="title_duplicate_workflow">复制工作流</string>
     <string name="msg_workflow_export_success">工作流已导出</string>
+    <string name="error_workflow_duplicate">无法复制工作流</string>
     <string name="error_workflow_export">导出工作流失败</string>
     <plurals name="msg_litegraph_conversion_notes">
         <item quantity="other">转换完成，有 %d 条备注</item>
@@ -517,12 +537,32 @@
     <string name="content_description_previous_result">上一个结果</string>
     <string name="button_edit_this_image">编辑此图像</string>
     <string name="button_animate_it">制作动画</string>
+    <string name="button_edit_this_video">编辑此视频</string>
+    <string name="button_animate_last_frame">为最后一帧制作动画</string>
+    <string name="button_edit_this_frame">编辑此帧</string>
+    <string name="button_animate_this_frame">为此帧制作动画</string>
+    <string name="error_frame_unreadable">无法读取此帧</string>
+    <string name="error_last_frame_unreadable">无法读取最后一帧</string>
     <string name="button_use_as_reference">用作参考图</string>
     <string name="button_details">详情</string>
     <string name="button_share_result">分享</string>
     <string name="button_save_result">保存</string>
     <string name="content_description_result_actions">结果操作</string>
     <string name="content_description_video_actions">视频操作</string>
+    <string name="video_time_display" translatable="false">%1$s / %2$s</string>
+    <string name="video_previous_frame">上一帧</string>
+    <string name="video_next_frame">下一帧</string>
+    <string name="video_loop">循环</string>
+    <string name="video_loop_on">开</string>
+    <string name="video_loop_off">关</string>
+    <string name="video_position">位置</string>
+    <string name="video_back_5s">后退 5 秒</string>
+    <string name="video_forward_5s">前进 5 秒</string>
+    <string name="video_sound">声音</string>
+    <string name="video_sound_on">开</string>
+    <string name="video_sound_off">关</string>
+    <string name="video_no_sound">无声音</string>
+    <string name="video_loading">正在加载视频</string>
     <string name="content_description_play_video">播放视频</string>
     <string name="content_description_pause_video">暂停视频</string>
     <string name="content_description_video_position">%1$s / %2$s</string>
@@ -535,7 +575,10 @@
     <string name="button_pick_source_image_from_files">从文件选择</string>
     <string name="content_description_replace_source">替换源图像</string>
     <string name="content_description_replace_source_from_files">从文件替换源图像</string>
+    <string name="button_pick_source_video">选择源视频</string>
+    <string name="content_description_replace_source_video">替换源视频</string>
     <string name="content_description_remove_source">移除源图像</string>
+    <string name="content_description_remove_source_video">移除源视频</string>
     <string name="content_description_show_mask">显示蒙版</string>
     <string name="content_description_hide_mask">隐藏蒙版</string>
     <string name="label_mask">蒙版</string>
@@ -554,6 +597,7 @@
     <string name="content_description_reference_image_1">参考图像 1</string>
     <string name="content_description_reference_image_2">参考图像 2</string>
     <string name="content_description_source_image">源图像</string>
+    <string name="content_description_source_video">源视频</string>
     <string name="content_description_decrease">减少值</string>
     <string name="content_description_increase">增加值</string>
 
@@ -590,6 +634,20 @@
     <string name="label_editor_connecting">正在连接 %1$s</string>
     <string name="hint_editor_tap_input">点按高亮的输入</string>
     <string name="hint_editor_tap_output">点按高亮的输出</string>
+    <string name="label_editor_linking">正在连接 %1$s</string>
+    <string name="hint_editor_tap_input_or_value">点按高亮的输入或值</string>
+    <string name="hint_editor_no_target">此工作流中没有节点接受 %1$s</string>
+    <string name="label_editor_socket_menu_header">&lt;b>%1$s&lt;/b> – 来自 %2$s</string>
+    <string name="menu_editor_connect">连接</string>
+    <string name="menu_editor_disconnect">断开连接</string>
+    <string name="label_editor_socket_menu_free">&lt;b>%1$s&lt;/b> – 未连接</string>
+    <string name="label_editor_output_menu_header">&lt;b>%1$s&lt;/b> – 连接到 %2$s</string>
+    <string name="label_editor_socket_in">&lt;b>%2$s&lt;/b> 的 &lt;b>%1$s&lt;/b></string>
+    <string name="menu_editor_add_node">添加节点</string>
+    <string name="msg_editor_link_mapped_new_node">连接后，&lt;b>%1$s&lt;/b> 的值将来自新节点，字段 &lt;b>%2$s&lt;/b> 不再改变它。</string>
+    <string name="title_editor_link_mapped">连接 %1$s？</string>
+    <string name="msg_editor_link_mapped">连接后，&lt;b>%1$s&lt;/b> 的值将来自节点 &lt;b>%3$s&lt;/b>，字段 &lt;b>%2$s&lt;/b> 不再改变它。</string>
+    <string name="button_link">连接</string>
     <string name="content_description_cancel_connection">取消连接</string>
     <string name="button_edit_structure">编辑结构</string>
     <string name="content_description_clear_selection">清除选择</string>
@@ -605,7 +663,6 @@
     <!-- Workflow import dialog strings -->
     <string name="label_workflow_type">工作流类型</string>
     <string name="button_continue">继续</string>
-    <string name="title_whats_new">%1$s 新功能</string>
     <string name="button_dismiss">关闭</string>
     <string name="button_done">完成</string>
 
@@ -686,7 +743,7 @@
     <string name="msg_backup_created_success">备份创建成功</string>
     <string name="error_backup_create">创建备份失败</string>
     <string name="msg_backup_restore_success">设置恢复成功</string>
-    <string name="msg_backup_restore_partial">设置部分恢复。部分工作流已跳过。</string>
+    <string name="error_backup_restore_partial">备份已部分恢复。部分工作流或提示词已跳过。</string>
     <string name="error_backup_restore">恢复备份失败</string>
     <string name="error_backup_invalid_json">无效的备份文件格式</string>
     <string name="error_backup_unsupported_version">不支持的备份版本</string>
@@ -771,7 +828,6 @@
     <string name="msg_workflow_editor_select_input">%1$s 有多个匹配的输入。</string>
     <string name="title_workflow_editor_select_output">从哪个输出连接？</string>
     <string name="msg_workflow_editor_select_output">%1$s 有多个匹配的输出。</string>
-    <string name="workflow_editor_edit_mode_hint">点击接口连接，长按打开节点浏览器</string>
 
     <!-- Field display names for workflow editor -->
     <string name="field_positive_prompt">正向提示词</string>
@@ -779,6 +835,7 @@
     <string name="field_cfg_scale">CFG 比例</string>
     <string name="field_unet_model">UNET 模型</string>
     <string name="field_input_image">输入图像</string>
+    <string name="field_input_video">输入视频</string>
     <string name="field_frame_rate">帧率</string>
 
     <!-- Field descriptions for workflow editor -->
@@ -786,6 +843,8 @@
     <string name="field_desc_negative_prompt">描述要避免内容的文本</string>
     <string name="field_desc_checkpoint">要使用的检查点模型</string>
     <string name="field_desc_unet">扩散模型</string>
+    <string name="label_audio_vae">音频 VAE</string>
+    <string name="field_desc_audio_vae">用于解码声音的 VAE</string>
     <string name="field_desc_vae">VAE 编码器/解码器</string>
     <string name="field_desc_clip">CLIP 文本编码器</string>
     <string name="field_desc_clip1">第一个 CLIP 文本编码器</string>
@@ -803,6 +862,7 @@
     <string name="field_desc_length">视频长度（帧数）</string>
     <string name="field_desc_frame_rate">视频每秒帧数</string>
     <string name="field_desc_image">用于生成的源图像</string>
+    <string name="field_desc_video">用于生成的源视频</string>
     <string name="field_desc_seed">用于生成的随机种子</string>
     <string name="field_desc_denoise">降噪强度（0.0–1.0）</string>
     <string name="field_desc_batch_size">每批图像数量</string>
@@ -852,6 +912,7 @@
     <string name="screen_type_image_to_image">图生图</string>
     <string name="screen_type_text_to_video">文生视频</string>
     <string name="screen_type_image_to_video">图生视频</string>
+    <string name="screen_type_video_to_video">视频生视频</string>
 
     <!-- Metadata actions -->
     <string name="metadata_save_prompt">保存提示词到库</string>
@@ -941,4 +1002,94 @@
     <string name="server_delete_key_saved">已保存密钥（%1$d 个字符）。输入新密钥可替换，留空保存则移除。</string>
     <string name="server_delete_key_empty">尚未保存密钥：永久删除不可用。</string>
     <string name="hint_media_deletion_setup">永久删除需配置密钥：设置 → 服务器 → 媒体删除</string>
+    <string name="whats_new_title">新功能</string>
+    <plurals name="whats_new_row_supporting">
+        <item quantity="other">版本 %1$s，%2$d 项更改</item>
+    </plurals>
+    <string name="whats_new_updated_snackbar">已更新至 %1$s</string>
+    <string name="whats_new_badge">新</string>
+    <string name="whats_new_all_releases">所有版本</string>
+    <string name="whats_new_on_github">在 GitHub 上</string>
+
+    <!-- Welcome wizard (first run) -->
+    <string name="title_welcome">欢迎使用 ComfyChair</string>
+    <string name="label_welcome_intro">连接你自己的 ComfyUI 服务器的移动客户端。除非你另行选择，生成的图片和视频只保存在手机内存中。</string>
+    <string name="label_welcome_question">你想做什么？</string>
+    <string name="label_welcome_add_server">添加服务器</string>
+    <string name="desc_welcome_add_server">连接到你的 ComfyUI 服务器</string>
+    <string name="label_welcome_restore">从备份恢复</string>
+    <string name="desc_welcome_restore">从文件恢复服务器、工作流和设置</string>
+    <string name="button_next">下一步</string>
+    <string name="title_welcome_add_server">添加服务器</string>
+    <string name="title_welcome_restore">从备份恢复</string>
+    <string name="button_backup_choose_file">选择备份文件</string>
+    <string name="label_backup_unnamed_file">此文件</string>
+    <string name="label_server_credentials_missing_basic">输入用户名和密码以连接</string>
+    <string name="label_server_credentials_missing_token">输入令牌以连接</string>
+    <string name="label_credentials_not_in_backup">备份不包含登录信息，请重新输入。</string>
+    <string name="button_save_and_connect">保存并连接</string>
+    <string name="label_backup_brings_back">选择从 ComfyChair 导出的备份文件。它将恢复：</string>
+    <string name="label_backup_item_servers">服务器</string>
+    <string name="desc_backup_item_servers">名称、地址和登录方式</string>
+    <string name="label_backup_item_workflows">工作流</string>
+    <string name="label_backup_item_prompts">已保存的提示词</string>
+    <string name="label_backup_item_settings">设置</string>
+    <string name="label_backup_no_credentials_title">备份中不包含密码和令牌。</string>
+    <string name="label_backup_no_credentials_body">需要的服务器要重新输入。</string>
+    <string name="button_backup_choose_another">选择其他文件</string>
+    <string name="button_backup_change">更改</string>
+    <string name="label_backup_settings_only">仅设置</string>
+    <string name="content_description_backup_file_contents">备份文件 %1$s，%2$s</string>
+    <string name="error_backup_unreadable_title">无法读取此文件</string>
+    <string name="error_backup_unreadable_body">无法打开 %1$s。请选择其他文件。</string>
+    <string name="error_backup_not_backup_title">这不是 ComfyChair 备份</string>
+    <string name="error_backup_not_backup_body">%1$s 不包含 ComfyChair 设置。请选择在设置中创建的备份。</string>
+    <string name="error_backup_unsupported_title">无法恢复此备份</string>
+    <string name="error_backup_unsupported_body">%1$s 来自当前版本无法读取的 ComfyChair 版本。请选择其他文件。</string>
+    <string name="error_backup_no_servers_title">此备份不包含服务器</string>
+    <string name="error_backup_no_servers_body">请选择其他文件，或返回并添加服务器。</string>
+    <string name="error_backup_failed_title">无法恢复备份</string>
+    <string name="error_backup_failed_body">请重试或选择其他文件。</string>
+    <string name="label_backup_skipped_workflows">工作流：%1$s</string>
+    <string name="label_backup_skipped_prompts">提示词：%1$s</string>
+    <string name="msg_backup_restored">备份已恢复</string>
+    <plurals name="label_backup_servers_count">
+        <item quantity="other">%d 个服务器</item>
+    </plurals>
+    <plurals name="label_backup_workflows_count">
+        <item quantity="other">%d 个工作流</item>
+    </plurals>
+    <plurals name="label_backup_prompts_count">
+        <item quantity="other">%d 条提示词</item>
+    </plurals>
+
+    <!-- Import from server -->
+    <string name="button_workflow_from_file">从文件</string>
+    <string name="button_workflow_from_server">从服务器</string>
+    <string name="title_server_import">从服务器导入</string>
+    <string name="msg_server_import_no_match">没有与“%1$s”匹配的工作流</string>
+    <string name="label_server_workflow_too_large">太大，无法导入（%1$s）</string>
+    <string name="label_server_workflow_imported">已导入</string>
+    <string name="content_description_downloading">正在下载</string>
+    <string name="title_server_import_empty">此服务器上没有工作流</string>
+    <string name="desc_server_import_empty">在 ComfyUI 中保存工作流（Workflow › Save）后，它会显示在这里。</string>
+    <string name="button_refresh">刷新</string>
+    <string name="button_retry">重试</string>
+    <string name="title_server_import_failed">无法加载工作流</string>
+    <string name="desc_server_import_failed">服务器没有响应。请检查它是否在运行，然后重试。</string>
+    <string name="title_server_import_multiuser">此服务器有用户账户</string>
+    <string name="desc_server_import_multiuser">暂不支持从多用户服务器导入。请在 ComfyUI 中导出工作流并导入文件。</string>
+    <string name="button_import_from_file">从文件导入</string>
+    <string name="error_server_workflows_refresh">无法刷新列表</string>
+    <string name="error_server_workflow_too_large">%1$s 太大，无法导入（上限 %2$s）</string>
+    <string name="error_server_workflow_not_workflow">%1$s 不是 ComfyUI 工作流</string>
+    <string name="error_server_workflow_download">无法下载 %1$s</string>
+    <plurals name="hint_server_import_search">
+        <item quantity="other">搜索 %d 个工作流</item>
+    </plurals>
+    <plurals name="label_server_import_count">
+        <item quantity="other">%1$d / %2$d 个工作流</item>
+    </plurals>
+    <string name="state_expanded">已展开</string>
+    <string name="state_collapsed">已收起</string>
 </resources>

@@ -27,7 +27,6 @@ import okio.ByteString
 import org.json.JSONObject
 import sh.hnet.comfychair.ComfyUIClient
 import sh.hnet.comfychair.R
-import sh.hnet.comfychair.WorkflowManager
 import sh.hnet.comfychair.cache.MediaCache
 import sh.hnet.comfychair.cache.MediaStateHolder
 import sh.hnet.comfychair.cache.ResultThumbnails
@@ -37,6 +36,7 @@ import sh.hnet.comfychair.queue.QueueSnapshot
 import sh.hnet.comfychair.repository.GalleryRepository
 import sh.hnet.comfychair.storage.AppSettings
 import sh.hnet.comfychair.storage.ObjectInfoCache
+import sh.hnet.comfychair.util.AppErrors
 import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.util.Obfuscator
 import sh.hnet.comfychair.workflow.NodeTypeRegistry
@@ -347,17 +347,6 @@ object ConnectionManager {
     }
 
     /**
-     * Called when backup restore changes connection settings.
-     * Clears everything, reloads workflows, and returns to login.
-     */
-    fun invalidateForRestore() {
-        DebugLogger.i(TAG, "Invalidating for restore")
-        // Reload workflows to pick up restored user workflows
-        WorkflowManager.reloadWorkflows()
-        disconnect()
-    }
-
-    /**
      * Logout from the server. Sets the logout flag to prevent auto-reconnect.
      * Called when user explicitly logs out via the UI.
      */
@@ -511,7 +500,7 @@ object ConnectionManager {
         val client = _client ?: run {
             DebugLogger.w(TAG, "retrySingleAttempt: aborting - client is null")
             _isReconnecting.value = false
-            Toast.makeText(context, R.string.msg_reconnect_failed, Toast.LENGTH_SHORT).show()
+            AppErrors.report(context, R.string.error_reconnect_failed)
             return
         }
 
@@ -545,7 +534,7 @@ object ConnectionManager {
                         clearConnectionAlert()
                     } else {
                         DebugLogger.w(TAG, "WebSocket failed to connect after successful HTTP test")
-                        Toast.makeText(context, R.string.msg_reconnect_failed, Toast.LENGTH_SHORT).show()
+                        AppErrors.report(context, R.string.error_reconnect_failed)
                     }
                 } else {
                     _isReconnecting.value = false
@@ -554,7 +543,7 @@ object ConnectionManager {
                         reason = errorMessage,
                         failureType = failureType
                     )
-                    Toast.makeText(context, R.string.msg_reconnect_failed, Toast.LENGTH_SHORT).show()
+                    AppErrors.report(context, R.string.error_reconnect_failed)
                 }
             }
         }
@@ -761,11 +750,23 @@ object ConnectionManager {
                     val promptId = data?.optString("prompt_id")
                     val errorMsg = data?.optString("exception_message", "Unknown error") ?: "Unknown error"
                     DebugLogger.e(TAG, "WS: execution_error (promptId: ${Obfuscator.promptId(promptId)})")
-                    // Notify JobRegistry of the failure
+                    // Ours, before the registry forgets it; then notify JobRegistry of the failure
+                    val isOwn = !promptId.isNullOrEmpty() && JobRegistry.findOwner(promptId) != null
                     if (!promptId.isNullOrEmpty()) {
                         JobRegistry.markFailed(promptId)
                     }
-                    WebSocketMessage.ExecutionError(promptId, errorMsg)
+                    val traceback = data?.optJSONArray("traceback")?.let { lines ->
+                        (0 until lines.length()).map { lines.optString(it) }
+                    }.orEmpty()
+                    WebSocketMessage.ExecutionError(
+                        promptId = promptId,
+                        message = errorMsg,
+                        nodeType = data?.optString("node_type")?.takeIf { it.isNotEmpty() },
+                        nodeId = data?.optString("node_id")?.takeIf { it.isNotEmpty() },
+                        exceptionType = data?.optString("exception_type")?.takeIf { it.isNotEmpty() },
+                        traceback = traceback,
+                        isOwn = isOwn
+                    )
                 }
                 "execution_success" -> {
                     val data = message.optJSONObject("data")
@@ -806,7 +807,7 @@ object ConnectionManager {
                 scope.launch { _webSocketMessages.emit(it) }
             }
         } catch (e: Exception) {
-            DebugLogger.w(TAG, "WS: failed to parse message: ${e.message}")
+            DebugLogger.w(TAG, "WS: failed to parse message: ${Obfuscator.error(e)}")
         }
     }
 
@@ -822,7 +823,7 @@ object ConnectionManager {
                     scope.launch { _webSocketMessages.emit(WebSocketMessage.PreviewImage(bitmap)) }
                 }
             } catch (e: Exception) {
-                DebugLogger.w(TAG, "WS: failed to decode preview: ${e.message}")
+                DebugLogger.w(TAG, "WS: failed to decode preview: ${Obfuscator.error(e)}")
             }
         }
     }

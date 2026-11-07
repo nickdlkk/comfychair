@@ -1,6 +1,5 @@
 package sh.hnet.comfychair.ui.navigation
 
-import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -51,12 +50,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import sh.hnet.comfychair.R
 import sh.hnet.comfychair.navigation.MainRoute
 import sh.hnet.comfychair.navigation.SettingsRoute
 import sh.hnet.comfychair.queue.JobRegistry
 import sh.hnet.comfychair.queue.JobStatus
+import sh.hnet.comfychair.ui.components.ErrorSnackbars
 import sh.hnet.comfychair.ui.components.LocalAppSnackbarHostState
 import sh.hnet.comfychair.ui.components.LocalCoveredByMediaViewer
 import sh.hnet.comfychair.ui.components.LocalMediaOrigins
@@ -65,7 +67,10 @@ import sh.hnet.comfychair.ui.components.MainNavigationBar
 import sh.hnet.comfychair.ui.components.MediaOrigins
 import sh.hnet.comfychair.ui.components.MediaViewerOpener
 import sh.hnet.comfychair.ui.components.MediaViewerOverlay
+import sh.hnet.comfychair.ui.components.SourceMedia
 import sh.hnet.comfychair.ui.components.SourceTarget
+import sh.hnet.comfychair.ui.components.UseAsSource
+import sh.hnet.comfychair.ui.components.WhatsNew
 import sh.hnet.comfychair.ui.screens.AboutSettingsScreen
 import sh.hnet.comfychair.ui.screens.GalleryScreen
 import sh.hnet.comfychair.ui.screens.ImageToImageScreen
@@ -74,7 +79,10 @@ import sh.hnet.comfychair.ui.screens.ServerSettingsScreen
 import sh.hnet.comfychair.ui.screens.SettingsRootScreen
 import sh.hnet.comfychair.ui.screens.TextToImageScreen
 import sh.hnet.comfychair.ui.screens.TextToVideoScreen
+import sh.hnet.comfychair.ui.screens.VideoToVideoScreen
+import sh.hnet.comfychair.ui.screens.WhatsNewSettingsScreen
 import sh.hnet.comfychair.ui.screens.WorkflowDetailPage
+import sh.hnet.comfychair.ui.screens.ServerImportScreen
 import sh.hnet.comfychair.ui.screens.WorkflowsSettingsScreen
 import sh.hnet.comfychair.ui.screens.settings.BackupSettingsPage
 import sh.hnet.comfychair.ui.screens.settings.CacheSettingsPage
@@ -87,6 +95,8 @@ import sh.hnet.comfychair.ui.screens.settings.MediaPrivacySettingsPage
 import sh.hnet.comfychair.ui.screens.settings.ResetSettingsPage
 import sh.hnet.comfychair.ui.screens.settings.SettingsEventsHost
 import sh.hnet.comfychair.ui.screens.settings.WorkflowEditorSettingsPage
+import sh.hnet.comfychair.util.AppErrors
+import sh.hnet.comfychair.util.VideoFrames
 import sh.hnet.comfychair.viewmodel.GalleryViewModel
 import sh.hnet.comfychair.viewmodel.GenerationViewModel
 import sh.hnet.comfychair.viewmodel.ImageToImageViewModel
@@ -95,6 +105,7 @@ import sh.hnet.comfychair.viewmodel.MediaViewerViewModel
 import sh.hnet.comfychair.viewmodel.SettingsViewModel
 import sh.hnet.comfychair.viewmodel.TextToImageViewModel
 import sh.hnet.comfychair.viewmodel.TextToVideoViewModel
+import sh.hnet.comfychair.viewmodel.VideoToVideoViewModel
 import sh.hnet.comfychair.viewmodel.WorkflowManagementViewModel
 import sh.hnet.comfychair.model.ServerImage
 
@@ -112,6 +123,7 @@ fun MainNavHost(
     imageToImageViewModel: ImageToImageViewModel,
     textToVideoViewModel: TextToVideoViewModel,
     imageToVideoViewModel: ImageToVideoViewModel,
+    videoToVideoViewModel: VideoToVideoViewModel,
     galleryViewModel: GalleryViewModel,
     mediaViewerViewModel: MediaViewerViewModel,
     settingsViewModel: SettingsViewModel,
@@ -126,33 +138,53 @@ fun MainNavHost(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    fun useAsSourceBitmap(target: SourceTarget, bitmap: Bitmap, descriptor: ServerImage?) {
+    // Sends a generated medium to a screen as its source and switches to that screen the way the navigation bar
+    // does. The image screens take an image or a video's last frame, Video to Video a video (at most 100 MB).
+    val useAsSource: UseAsSource = { target, load ->
         scope.launch {
+            fun reportError(messageRes: Int) = AppErrors.report(context, messageRes)
+            val media = load()
+            if (media == null) {
+                reportError(if (target == SourceTarget.VIDEO_TO_VIDEO) R.string.error_source_video_unreadable else R.string.error_failed_load_image)
+                return@launch
+            }
+            if (media is SourceMedia.TooLargeVideo ||
+                (target == SourceTarget.VIDEO_TO_VIDEO && media is SourceMedia.Video &&
+                    media.bytes.size > VideoToVideoViewModel.MAX_SOURCE_BYTES)) {
+                reportError(R.string.error_source_video_too_large)
+                return@launch
+            }
             val route = when (target) {
-                SourceTarget.IMAGE_TO_IMAGE -> {
-                    if (descriptor != null) imageToImageViewModel.useServerImageAsSource(context, descriptor, bitmap)
-                    else imageToImageViewModel.useAsSource(context, bitmap)
-                    MainRoute.ImageToImage
+                SourceTarget.VIDEO_TO_VIDEO -> {
+                    val video = media as? SourceMedia.Video ?: return@launch
+                    if (!videoToVideoViewModel.useAsSource(context, video.bytes)) {
+                        reportError(R.string.error_source_video_unreadable)
+                        return@launch
+                    }
+                    MainRoute.VideoToVideo
                 }
-                SourceTarget.IMAGE_TO_VIDEO -> {
-                    imageToVideoViewModel.useAsSource(context, bitmap)
-                    MainRoute.ImageToVideo
+                SourceTarget.IMAGE_TO_IMAGE, SourceTarget.IMAGE_TO_VIDEO -> {
+                    val bitmap = when (media) {
+                        is SourceMedia.Image -> media.bitmap
+                        is SourceMedia.Video -> withContext(Dispatchers.IO) { VideoFrames.lastFrame(media.bytes) }
+                        SourceMedia.TooLargeVideo -> null
+                    }
+                    if (bitmap == null) {
+                        reportError(R.string.error_last_frame_unreadable)
+                        return@launch
+                    }
+                    if (target == SourceTarget.IMAGE_TO_IMAGE) {
+                        imageToImageViewModel.useAsSource(context, bitmap)
+                        MainRoute.ImageToImage
+                    } else {
+                        imageToVideoViewModel.useAsSource(context, bitmap)
+                        MainRoute.ImageToVideo
+                    }
                 }
             }
             navController.navigateToScreen(route)
         }
     }
-
-    // Sends a generated image to Image to Image or Image to Video as its source and switches to
-    // that screen the way the navigation bar does. When the bitmap is the viewer's own decode of a
-    // known server descriptor, the descriptor travels along as upload provenance (direct reuse).
-    val useAsSource: (SourceTarget, suspend () -> Bitmap?) -> Unit = { target, loadBitmap ->
-        scope.launch {
-            val bitmap = loadBitmap() ?: return@launch
-            useAsSourceBitmap(target, bitmap, null)
-        }
-    }
-
 
     // The media viewer, over everything below (navigation bar included)
     val viewerOpen by mediaViewerViewModel.isOpen.collectAsState()
@@ -214,6 +246,24 @@ fun MainNavHost(
             }
         }
     }
+
+    // After an update, once: the new version, with What's new (Settings › About › What's new, Back retraces them)
+    LaunchedEffect(Unit) {
+        val version = WhatsNew.takeUpdateNotice(context) ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = resources.getString(R.string.whats_new_updated_snackbar, version),
+            actionLabel = resources.getString(R.string.whats_new_title),
+            duration = SnackbarDuration.Long
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            navController.navigateToScreen(MainRoute.Settings)
+            navController.navigate(SettingsRoute.About.route)
+            navController.navigate(SettingsRoute.WhatsNew.route)
+        }
+    }
+
+    // The app's errors, here unless the media viewer covers this screen (it shows them itself)
+    ErrorSnackbars(snackbarHostState, active = !viewerOpen)
 
     // The gallery's selection toolbar takes the navigation bar's place
     val galleryState by galleryViewModel.uiState.collectAsState()
@@ -311,6 +361,15 @@ fun MainNavHost(
                                 WorkflowsSettingsScreen(
                                     viewModel = workflowManagementViewModel,
                                     onNavigateBack = { navController.popBackStack() },
+                                    onOpenDetails = { id -> navController.navigate(SettingsRoute.WorkflowDetail.of(id)) },
+                                    onImportFromServer = { navController.navigate(SettingsRoute.ServerImport.route) }
+                                )
+                            }
+                            composable(SettingsRoute.ServerImport.route) {
+                                ServerImportScreen(
+                                    viewModel = workflowManagementViewModel,
+                                    onNavigateBack = { navController.popBackStack() },
+                                    // Over this page: Back returns here to import the next one
                                     onOpenDetails = { id -> navController.navigate(SettingsRoute.WorkflowDetail.of(id)) }
                                 )
                             }
@@ -342,13 +401,25 @@ fun MainNavHost(
                             composable(SettingsRoute.DebugLog.route) { DebugLogSettingsPage(settingsViewModel, back) }
                             composable(SettingsRoute.Reset.route) { ResetSettingsPage(settingsViewModel, back) }
                             composable(SettingsRoute.About.route) {
-                                AboutSettingsScreen(onNavigateBack = { navController.popBackStack() })
+                                AboutSettingsScreen(
+                                    onNavigateBack = back,
+                                    onOpenWhatsNew = { navController.navigate(SettingsRoute.WhatsNew.route) }
+                                )
                             }
+                            composable(SettingsRoute.WhatsNew.route) { WhatsNewSettingsScreen(back) }
 
                             composable(MainRoute.ImageToVideo.route) {
                                 ImageToVideoScreen(
                                     generationViewModel = generationViewModel,
                                     imageToVideoViewModel = imageToVideoViewModel,
+                                    onUseAsSource = useAsSource
+                                )
+                            }
+
+                            composable(MainRoute.VideoToVideo.route) {
+                                VideoToVideoScreen(
+                                    generationViewModel = generationViewModel,
+                                    videoToVideoViewModel = videoToVideoViewModel,
                                     onUseAsSource = useAsSource
                                 )
                             }
@@ -360,9 +431,10 @@ fun MainNavHost(
             SettingsEventsHost(settingsViewModel)
             MediaViewerOverlay(
                 mediaViewerViewModel,
-                onUseAsSource = { target, bitmap -> useAsSource(target) { bitmap } },
+                onUseAsSource = { target, media -> useAsSource(target) { media } },
                 onUseServerImageAsSource = { target, bitmap, descriptor ->
-                    useAsSourceBitmap(target, bitmap, descriptor)
+                    imageToImageViewModel.useServerImageAsSource(context, descriptor, bitmap)
+                    navController.navigateToScreen(MainRoute.ImageToImage)
                 }
             )
         }

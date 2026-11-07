@@ -12,9 +12,9 @@ import android.net.Uri
 import androidx.lifecycle.viewModelScope
 import kotlin.coroutines.suspendCoroutine
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -28,17 +28,15 @@ import sh.hnet.comfychair.connection.DirectInputSource
 import sh.hnet.comfychair.connection.ImageUploadReuse
 import sh.hnet.comfychair.model.ServerImage
 import sh.hnet.comfychair.connection.ConnectionManager
-import sh.hnet.comfychair.ui.components.shared.WorkflowItemBase
+import sh.hnet.comfychair.ui.components.config.CommonGenerationState
 import sh.hnet.comfychair.util.DebugLogger
 import sh.hnet.comfychair.util.GenerationOutput
 import sh.hnet.comfychair.util.GenerationOutputs
 import sh.hnet.comfychair.util.Obfuscator
 import sh.hnet.comfychair.util.SeasonalPrompts
 import sh.hnet.comfychair.util.UuidUtils
-import sh.hnet.comfychair.util.ValidationUtils
-import sh.hnet.comfychair.viewmodel.base.GenerationParams
-import sh.hnet.comfychair.ui.components.config.CommonGenerationState
 import sh.hnet.comfychair.viewmodel.base.BaseGenerationViewModel
+import sh.hnet.comfychair.viewmodel.base.GenerationParams
 
 /**
  * Data class representing a path drawn on the mask canvas
@@ -1043,13 +1041,6 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
                     _events.emit(GenerationScreenEvent.ShowToastMessage(message))
                 }
                 // DON'T clear state - generation may still be running on server
-            }
-            is GenerationEvent.Error -> {
-                viewModelScope.launch {
-                    _events.emit(GenerationScreenEvent.ShowToastMessage(event.message))
-                }
-                // DON'T call completeGeneration() here - this may just be a connection error
-                // The server might still complete the generation
             }
             is GenerationEvent.ClearPreviewForResume -> {
                 // Don't clear - keep the preview visible during navigation
