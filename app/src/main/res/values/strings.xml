@@ -1160,4 +1160,24 @@
     </plurals>
     <string name="state_expanded">Expanded</string>
     <string name="state_collapsed">Collapsed</string>
+
+    <!-- Material library -->
+    <string name="button_confirm_delete">Click again to confirm</string>
+    <string name="button_delete_material">Delete materials</string>
+    <string name="button_import_materials">Import images</string>
+    <string name="button_import_to_material_library">Import to Material Library</string>
+    <string name="button_materials_select">Select items</string>
+    <string name="error_materials_delete">Failed to delete materials</string>
+    <string name="error_materials_import">Failed to import materials</string>
+    <string name="materials_selected_count">%d selected</string>
+    <string name="msg_importing">Importing…</string>
+    <string name="msg_material_library_empty">No materials imported</string>
+    <string name="msg_materials_deleted_success">Materials deleted</string>
+    <string name="msg_materials_imported_success">Materials imported</string>
+    <string name="title_material_library">Materials</string>
+    <string name="title_material_picker">Select from Materials</string>
+    <string name="button_pick_from_materials">Pick from materials</string>
+    <string name="button_save_to_material_library">Add to Material Library</string>
+    <string name="menu_materials">Materials</string>
+    <string name="server_gallery_material">Materials</string>
 </resources>

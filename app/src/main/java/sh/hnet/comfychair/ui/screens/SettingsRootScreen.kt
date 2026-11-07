@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.Collections
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Polyline
@@ -107,6 +108,11 @@ fun SettingsRootScreen(viewModel: SettingsViewModel, onOpenPage: (SettingsRoute)
                     shapes, Icons.Rounded.Polyline, stringResource(R.string.title_settings_workflow_editor),
                     supporting = edgeRouters.firstOrNull { it.first == routerId }?.let { stringResource(it.second) }
                 ) { onOpenPage(SettingsRoute.WorkflowEditor) }
+            }
+            row { shapes ->
+                SettingsNavigationRow(shapes, Icons.Rounded.Collections, stringResource(R.string.title_material_library)) {
+                    onOpenPage(SettingsRoute.Materials)
+                }
             }
         }
         SettingsGroup(stringResource(R.string.title_settings_group_data)) {

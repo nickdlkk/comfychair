@@ -41,6 +41,7 @@ import sh.hnet.comfychair.viewmodel.GalleryViewModel
 import sh.hnet.comfychair.viewmodel.GenerationViewModel
 import sh.hnet.comfychair.viewmodel.ImageToImageViewModel
 import sh.hnet.comfychair.viewmodel.ImageToVideoViewModel
+import sh.hnet.comfychair.viewmodel.MaterialLibraryViewModel
 import sh.hnet.comfychair.viewmodel.MediaViewerViewModel
 import sh.hnet.comfychair.viewmodel.ServerGalleryViewModel
 import sh.hnet.comfychair.viewmodel.SettingsEvent
@@ -70,6 +71,7 @@ class MainContainerActivity : ComponentActivity() {
     private val imageToVideoViewModel: ImageToVideoViewModel by viewModels()
     private val videoToVideoViewModel: VideoToVideoViewModel by viewModels()
     private val galleryViewModel: GalleryViewModel by viewModels()
+    private val materialLibraryViewModel: MaterialLibraryViewModel by viewModels()
     private val serverGalleryViewModel: ServerGalleryViewModel by viewModels()
     private val mediaViewerViewModel: MediaViewerViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
@@ -203,6 +205,7 @@ class MainContainerActivity : ComponentActivity() {
                         videoToVideoViewModel = videoToVideoViewModel,
                         galleryViewModel = galleryViewModel,
                         serverGalleryViewModel = serverGalleryViewModel,
+                        materialLibraryViewModel = materialLibraryViewModel,
                         mediaViewerViewModel = mediaViewerViewModel,
                         settingsViewModel = settingsViewModel,
                         workflowManagementViewModel = workflowManagementViewModel,

@@ -36,6 +36,7 @@ sealed class SettingsRoute(val route: String) {
     data object MediaPrivacy : SettingsRoute("media_privacy_settings")
     data object Language : SettingsRoute("language_settings")
     data object WorkflowEditor : SettingsRoute("workflow_editor_settings")
+    data object Materials : SettingsRoute("materials")
 
     // Data
     data object Backup : SettingsRoute("backup_settings")
@@ -49,7 +50,7 @@ sealed class SettingsRoute(val route: String) {
     companion object {
         val all: List<SettingsRoute>
             get() = listOf(
-                Server, Workflows, WorkflowDetail, ServerImport, Connection, Generation, MediaPrivacy, Language, WorkflowEditor,
+                Server, Workflows, WorkflowDetail, ServerImport, Connection, Generation, MediaPrivacy, Language, WorkflowEditor, Materials,
                 Backup, Cache, DebugLog, Reset, About, WhatsNew
             )
     }

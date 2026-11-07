@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Collections
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Brush
@@ -105,7 +106,9 @@ fun BoxScope.SourceToolbar(
     // Secondary replace through the system file API (DocumentsUI), covering Downloads and file managers
     onReplaceFromFiles: (() -> Unit)? = null,
     // Pick the replacement from the connected server's Input/Output images
-    onPickFromServer: (() -> Unit)? = null
+    onPickFromServer: (() -> Unit)? = null,
+    // Pick the replacement from the imported material library
+    onPickFromMaterials: (() -> Unit)? = null
 ) {
     val modifier = Modifier
         .align(Alignment.BottomCenter)
@@ -131,6 +134,9 @@ fun BoxScope.SourceToolbar(
     val fromServer: (@Composable () -> Unit)? = onPickFromServer?.let { pick ->
         { TooltipIconButton(Icons.Rounded.Cloud, stringResource(R.string.server_gallery_title), pick) }
     }
+    val fromMaterials: (@Composable () -> Unit)? = onPickFromMaterials?.let { pick ->
+        { TooltipIconButton(Icons.Rounded.Collections, stringResource(R.string.server_gallery_material), pick) }
+    }
 
     // The toolbar's container in the same role as the frames of thumbnails over the preview and empty reference slots
     val colors = FloatingToolbarDefaults.standardFloatingToolbarColors(
@@ -141,6 +147,7 @@ fun BoxScope.SourceToolbar(
             replace()
             replaceFromFiles?.invoke()
             fromServer?.invoke()
+            fromMaterials?.invoke()
             removeSource()
         }
     } else {
@@ -164,6 +171,7 @@ fun BoxScope.SourceToolbar(
             replace()
             replaceFromFiles?.invoke()
             fromServer?.invoke()
+            fromMaterials?.invoke()
             removeSource()
             TooltipIconButton(
                 Icons.Rounded.LayersClear,
@@ -210,7 +218,8 @@ fun EmptySourcePicker(
     // Video to Video picks a source video
     isVideo: Boolean = false,
     onPickFromFiles: (() -> Unit)? = null,
-    onPickFromServer: (() -> Unit)? = null
+    onPickFromServer: (() -> Unit)? = null,
+    onPickFromMaterials: (() -> Unit)? = null
 ) {
     val pickIcon = if (isVideo) Icons.Rounded.VideoCall else Icons.Rounded.AddPhotoAlternate
     val outline = MaterialTheme.colorScheme.outline
@@ -257,6 +266,13 @@ fun EmptySourcePicker(
                         Icon(Icons.Rounded.Cloud, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                         Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                         Text(stringResource(R.string.server_gallery_title))
+                    }
+                }
+                if (onPickFromMaterials != null) {
+                    OutlinedButton(onClick = onPickFromMaterials, contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
+                        Icon(Icons.Rounded.Collections, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text(stringResource(R.string.server_gallery_material))
                     }
                 }
             }

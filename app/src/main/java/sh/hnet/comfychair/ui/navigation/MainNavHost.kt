@@ -75,6 +75,7 @@ import sh.hnet.comfychair.ui.screens.AboutSettingsScreen
 import sh.hnet.comfychair.ui.screens.GalleryScreen
 import sh.hnet.comfychair.ui.screens.ImageToImageScreen
 import sh.hnet.comfychair.ui.screens.ImageToVideoScreen
+import sh.hnet.comfychair.ui.screens.MaterialLibraryScreen
 import sh.hnet.comfychair.ui.screens.ServerSettingsScreen
 import sh.hnet.comfychair.ui.screens.SettingsRootScreen
 import sh.hnet.comfychair.ui.screens.TextToImageScreen
@@ -101,6 +102,7 @@ import sh.hnet.comfychair.viewmodel.GalleryViewModel
 import sh.hnet.comfychair.viewmodel.GenerationViewModel
 import sh.hnet.comfychair.viewmodel.ImageToImageViewModel
 import sh.hnet.comfychair.viewmodel.ImageToVideoViewModel
+import sh.hnet.comfychair.viewmodel.MaterialLibraryViewModel
 import sh.hnet.comfychair.viewmodel.MediaViewerViewModel
 import sh.hnet.comfychair.viewmodel.SettingsViewModel
 import sh.hnet.comfychair.viewmodel.TextToImageViewModel
@@ -129,6 +131,7 @@ fun MainNavHost(
     settingsViewModel: SettingsViewModel,
     workflowManagementViewModel: WorkflowManagementViewModel,
     serverGalleryViewModel: ServerGalleryViewModel,
+    materialLibraryViewModel: MaterialLibraryViewModel,
     onLogout: () -> Unit,
     onLeftSettings: (route: String) -> Unit,
     startDestination: String = MainRoute.TextToImage.route,
@@ -396,6 +399,9 @@ fun MainNavHost(
                             composable(SettingsRoute.MediaPrivacy.route) { MediaPrivacySettingsPage(settingsViewModel, back) }
                             composable(SettingsRoute.Language.route) { LanguageSettingsPage(back) }
                             composable(SettingsRoute.WorkflowEditor.route) { WorkflowEditorSettingsPage(settingsViewModel, back) }
+                            composable(SettingsRoute.Materials.route) {
+                                MaterialLibraryScreen(viewModel = materialLibraryViewModel)
+                            }
                             composable(SettingsRoute.Backup.route) { BackupSettingsPage(settingsViewModel, back) }
                             composable(SettingsRoute.Cache.route) { CacheSettingsPage(settingsViewModel, back) }
                             composable(SettingsRoute.DebugLog.route) { DebugLogSettingsPage(settingsViewModel, back) }

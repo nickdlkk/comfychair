@@ -1092,4 +1092,24 @@
     </plurals>
     <string name="state_expanded">已展开</string>
     <string name="state_collapsed">已收起</string>
+
+    <!-- Material library -->
+    <string name="button_confirm_delete">再次点击确认删除</string>
+    <string name="button_delete_material">删除素材</string>
+    <string name="button_import_materials">导入图片</string>
+    <string name="button_import_to_material_library">导入到素材库</string>
+    <string name="button_materials_select">选择素材</string>
+    <string name="error_materials_delete">删除素材失败</string>
+    <string name="error_materials_import">导入素材失败</string>
+    <string name="materials_selected_count">已选择 %d 项</string>
+    <string name="msg_importing">正在导入…</string>
+    <string name="msg_material_library_empty">暂无已导入素材</string>
+    <string name="msg_materials_deleted_success">素材已删除</string>
+    <string name="msg_materials_imported_success">素材导入成功</string>
+    <string name="title_material_library">素材库</string>
+    <string name="title_material_picker">选择素材</string>
+    <string name="button_pick_from_materials">从素材库选择</string>
+    <string name="button_save_to_material_library">添加到素材库</string>
+    <string name="menu_materials">素材库</string>
+    <string name="server_gallery_material">存入素材</string>
 </resources>

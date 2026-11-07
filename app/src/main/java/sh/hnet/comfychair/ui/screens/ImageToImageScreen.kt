@@ -47,10 +47,13 @@ import sh.hnet.comfychair.ui.components.MaskPreview
 import sh.hnet.comfychair.ui.components.ResultHeroImage
 import sh.hnet.comfychair.ui.components.ResultHeroVideo
 import sh.hnet.comfychair.ui.components.ResultsPreview
+import sh.hnet.comfychair.materials.MaterialLibrary
+import sh.hnet.comfychair.ui.components.MaterialLibraryPickerBottomSheet
 import sh.hnet.comfychair.ui.components.ServerImagePickerSheet
 import sh.hnet.comfychair.ui.components.SourceMedia
 import sh.hnet.comfychair.ui.components.SourceTarget
 import sh.hnet.comfychair.ui.components.UseAsSource
+import sh.hnet.comfychair.viewmodel.MaterialLibraryViewModel
 import sh.hnet.comfychair.viewmodel.ServerGalleryViewModel
 import sh.hnet.comfychair.ui.components.config.toBottomSheetConfig
 import sh.hnet.comfychair.ui.components.config.workflowGroups
@@ -151,6 +154,15 @@ fun ImageToImageScreen(
     var showServerPicker by remember { mutableStateOf(false) }
     val serverPickerViewModel: ServerGalleryViewModel = viewModel()
     val pickFromServer: () -> Unit = { showServerPicker = true }
+
+    // Material library sheet for the source image
+    var showMaterialPicker by remember { mutableStateOf(false) }
+    val materialLibraryViewModel: MaterialLibraryViewModel = viewModel()
+    val materialUiState by materialLibraryViewModel.uiState.collectAsState()
+    val pickFromMaterials: () -> Unit = {
+        showMaterialPicker = true
+        materialLibraryViewModel.load(context)
+    }
 
     // UI composition
     // Opens the mask editor on the current source; its edits come back through the ViewModel
@@ -283,7 +295,8 @@ fun ImageToImageScreen(
                             EmptySourcePicker(
                                 onPick = { imagePickerLauncher.launch("image/*") },
                                 onPickFromFiles = { documentPickerLauncher.launch(arrayOf("image/*")) },
-                                onPickFromServer = pickFromServer
+                                onPickFromServer = pickFromServer,
+                                onPickFromMaterials = pickFromMaterials
                             )
                         }
                         // Tools appear once the swap animation is done
@@ -293,6 +306,7 @@ fun ImageToImageScreen(
                                     onReplace = { imagePickerLauncher.launch("image/*") },
                                     onReplaceFromFiles = { documentPickerLauncher.launch(arrayOf("image/*")) },
                                     onPickFromServer = pickFromServer,
+                                    onPickFromMaterials = pickFromMaterials,
                                     onRemove = imageToImageViewModel::clearSourceImage,
                                     maskTools = if (inpainting) MaskTools(
                                         hasMask = hasMask,
@@ -449,6 +463,31 @@ fun ImageToImageScreen(
                     imageToImageViewModel.useAsSource(context, bitmap)
                 },
                 onClose = { showServerPicker = false }
+            )
+        }
+    }
+
+    if (showMaterialPicker) {
+        ModalBottomSheet(
+            onDismissRequest = { showMaterialPicker = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            dragHandle = null
+        ) {
+            MaterialLibraryPickerBottomSheet(
+                items = materialUiState.items,
+                viewModel = materialLibraryViewModel,
+                onSelect = { item ->
+                    scope.launch {
+                        val bitmap = MaterialLibrary.loadBitmap(context, item)
+                        if (bitmap != null) imageToImageViewModel.useAsSource(context, bitmap)
+                    }
+                    showMaterialPicker = false
+                },
+                onDismiss = { showMaterialPicker = false },
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                isImporting = materialUiState.isImporting,
+                isSelectionMode = materialUiState.isSelectionMode,
+                selectedIds = materialUiState.selectedIds
             )
         }
     }
