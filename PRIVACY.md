@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Effective Date**: November 7, 2026
+**Effective Date**: November 9, 2026
 **App**: ComfyChair
 **Developer**: Legal HKr
 
@@ -17,12 +17,12 @@ ComfyChair is an open-source Android application that provides a mobile interfac
 The app stores the following data locally on your device:
 
 - **Connection Settings**: Server names, hostnames and ports, and the protocol and certificate fingerprint you accepted for each server
-- **Credentials**: Passwords, tokens and sign-in cookies for your servers, encrypted with a key kept in the Android Keystore
+- **Credentials**: Passwords, tokens and sign-in cookies for your servers, encrypted with a key kept in the Android Keystore that never leaves the device; if the key can't be used, they are not saved rather than stored unencrypted
 - **App Preferences**: UI settings such as live preview, media storage, and debug logging
 - **Generation Parameters**: Your workflow selections, prompts, and generation settings (dimensions, steps, CFG, etc.)
 - **Generated Media and Sources**: Controlled by the "Media storage" setting, which applies equally to the source images and videos you pick. By default ("Memory only") generated images and videos are kept only in the phone's RAM and are never written to its storage; switching to this mode deletes any media stored earlier. The other options keep the latest results on the device when the app goes to the background ("Memory, saved on exit") or store them as they arrive ("On the device"). When you share a result, a copy is written to the app's private cache for the receiving app and deleted the next time ComfyChair starts. Media you save to the gallery is managed by you
 - **Debug Log**: Kept in memory only while debug logging is enabled. Prompts, file names, job IDs, server addresses, workflow names and the titles you give to groups, notes and nodes are recorded as placeholders; node values, server responses and error messages (which can quote addresses, paths or prompts) are not recorded at all, so an exported log does not reveal them
-- **Custom Workflows**: Any workflows you import into the app, from a file or from the workflows saved on your ComfyUI server. The server's list of saved workflows is only shown, not stored; the workflow you pick is kept in memory until you finish importing it
+- **Custom Workflows**: Any workflows you import into the app, from a file or from the workflows saved on your ComfyUI server. The server's list of saved workflows is only shown, not stored; the workflow you pick is kept in memory until you finish importing it. A workflow you export in one of ComfyUI's formats carries the values last used with it on the current server (the negative prompt and other settings, not the positive prompt)
 - **Queue**: The IDs of your queued jobs and a random client ID for each server, so jobs you submitted are still recognized as yours after the app restarts. Descriptions of your queued jobs (prompt and workflow) shown in the queue are kept in memory only
 
 All of this data remains on your device and is never transmitted to the developer or any third party.
@@ -38,9 +38,9 @@ When you use ComfyChair, the app communicates directly with your configured Comf
 
 **This data is sent only to the server you configure.** ComfyChair does not route your data through any intermediary servers.
 
-### Other Users of Your Server
+### What Your Server Shares
 
-ComfyUI reports every client's queued jobs, including their prompts and workflows. ComfyChair shows other clients' jobs only as a count and their position in the queue; it never displays, stores or logs their contents.
+ComfyUI keeps one history, one input folder and one output folder for everyone who uses the server: they hold the work of every client, the web interface included, and ComfyUI shows them to any client that connects. ComfyChair shows what the server shares in the same way: the gallery shows the server's history, and the source picker of the generation screens lists the images and videos in the server's input folder, so a file already there can be used without uploading it again. ComfyUI also reports every client's queued jobs with their workflows; ComfyChair's queue shows other clients' jobs with their prompt and position, without letting you change them. None of this is sent anywhere else, and none of it is logged; it's kept on the device only as the "Media storage" setting allows.
 
 ## Third-Party Services
 

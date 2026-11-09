@@ -7,11 +7,49 @@ package sh.hnet.comfychair.workflow
  */
 object WorkflowGraphPreparation {
 
+    private data class LocalTypesKey(
+        val subgraphs: String,
+        val promoted: Map<String, List<String>>,
+        val ports: Set<String>,
+        val version: Int
+    )
+
+    // The last graph's subgraph types: the editor looks types up many times between changes of the graph
+    @Volatile
+    private var localTypesCache: Pair<LocalTypesKey, Map<String, NodeTypeDefinition>>? = null
+
+    /**
+     * [registry] with the types of a graph's subgraphs ([subgraphs], as stored in the graph) added, as their instances
+     * among [nodes] show them, and inside a subgraph its port nodes' types; [registry] itself for a graph without
+     * subgraphs.
+     */
+    fun registryFor(subgraphs: String?, nodes: List<WorkflowNode>, registry: NodeTypeRegistry): NodeTypeRegistry {
+        if (subgraphs == null) return registry
+        val promoted = nodes.groupBy { it.classType }
+            .mapValues { (_, instances) -> instances.flatMap { node -> node.inputs.keys.filter(Subgraphs::isPromotedKey) } }
+        val ports = nodes.mapNotNullTo(HashSet()) { node -> node.classType.takeIf { SubgraphLevels.isPortType(it) } }
+        val key = LocalTypesKey(subgraphs, promoted, ports, registry.version)
+        val types = localTypesCache?.takeIf { it.first == key }?.second
+            ?: runCatching {
+                val definitions = org.json.JSONObject(subgraphs)
+                Subgraphs.nodeTypes(definitions, promoted, registry::getNodeDefinition) + SubgraphLevels.portTypes(definitions, ports)
+            }
+                .getOrDefault(emptyMap())
+                .also { localTypesCache = key to it }
+        return registry.withLocalTypes(types)
+    }
+
+    /** [registryFor] a whole graph. */
+    fun registryFor(graph: WorkflowGraph, registry: NodeTypeRegistry): NodeTypeRegistry =
+        registryFor(graph.subgraphs, graph.nodes, registry)
+
     /** Add each node's output types from its definition. */
     fun populateNodeOutputs(graph: WorkflowGraph, registry: NodeTypeRegistry): WorkflowGraph {
-        if (!registry.isPopulated()) return graph
+        // The workflow's own types (subgraphs, a level's port nodes) are known without the server's
+        val populated = registry.isPopulated()
         return graph.copy(nodes = graph.nodes.map { node ->
-            node.copy(outputs = registry.getNodeDefinition(node.classType)?.outputs ?: emptyList())
+            val definition = registry.getNodeDefinition(node.classType)
+            node.copy(outputs = definition?.outputs ?: if (populated) emptyList() else node.outputs)
         })
     }
 
@@ -36,14 +74,29 @@ object WorkflowGraphPreparation {
     }
 
     /**
+     * Where the members of one level of a workflow stand in the editor's layout (the top level, or a subgraph's
+     * definition: a JSON object with `nodes`, `groups` and `notes`): (x, y, width, height) by node ID and by "note:N".
+     */
+    fun levelPositions(level: org.json.JSONObject, registry: NodeTypeRegistry): Map<String, FloatArray> {
+        val graph = prepare(level.toString(), registry)
+        val engine = WorkflowLayoutEngine(null)
+        return graph.nodes.associate { it.id to floatArrayOf(it.x, it.y, it.width, it.height) } +
+            graph.notes.associate { note ->
+                WorkflowNote.noteIdToMemberId(note.id) to
+                    floatArrayOf(note.x, note.y, note.width, note.height.takeIf { it > 0f } ?: engine.calculateNoteHeight(note))
+            }
+    }
+
+    /**
      * A workflow's JSON parsed, given outputs, laid out and with typed connections: ready to draw.
      *
      * @param targetAspect Width / height to lay the graph out for (a preview card); null for the editor's layout
      */
     fun prepare(jsonContent: String, registry: NodeTypeRegistry, targetAspect: Float? = null): WorkflowGraph {
         var graph = WorkflowParser(logDetails = false).parse(jsonContent, "", "")
-        graph = populateNodeOutputs(graph, registry)
+        val types = registryFor(graph, registry)
+        graph = populateNodeOutputs(graph, types)
         graph = WorkflowLayoutEngine(targetAspect).layoutGraph(graph)
-        return resolveEdgeTypes(graph, registry)
+        return resolveEdgeTypes(graph, types)
     }
 }

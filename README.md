@@ -2,7 +2,7 @@
 
 An unofficial, native Android UI for [ComfyUI](https://github.com/comfyanonymous/ComfyUI).
 
-**Current version**: v0.9.2
+**Current version**: v0.9.5
 
 [<img src="https://raw.githubusercontent.com/rubenpgrady/get-it-on-github/refs/heads/main/get-it-on-github.png"
     alt="Get it on GitHub"
@@ -32,7 +32,7 @@ ComfyChair provides a streamlined mobile interface for interacting with ComfyUI 
 - **Certificate trust**: Certificates trusted by Android are accepted as usual; self-signed or private-CA certificates are accepted after you confirm their SHA-256 fingerprint, and from then on only that certificate is accepted for the server. A server that used HTTPS is never switched to unencrypted HTTP without asking
 - **Authentication**: HTTP Basic Auth, API key/Bearer token, and browser-based SSO sign-in for servers behind reverse proxies
 - **Offline mode**: Browse what is stored on the device without a network connection, offered automatically when the server can't be reached
-- **Queue**: Submit several jobs without waiting. A chip in the top bar counts your jobs and other clients' jobs apart; the queue sheet lists your running and waiting jobs with cancel, move to front and remove, shows other clients' jobs only as a count, and can clear the queue
+- **Queue**: Submit several jobs without waiting. A chip in the top bar counts your jobs and other clients' jobs apart; the queue sheet lists your running and waiting jobs with cancel, move to front and remove, shows other clients' jobs with their prompt and position (without changing them), and can clear the queue
 - **Dual workflow support**:
   - **Checkpoint mode**: Traditional CheckpointLoaderSimple workflows
   - **UNET mode**: Modern diffusion workflows (Flux, Z-Image, etc.) with separate UNET, VAE, and CLIP model selection
@@ -43,9 +43,9 @@ ComfyChair provides a streamlined mobile interface for interacting with ComfyUI 
   - LoRAs are dynamically injected into workflows at generation time, including workflows with non-core model loaders such as GGUF
 - **Prompt Library**:
   - Save prompts as reusable presets with custom names and tags
-  - Organize presets with favorites and tag-based filtering
-  - Search presets by name, prompt text, or tags
+  - Search by name, prompt text or tags, with Favorites and the most used tags as filters under the search field and the match shown in bold
 - **What's new**: This version's release notes under Settings -> About, and a one-time notice after an update
+- **License**: The full GPL-3.0 text under Settings -> About, readable offline
 - **Errors**: Every error appears as a snackbar; Show opens the whole error (the node that failed with the server's message and traceback, the inputs a server refused, the reason a connection failed) to read or copy
 - **Localization**: Available in English (default), German, French, Polish, Spanish, and Chinese with per-app language selection
 - **Native Android experience**: Built with Kotlin and Jetpack Compose with Material Design 3
@@ -61,6 +61,7 @@ ComfyChair provides a streamlined mobile interface for interacting with ComfyUI 
 - **Progress**: A status card on the preview shows the step and elapsed time, with live preview images when the server sends them
 - **Results**: Jobs with several results get a pager with a thumbnail strip; videos play inline, muted, with a play/pause and time control and a sound toggle; one menu on the result saves, shares, shows details and sends it to another screen as its source: an image to edit or animate, a video to edit in Video to Video, or its last frame to animate on from where it ends
 - **Text to Image** and **Text to Video**: From a prompt, with High Noise / Low Noise UNET and LoRA selection for video
+- **Sources**: The source button opens a sheet: from the device, or an image or video already in the server's input folder (newest first, with thumbnails and video lengths), which is used without uploading it again; a source the server already has is never uploaded twice
 - **Image to Image**:
   - Two modes: **Editing** (transformation, with its own prompt and up to 2 reference images) and **Inpainting** (mask-based, with a mask editor with adjustable brush size and feathered edges)
   - The source and the result swap through a picture-in-picture thumbnail; the source has its own toolbar (replace, remove, mask tools)
@@ -72,7 +73,7 @@ ComfyChair provides a streamlined mobile interface for interacting with ComfyUI 
 ### Media
 
 - **Gallery**:
-  - All generated images and videos in an adaptive grid with a collapsing top bar and pull to refresh
+  - All generated images and videos in an adaptive grid with a collapsing top bar and pull to refresh; videos show their length
   - Select items with a long press for saving, sharing or deleting them together; the other results of the selected jobs are marked, as the server deletes whole jobs
 - **Media viewer**:
   - Opens out of the tile or preview and returns into it; swipe down or use predictive back to close
@@ -91,21 +92,27 @@ ComfyChair provides a streamlined mobile interface for interacting with ComfyUI 
   - Zoomed out below about 40 %, nodes become blocks with their titles; tap one to zoom in to it
   - The selected node's connections are emphasized while the others recede
   - Notes and group labels lie above the wires; group areas are frosted glass, with other wires passing under them
+  - Bypassed nodes look switched off, with a Bypassed badge on their title bar
   - Opens fitted into the free area of the screen, laid out for its proportions
 - **Node values**: A bottom sheet with every editable input of a node (numeric steppers with range hints, switches, image previews, values linked from other nodes leading to their source, the inputs the generation screen fills in), its changed values marked and resettable one by one or all at once
 - **Node management**:
-  - Add nodes via a searchable node browser with category chips, human-readable names, and deprecated and experimental nodes marked
+  - Add nodes via a node browser: ComfyUI's own categories and extension packs as a tree (open folders stay pinned at the top) or every node by name; the search ranks matches by name, and deprecated and experimental nodes are marked
   - Delete, duplicate, bypass and rename nodes; clean up disconnected nodes
   - Tap any socket for its menu: Connect (compatible sockets are ringed while a connection waits), Add a node (the node browser filtered by compatible types) or Disconnect
   - Values (numbers, text, true/false) take links of their type, as in ComfyUI, and become values again when disconnected
   - With TalkBack, a node's sockets and a pending connection's targets are available as actions
   - Organize nodes into groups and add notes with Markdown support; groups are laid out apart like nodes
+- **Subgraphs**: Kept as in ComfyUI, one definition shared by all its copies
+  - A copy is a frame with an Open button; inside, the subgraph's Inputs and Outputs strips, and Back goes up a level
+  - Make a subgraph of a selection, unpack one, rename it or a single copy, and add, rename or remove its inputs and outputs
+  - Show, hide and order the values a copy shows, as ComfyUI's promoted values
 - **Field mapping**: When importing, the app's fields are assigned one at a time on a card, with a list of all fields; several fields can come from one node; no field is required except the source image for image workflows, and workflows without a prompt (e.g. upscalers) are supported
+- **Custom fields**: Any node value, inside subgraphs too, can become a named field of its own: shown in a Custom section of the options sheet with the control of its type and the node's range, checked before Generate and remembered per workflow; one field can fill several values. Built-in fields can be renamed for a workflow
 - **Workflow management**:
   - Create workflows from scratch, import a file, or import a workflow saved on the ComfyUI server (Workflow › Save) from a searchable list
   - Supported formats:
-    - ComfyUI LiteGraph (import only) - native ComfyUI workflow format with subgraph support; widget values are read as ComfyUI lays them out, dynamic inputs and extensions' named values included
-    - ComfyUI API JSON (import/export) - workflow format used by the ComfyUI API
+    - ComfyUI (import/export) - the format of ComfyUI's Workflow › Save, with layout, groups, notes and subgraphs; widget values are read as ComfyUI lays them out, dynamic inputs and extensions' named values included; an export carries the values last used with the workflow, without the positive prompt
+    - ComfyUI API (import/export) - workflow format used by the ComfyUI API
     - ComfyChair JSON (import/export) - preserves field mappings and app settings
   - A list of workflows with filters and a switch for each, so the generation screens offer only the ones you use; each workflow's page shows its graph and description
   - Prompts can be mapped to primitive String nodes, so one prompt can feed several text encoders

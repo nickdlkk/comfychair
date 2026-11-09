@@ -41,6 +41,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -61,7 +62,12 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import sh.hnet.comfychair.R
@@ -78,6 +84,7 @@ import sh.hnet.comfychair.util.ValidationUtils
 import sh.hnet.comfychair.workflow.FieldDisplayRegistry
 import sh.hnet.comfychair.workflow.InputDefinition
 import sh.hnet.comfychair.workflow.NodeTypeDefinition
+import sh.hnet.comfychair.workflow.Subgraphs
 import sh.hnet.comfychair.workflow.WorkflowNode
 import sh.hnet.comfychair.workflow.appManagedInputs
 import sh.hnet.comfychair.workflow.changedInputNames
@@ -93,8 +100,14 @@ data class EditableInput(
     val name: String,
     val definition: InputDefinition?,
     val currentValue: Any?,
-    val originalValue: Any?
+    val originalValue: Any?,
+    /** As shown: a value from inside a subgraph by its label (spec §19.1) */
+    val label: String = Subgraphs.displayName(name)
 )
+
+/** A subgraph instance in its values sheet (spec §19.6): its subgraph's name when its title differs, the nodes inside. */
+@Immutable
+data class SubgraphSummary(val name: String?, val nodeCount: Int, val labels: Map<String, String>)
 
 /**
  * A node's values, in the bottom sheet of the Node values mode: the node's title, class and how many values changed,
@@ -111,14 +124,17 @@ fun NodeValuesSheetContent(
     onResetNode: () -> Unit,
     modifier: Modifier = Modifier,
     linkedValues: List<LinkedValue> = emptyList(),
-    onOpenNode: (nodeId: String) -> Unit = {}
+    onOpenNode: (nodeId: String) -> Unit = {},
+    fieldNames: Map<String, String> = emptyMap(),
+    subgraph: SubgraphSummary? = null
 ) {
     val context = LocalContext.current
-    val editableInputs = remember(node, nodeDefinition, currentEdits) {
-        editableInputNames(node, nodeDefinition).map { name ->
+    val editableInputs = remember(node, nodeDefinition, currentEdits, subgraph) {
+        // An instance's values shown from inside first, in its order (spec §19.6)
+        editableInputNames(node, nodeDefinition).sortedBy { if (subgraph != null && Subgraphs.isPromotedKey(it)) 0 else 1 }.map { name ->
             val definition = nodeDefinition?.inputs?.find { it.name == name }
             val original = workflowValueOf(node, definition, name)
-            EditableInput(name, definition, currentEdits[name] ?: original, original)
+            EditableInput(name, definition, currentEdits[name] ?: original, original, subgraph?.labels?.get(name) ?: Subgraphs.displayName(name))
         }
     }
     val linked = remember(node) { appManagedInputs(node) }
@@ -133,9 +149,28 @@ fun NodeValuesSheetContent(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(node.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    // A subgraph instance by its subgraph's name (when its title differs) and the nodes inside, not its ID
+                    val nodes = subgraph?.let { pluralStringResource(R.plurals.sg_nodes_count, it.nodeCount, it.nodeCount) }
+                    val changedPart = if (changed > 0) pluralStringResource(R.plurals.label_node_changed_count, changed, changed) else null
+                    // States after the dash: bypassed (spec §20.3), the changed values
+                    val states = listOfNotNull(if (node.isBypassed) stringResource(R.string.node_bypassed_state) else null, changedPart)
+                        .joinToString(", ").ifEmpty { null }
+                    // The type (a subgraph's name in bold), its node count in parentheses, the state after a dash in italics
                     Text(
-                        if (changed > 0) "${node.classType} – " + pluralStringResource(R.plurals.label_node_changed_count, changed, changed)
-                        else node.classType,
+                        buildAnnotatedString {
+                            when {
+                                subgraph?.name != null -> {
+                                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(subgraph.name) }
+                                    append(" ($nodes)")
+                                }
+                                nodes != null -> append(nodes)
+                                else -> append(node.classType)
+                            }
+                            if (states != null) {
+                                append(" – ")
+                                withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(states) }
+                            }
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -169,7 +204,7 @@ fun NodeValuesSheetContent(
             item(key = "linked_values") { LinkedValues(linkedValues, onOpenNode) }
         }
         if (linked.isNotEmpty()) {
-            item(key = "linked") { LinkedInputs(linked) }
+            item(key = "linked") { LinkedInputs(linked, fieldNames) }
         }
     }
 }
@@ -208,7 +243,7 @@ private fun LinkedValues(values: List<LinkedValue>, onOpenNode: (String) -> Unit
                 trailingContent = { Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null) },
                 modifier = Modifier.semantics { onClick(label = open) { onOpenNode(value.sourceNodeId); true } }
             ) {
-                Text(value.inputName)
+                Text(Subgraphs.displayName(value.inputName))
             }
         }
     }
@@ -216,7 +251,7 @@ private fun LinkedValues(values: List<LinkedValue>, onOpenNode: (String) -> Unit
 
 /** Inputs the generation screen fills in: their name and the app's field, no controls. */
 @Composable
-private fun LinkedInputs(inputs: List<Pair<String, String>>) {
+private fun LinkedInputs(inputs: List<Pair<String, String>>, fieldNames: Map<String, String>) {
     val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
@@ -245,9 +280,9 @@ private fun LinkedInputs(inputs: List<Pair<String, String>>) {
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(name, style = MaterialTheme.typography.bodyLarge)
+                        Text(Subgraphs.displayName(name), style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            appFieldLabel(context, value),
+                            appFieldLabel(context, value, fieldNames),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -260,12 +295,12 @@ private fun LinkedInputs(inputs: List<Pair<String, String>>) {
 }
 
 /** The app's field behind a placeholder ("{{seed}}") or an uploaded image marker. */
-private fun appFieldLabel(context: android.content.Context, value: String): String = when {
+private fun appFieldLabel(context: android.content.Context, value: String, fieldNames: Map<String, String> = emptyMap()): String = when {
     value.startsWith("uploaded_image") -> context.getString(R.string.label_pip_source)
     value.startsWith("reference_image_1") -> context.getString(R.string.content_description_reference_image_1)
     value.startsWith("reference_image_2") -> context.getString(R.string.content_description_reference_image_2)
     else -> Regex("""\{\{(\w+)\}\}""").find(value)?.groupValues?.get(1)
-        ?.let { FieldDisplayRegistry.getDisplayName(context, it) } ?: value
+        ?.let { fieldNames[it] ?: FieldDisplayRegistry.getDisplayName(context, it) } ?: value
 }
 
 /**
@@ -293,7 +328,7 @@ private fun InputEditor(
                 val options = effectiveOptions ?: emptyList()
                 if (isImageOptions(options)) {
                     ImageEnumEditor(
-                        label = input.name,
+                        label = input.label,
                         value = input.currentValue?.toString() ?: "",
                         options = options,
                         tooltip = definition?.tooltip,
@@ -301,7 +336,7 @@ private fun InputEditor(
                     )
                 } else {
                     EnumEditor(
-                        label = input.name,
+                        label = input.label,
                         value = input.currentValue?.toString() ?: "",
                         options = options,
                         tooltip = definition?.tooltip,
@@ -310,13 +345,13 @@ private fun InputEditor(
                 }
             }
             type == "BOOLEAN" || input.currentValue is Boolean -> BooleanEditor(
-                label = input.name,
+                label = input.label,
                 value = (input.currentValue as? Boolean) ?: false,
                 tooltip = definition?.tooltip,
                 onValueChange = { onValueChange(it) }
             )
             type == "INT" -> IntEditor(
-                label = input.name,
+                label = input.label,
                 value = input.currentValue?.toString() ?: "",
                 // As Long: ComfyUI's INT bounds can be 64-bit (PrimitiveInt: ±9223372036854775807)
                 min = definition?.min?.toLong(),
@@ -327,7 +362,7 @@ private fun InputEditor(
                 context = context
             )
             type == "FLOAT" -> FloatEditor(
-                label = input.name,
+                label = input.label,
                 value = input.currentValue?.toString() ?: "",
                 min = definition?.min?.toDouble(),
                 max = definition?.max?.toDouble(),
@@ -337,7 +372,7 @@ private fun InputEditor(
                 context = context
             )
             else -> StringEditor(
-                label = input.name,
+                label = input.label,
                 value = input.currentValue?.toString() ?: "",
                 multiline = type == "STRING" && definition?.multiline == true,
                 tooltip = if (type == "STRING") definition?.tooltip else null,
@@ -494,6 +529,21 @@ private fun BooleanEditor(
 }
 
 /**
+ * A number field's text as typed: kept while it means the value shown, so typing "1" for a value shown as 1.0 stays
+ * "1" (and "0." on the way to 0.5 stays), as in the options sheet; a different value replaces it (Reset, − and +).
+ */
+@Composable
+private fun rememberTypedNumber(value: String): MutableState<String> {
+    val text = remember { mutableStateOf(value) }
+    LaunchedEffect(value) {
+        val typed = text.value.trim().toBigDecimalOrNull()
+        val shown = value.trim().toBigDecimalOrNull()
+        if (typed == null || shown == null || typed.compareTo(shown) != 0) text.value = value
+    }
+    return text
+}
+
+/**
  * Editor for integer values.
  */
 @Composable
@@ -507,7 +557,7 @@ private fun IntEditor(
     onValueChange: (Number) -> Unit,
     context: android.content.Context
 ) {
-    var textValue by remember(value) { mutableStateOf(value) }
+    var textValue by rememberTypedNumber(value)
     val error = ValidationUtils.validateWholeNumber(textValue, context, min, max)
 
     // Construct range hint
@@ -551,7 +601,7 @@ private fun FloatEditor(
     onValueChange: (Float) -> Unit,
     context: android.content.Context
 ) {
-    var textValue by remember(value) { mutableStateOf(value) }
+    var textValue by rememberTypedNumber(value)
     val error = ValidationUtils.validateFloat(textValue, context, min?.toFloat(), max?.toFloat())
 
     // Construct range hint

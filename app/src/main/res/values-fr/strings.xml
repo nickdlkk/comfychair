@@ -118,25 +118,25 @@
     <string name="state_generate_no_source_video">Choisissez d\'abord une vidéo source</string>
     <string name="state_generate_invalid">Vérifiez les options – une valeur manque ou n\'est pas valide</string>
     <string name="label_offline">Hors ligne</string>
-    <string name="content_description_queue_empty">La file d\'attente est vide</string>
+    <string name="content_description_queue_empty">Aucune tâche dans la file</string>
     <string name="content_description_queue">File d\'attente : %1$s</string>
     <string name="label_step_of">Étape %1$d sur %2$d</string>
     <string name="label_preparing">Préparation…</string>
     <string name="content_description_cancel_job">Annuler cette tâche</string>
     <string name="title_queue">File d\'attente</string>
-    <string name="msg_queue_empty">La file d\'attente est vide</string>
-    <string name="label_queue_running_yours">Votre tâche est en cours</string>
-    <string name="label_queue_running_other">En cours pour un autre client</string>
-    <string name="label_queue_running_other_job">Tâche d\'un autre client</string>
-    <string name="label_queue_waiting_yours">Vos tâches en attente (%1$d)</string>
-    <string name="label_queue_position">%1$s – n° %2$d dans la file</string>
-    <string name="label_queue_others">Autres clients</string>
-    <string name="label_queue_other_positions">Positions %1$s – contenu non affiché</string>
+    <string name="msg_queue_empty">Aucune tâche dans la file</string>
+    <string name="label_queue_running_yours">Tâches en cours</string>
+    <string name="label_queue_running_other">Tâches en cours (autre client)</string>
+    <string name="label_queue_running_other_job">Tâche</string>
+    <string name="label_queue_waiting_yours">Tâches en attente (%1$d)</string>
+    <string name="label_queue_position">%1$s (position : %2$d)</string>
+    <string name="label_queue_others">Tâches en attente (autre client)</string>
+    <string name="label_queue_other_position">Position : %1$d</string>
     <string name="content_description_move_job_to_front">Placer « %1$s » en tête</string>
     <string name="content_description_remove_job">Retirer « %1$s » de la file</string>
-    <string name="button_clear_queue_confirm">Vider la file…</string>
+    <string name="button_clear_queue_confirm">Vider la file</string>
     <string name="title_clear_queue">Vider toute la file d\'attente ?</string>
-    <string name="msg_clear_queue_own">Toutes vos tâches en attente seront retirées. Une tâche en cours n\'est pas interrompue.</string>
+    <string name="msg_clear_queue_own">Toutes les tâches en attente seront retirées. Les tâches en cours ne sont pas interrompues.</string>
     <string name="button_clear">Vider</string>
     <string name="error_queue_action">Impossible de modifier la file d\'attente</string>
     <string name="content_description_open_queue">Ouvrir la file d\'attente</string>
@@ -147,14 +147,14 @@
     </plurals>
     <string name="content_description_generating_progress">Génération, %1$d %%</string>
     <plurals name="label_more_queued">
-        <item quantity="one">Encore %d tâche à vous en attente</item>
-        <item quantity="many">Encore %d tâches à vous en attente</item>
-        <item quantity="other">Encore %d tâches à vous en attente</item>
+        <item quantity="one">Tâches en attente : %d</item>
+        <item quantity="many">Tâches en attente : %d</item>
+        <item quantity="other">Tâches en attente : %d</item>
     </plurals>
     <plurals name="label_queue_own_jobs">
-        <item quantity="one">%d tâche à vous</item>
-        <item quantity="many">%d tâches à vous</item>
-        <item quantity="other">%d tâches à vous</item>
+        <item quantity="one">%d tâche</item>
+        <item quantity="many">%d tâches</item>
+        <item quantity="other">%d tâches</item>
     </plurals>
     <plurals name="label_queue_other_jobs">
         <item quantity="one">%d tâche d\'autres clients</item>
@@ -195,7 +195,7 @@
     <string name="title_confirm_clear_history">Effacer l’historique du serveur ?</string>
     <string name="msg_confirm_clear_history">Tous les résultats disparaissent de l’historique du serveur et de la galerie. Les fichiers restent sur le disque du serveur.</string>
     <string name="label_memory_usage">%1$.1f / %2$.1f Go</string>
-    <string name="label_vram_of">VRAM – %1$s</string>
+    <string name="label_vram_of">VRAM (%1$s)</string>
     <string name="title_server_software">Logiciels</string>
     <string name="label_operating_system">Système d’exploitation</string>
     <string name="title_server_maintenance">Maintenance</string>
@@ -325,9 +325,9 @@
         <item quantity="other">%d sélectionnés</item>
     </plurals>
     <plurals name="label_gallery_subtitle">
-        <item quantity="one">Historique du serveur – %d élément</item>
-        <item quantity="many">Historique du serveur – %d éléments</item>
-        <item quantity="other">Historique du serveur – %d éléments</item>
+        <item quantity="one">Historique du serveur (%d élément)</item>
+        <item quantity="many">Historique du serveur (%d éléments)</item>
+        <item quantity="other">Historique du serveur (%d éléments)</item>
     </plurals>
     <string name="button_select_all">Tout sélectionner</string>
     <string name="title_delete_selected">Supprimer du serveur ?</string>
@@ -454,7 +454,7 @@
     <string name="label_socket_input">Entrée</string>
     <string name="label_socket_output">Sortie</string>
     <string name="button_reset_node">Réinitialiser le nœud</string>
-    <string name="label_value_changed">Modifié – par défaut %1$s</string>
+    <string name="label_value_changed">Modifié (par défaut : %1$s)</string>
     <string name="content_description_reset_value">Rétablir %1$s à %2$s</string>
     <string name="title_node_values_linked">Liées</string>
     <string name="desc_node_values_linked">Leurs valeurs viennent d’autres nœuds.</string>
@@ -478,6 +478,9 @@
     <string name="title_node_editor_rename">Renommer le nœud</string>
     <string name="label_node_editor_rename">Nom du nœud</string>
     <string name="node_editor_bypass">Contourner</string>
+    <!-- A bypassed node (spec §20): its badge in the title bar, its state after a dash -->
+    <string name="node_bypassed_badge">Contourné</string>
+    <string name="node_bypassed_state">contourné</string>
 
     <!-- Settings screen strings -->
     <string name="nav_server_settings">Serveur</string>
@@ -499,23 +502,24 @@
     <string name="content_description_workflows_filter">Afficher</string>
     <string name="menu_switch_all_on">Tout activer</string>
     <string name="menu_switch_all_off">Tout désactiver</string>
-    <string name="label_workflows_yours">Les vôtres</string>
+    <string name="label_workflows_yours">Personnels</string>
     <string name="label_workflows_builtin">Intégrés</string>
     <string name="content_description_workflow_details">%1$s, détails</string>
     <string name="msg_workflows_none_on">L’écran « %1$s » n’a aucun workflow activé et ne peut pas générer.</string>
     <string name="content_description_section_actions">%1$s. Actions de la section</string>
     <string name="msg_needs_server">Nécessite une connexion au serveur</string>
-    <string name="label_workflow_subtitle">%1$s – %2$s</string>
+    <string name="label_workflow_subtitle">%1$s (%2$s)</string>
     <string name="label_workflow_kind_builtin">intégré</string>
-    <string name="label_workflow_kind_yours">le vôtre</string>
+    <string name="label_workflow_kind_yours">personnel</string>
     <string name="label_show_in_screens">Afficher dans les écrans de génération</string>
     <string name="button_view_graph">Voir le graphe</string>
     <string name="button_edit_graph">Modifier le graphe</string>
-    <string name="button_name_and_description">Nom et description</string>
+    <string name="button_name_and_description">Modifier le nom ou la description</string>
     <string name="desc_duplicate_builtin">Créer une copie modifiable</string>
-    <string name="title_workflow_export">Exporter</string>
-    <string name="button_export_app">Exporter pour ComfyChair</string>
-    <string name="button_export_api">Exporter au format API ComfyUI</string>
+    <string name="title_workflow_export">Exporter vers un fichier</string>
+    <string name="button_export_app">ComfyChair</string>
+    <string name="button_export_ui">ComfyUI</string>
+    <string name="button_export_api">ComfyUI (API)</string>
     <string name="button_delete_workflow">Supprimer le workflow</string>
     <string name="title_delete_named">Supprimer « %1$s » ?</string>
     <string name="msg_delete_workflow_device">Il sera supprimé de cet appareil. Les fichiers exportés ne sont pas concernés.</string>
@@ -545,10 +549,11 @@
     <string name="msg_workflow_export_success">Workflow exporté</string>
     <string name="error_workflow_duplicate">Impossible de dupliquer le workflow</string>
     <string name="error_workflow_export">Échec de l\'exportation du workflow</string>
+    <string name="error_export_needs_definitions">Connectez-vous d’abord au serveur – le format ComfyUI lui emprunte l’ordre des valeurs des nœuds</string>
     <plurals name="msg_litegraph_conversion_notes">
-        <item quantity="one">Conversion terminée avec %d remarque</item>
-        <item quantity="many">Conversion terminée avec %d remarques</item>
-        <item quantity="other">Conversion terminée avec %d remarques</item>
+        <item quantity="one">Conversion terminée (%d remarque)</item>
+        <item quantity="many">Conversion terminée (%d remarques)</item>
+        <item quantity="other">Conversion terminée (%d remarques)</item>
     </plurals>
 
     <!-- Content descriptions for accessibility -->
@@ -600,6 +605,26 @@
     <string name="label_pip_source">Source</string>
     <string name="msg_results_appear_here">Vos résultats apparaîtront ici</string>
     <string name="button_pick_source_image">Choisir l\'image source</string>
+    <!-- Source sheet (spec §21): From device, then the server's input files -->
+    <string name="source_sheet_title_image">Image source</string>
+    <string name="source_sheet_title_video">Vidéo source</string>
+    <plurals name="source_count_images">
+        <item quantity="one">%d image</item>
+        <item quantity="many">%d d\'images</item>
+        <item quantity="other">%d images</item>
+    </plurals>
+    <plurals name="source_count_videos">
+        <item quantity="one">%d vidéo</item>
+        <item quantity="many">%d de vidéos</item>
+        <item quantity="other">%d vidéos</item>
+    </plurals>
+    <string name="source_offline">hors ligne</string>
+    <string name="source_from_device">Depuis l\'appareil</string>
+    <string name="source_empty_images">Aucune image sur le serveur pour l\'instant</string>
+    <string name="source_empty_videos">Aucune vidéo sur le serveur pour l\'instant</string>
+    <string name="source_offline_title">Les fichiers du serveur ne sont pas disponibles hors ligne</string>
+    <string name="source_offline_body">Un fichier de l\'appareil peut toujours être choisi ; il est envoyé lors de la génération.</string>
+    <string name="source_load_failed">Impossible de charger les fichiers du serveur</string>
     <string name="button_pick_source_video">Choisir la vidéo source</string>
     <string name="content_description_replace_source">Remplacer l\'image source</string>
     <string name="content_description_replace_source_video">Remplacer la vidéo source</string>
@@ -656,24 +681,29 @@
     <string name="label_all_node_values">Toutes les valeurs des nœuds</string>
     <string name="desc_all_node_values">Valeurs absentes ci-dessus</string>
     <string name="label_new_workflow">Nouveau workflow</string>
-    <string name="label_editor_mode_graph">Graphe – lecture seule</string>
+    <string name="label_editor_mode_graph">Graphe</string>
     <string name="label_editor_mode_node_values">Valeurs des nœuds</string>
     <string name="label_editor_mode_editing">Modification</string>
-    <string name="label_editor_mode_editing_unsaved">Modification – non enregistrée</string>
-    <string name="label_editor_mode_placement">Modification – placement</string>
+    <!-- The pill's line 2: a mode in bold, its state after a dash in italics, parameters in parentheses -->
+    <string name="label_editor_mode_import">Import</string>
+    <string name="label_editor_mode_saving">Enregistrement</string>
+    <string name="label_editor_state_read_only">lecture seule</string>
+    <string name="label_editor_state_unsaved">non enregistrée</string>
+    <string name="label_editor_state_placement">placement</string>
+    <string name="label_editor_state_zoom_in">zoomez pour connecter</string>
+    <string name="label_editor_state_map_fields">associer les champs</string>
     <string name="label_editor_zoom_in_to_connect">Zoomez pour connecter</string>
-    <string name="label_editor_mode_mapping">Import – associer les champs</string>
     <string name="label_editor_connecting">Connexion %1$s</string>
     <string name="hint_editor_tap_input">Touchez une entrée en surbrillance</string>
     <string name="hint_editor_tap_output">Touchez une sortie en surbrillance</string>
     <string name="label_editor_linking">Liaison de %1$s</string>
     <string name="hint_editor_tap_input_or_value">Touchez une entrée ou une valeur en surbrillance</string>
     <string name="hint_editor_no_target">Rien dans ce workflow n’accepte %1$s</string>
-    <string name="label_editor_socket_menu_header">&lt;b>%1$s&lt;/b> – depuis %2$s</string>
+    <string name="label_editor_socket_menu_header">&lt;b>%1$s&lt;/b> (depuis %2$s)</string>
     <string name="menu_editor_connect">Connecter</string>
     <string name="menu_editor_disconnect">Déconnecter</string>
-    <string name="label_editor_socket_menu_free">&lt;b>%1$s&lt;/b> – non connecté</string>
-    <string name="label_editor_output_menu_header">&lt;b>%1$s&lt;/b> – vers %2$s</string>
+    <string name="label_editor_socket_menu_free">&lt;b>%1$s&lt;/b> – &lt;i>non connecté&lt;/i></string>
+    <string name="label_editor_output_menu_header">&lt;b>%1$s&lt;/b> (vers %2$s)</string>
     <string name="label_editor_socket_in">&lt;b>%1$s&lt;/b> dans &lt;b>%2$s&lt;/b></string>
     <string name="menu_editor_add_node">Ajouter un nœud</string>
     <string name="msg_editor_link_mapped_new_node">Une fois liée, la valeur &lt;b>%1$s&lt;/b> viendra du nouveau nœud et le champ &lt;b>%2$s&lt;/b> ne la modifiera plus.</string>
@@ -684,11 +714,6 @@
     <string name="button_edit_structure">Modifier la structure</string>
     <string name="content_description_clear_selection">Effacer la sélection</string>
     <string name="content_description_zoom_level">Zoom %1$d pour cent, touchez pour 100 pour cent</string>
-    <plurals name="label_editor_mode_node_values_changed">
-        <item quantity="one">Valeurs des nœuds – %d modifiée</item>
-        <item quantity="many">Valeurs des nœuds – %d modifiées</item>
-        <item quantity="other">Valeurs des nœuds – %d modifiées</item>
-    </plurals>
     <string name="workflow_editor_zoom_in">Zoom avant</string>
     <string name="workflow_editor_zoom_out">Zoom arrière</string>
     <string name="workflow_editor_reset_zoom">Ajuster le graphe à l’écran</string>
@@ -706,8 +731,8 @@
     <string name="button_copy_names">Copier les noms</string>
     <string name="title_missing_on_server">Absents du serveur</string>
     <string name="msg_missing_fields_none">L’écran « %1$s » a besoin de ces champs, mais aucun nœud de ce workflow ne les fournit. Vérifiez le type ou ajoutez les nœuds dans ComfyUI.</string>
-    <string name="label_copy_name">%1$s – copie</string>
-    <string name="label_copy_name_numbered">%1$s – copie %2$d</string>
+    <string name="label_copy_name">%1$s (copie)</string>
+    <string name="label_copy_name_numbered">%1$s (copie %2$d)</string>
     <string name="error_name_taken">Un workflow portant ce nom existe déjà</string>
     <string name="msg_names_copied">Noms copiés</string>
     <plurals name="msg_missing_nodes_count">
@@ -721,8 +746,8 @@
     <string name="button_clear_all_mapping">Tout effacer</string>
     <string name="label_field_n_of_m">Champ %1$d sur %2$d</string>
     <string name="button_all_fields">Tous les champs</string>
-    <string name="hint_mapping_required">Touchez le nœud qui le contient – obligatoire</string>
-    <string name="hint_mapping_optional">Touchez le nœud qui le contient – facultatif</string>
+    <string name="hint_mapping_required">Touchez le nœud qui le contient (obligatoire)</string>
+    <string name="hint_mapping_optional">Touchez le nœud qui le contient (facultatif)</string>
     <string name="content_description_previous_field">Champ précédent</string>
     <string name="content_description_next_field">Champ suivant</string>
     <string name="button_finish">Terminer</string>
@@ -731,7 +756,6 @@
     <string name="msg_cancel_import">Le workflow ne sera pas ajouté.</string>
     <string name="button_cancel_import">Annuler l’importation</string>
     <string name="button_keep_mapping">Continuer</string>
-    <string name="label_editor_mode_mapping_save">Enregistrement – associer les champs</string>
     <string name="label_not_chosen">Pas encore choisi</string>
     <string name="section_necessary">Nécessaire</string>
     <string name="section_optional">Optionnel</string>
@@ -807,6 +831,7 @@
     <string name="label_about_version">Version %1$s</string>
     <string name="title_about_license">Licence</string>
     <string name="label_about_license_name">GNU General Public License v3.0 (GPL-3.0)</string>
+    <string name="msg_license_english_only">Seul le texte original en anglais a valeur juridique.</string>
     <string name="title_about_source">Code source</string>
 
     <!-- Debug Logging strings -->
@@ -843,26 +868,29 @@
     <string name="node_browser_no_match">Aucun nœud ne correspond à « %1$s »</string>
     <string name="content_description_custom_node">Nœud d’une extension</string>
     <string name="content_description_remove_filter">Afficher tous les nœuds</string>
-    <plurals name="node_browser_compatible_count">
-        <item quantity="one">%d nœud compatible</item>
-        <item quantity="many">%d nœuds compatibles</item>
-        <item quantity="other">%d nœuds compatibles</item>
+    <plurals name="node_search_hint">
+        <item quantity="one">Rechercher parmi %d nœud</item>
+        <item quantity="many">Rechercher parmi %d nœuds</item>
+        <item quantity="other">Rechercher parmi %d nœuds</item>
     </plurals>
+    <string name="node_section_builtin">Intégrés</string>
+    <string name="node_section_extensions">Extensions</string>
+    <string name="node_folder_api">Nœuds API</string>
+    <string name="node_folder_other">Autres</string>
+    <string name="node_row_supporting">%1$s (entrées : %2$d, sorties : %3$d)</string>
+    <string name="node_row_io">entrées : %1$d, sorties : %2$d</string>
+    <string name="node_mark_deprecated">obsolète</string>
+    <string name="node_mark_experimental">expérimental</string>
+    <string name="node_count">Nœuds : %1$d</string>
+    <string name="node_count_of">Nœuds : %1$d sur %2$d</string>
+    <string name="node_none_body">Vérifiez l’orthographe ou cherchez parmi tous les nœuds.</string>
+    <string name="node_search_all">Chercher parmi tous les nœuds</string>
+    <string name="node_not_connected">Non connecté : le nœud n’a pas de prise %1$s</string>
+    <string name="node_view_tree">Arbre</string>
+    <string name="node_view_list">Liste</string>
+    <string name="content_description_node_view">Affichage</string>
     <string name="node_browser_title">Ajouter un nœud</string>
-    <string name="placeholder_node_browser_search">Rechercher des nœuds…</string>
     <string name="node_browser_no_results">Aucun nœud correspondant trouvé</string>
-    <plurals name="node_browser_inputs_count">
-        <item quantity="one">%d entrée</item>
-        <item quantity="many">%d entrées</item>
-        <item quantity="other">%d entrées</item>
-    </plurals>
-    <plurals name="node_browser_outputs_count">
-        <item quantity="one">%d sortie</item>
-        <item quantity="many">%d sorties</item>
-        <item quantity="other">%d sorties</item>
-    </plurals>
-    <string name="node_browser_deprecated">Obsolète</string>
-    <string name="node_browser_experimental">Expérimental</string>
     <string name="node_browser_accepts_input">Accepte %1$s</string>
     <string name="node_browser_provides_output">Fournit %1$s</string>
     <string name="button_clear_search">Effacer la recherche</string>
@@ -939,7 +967,16 @@
     <string name="prompt_preset_reset_prompt">Réinitialiser le prompt</string>
     <string name="msg_prompt_preset_reset_success">Prompt réinitialisé par défaut</string>
     <string name="title_prompt_library">Bibliothèque de prompts</string>
-    <string name="placeholder_prompt_library_search">Rechercher des prompts…</string>
+    <plurals name="prompts_search_hint">
+        <item quantity="one">Rechercher parmi %d prompt</item>
+        <item quantity="many">Rechercher parmi %d prompts</item>
+        <item quantity="other">Rechercher parmi %d prompts</item>
+    </plurals>
+    <string name="prompts_more_tags">Autres tags : %d</string>
+    <string name="prompts_count">Prompts : %1$d</string>
+    <string name="prompts_none_title">Aucun prompt ne correspond à « %1$s »</string>
+    <string name="prompts_none_body">Vérifiez l’orthographe ou cherchez parmi tous les prompts.</string>
+    <string name="prompts_search_all">Chercher parmi tous les prompts</string>
     <string name="msg_prompt_library_empty">Aucun prompt enregistré</string>
     <string name="msg_delete_prompt">Il sera supprimé de la bibliothèque de prompts.</string>
     <string name="msg_prompt_library_no_match">Aucun prompt ne correspond</string>
@@ -1136,11 +1173,109 @@
         <item quantity="many">Rechercher parmi %d workflows</item>
         <item quantity="other">Rechercher parmi %d workflows</item>
     </plurals>
-    <plurals name="label_server_import_count">
-        <item quantity="one">%1$d sur %2$d workflow</item>
-        <item quantity="many">%1$d sur %2$d workflows</item>
-        <item quantity="other">%1$d sur %2$d workflows</item>
-    </plurals>
+    <string name="label_server_import_count_of">Workflows : %1$d sur %2$d</string>
     <string name="state_expanded">Développé</string>
     <string name="state_collapsed">Réduit</string>
+
+    <!-- Custom fields -->
+    <string name="menu_editor_make_field">Créer un champ</string>
+    <string name="menu_editor_add_to_field">Ajouter à un champ</string>
+    <string name="label_editor_add_to_field_header">Ajouter &lt;b>%1$s&lt;/b> à</string>
+    <string name="menu_editor_edit_field">Modifier le champ</string>
+    <string name="menu_editor_remove_from_field">Retirer du champ</string>
+    <string name="label_field_type_int">nombre entier</string>
+    <string name="label_field_type_float">nombre décimal</string>
+    <string name="label_field_type_bool">oui/non</string>
+    <string name="label_field_type_list">liste</string>
+    <string name="label_field_type_text">texte</string>
+    <string name="label_field_type_with_range">%1$s, %2$s</string>
+    <string name="title_new_field">Nouveau champ</string>
+    <string name="label_new_field_context">Depuis &lt;b>%1$s&lt;/b> dans &lt;b>%2$s&lt;/b> (%3$s)</string>
+    <string name="label_field_name">Nom</string>
+    <string name="desc_field_name">Affiché sur l’écran de génération (%1$d/%2$d)</string>
+    <string name="error_field_name_empty">Saisissez un nom</string>
+    <string name="error_field_name_taken">%1$s est déjà un champ de ce workflow</string>
+    <string name="button_add">Ajouter</string>
+    <string name="title_edit_field">Modifier le champ</string>
+    <string name="title_field_fills">Remplit</string>
+    <string name="content_description_remove_field_value">Retirer %2$s dans %1$s</string>
+    <string name="error_field_needs_value">Un champ doit remplir au moins une valeur</string>
+    <string name="button_delete_field">Supprimer le champ</string>
+    <string name="title_delete_field">Supprimer %1$s ?</string>
+    <string name="msg_delete_field_last">&lt;b>%1$s&lt;/b> est sa seule valeur. Elle garde la valeur du champ comme la sienne.</string>
+    <string name="msg_editor_link_deletes_field">&lt;b>%1$s&lt;/b> n’a pas d’autre valeur et sera supprimé.</string>
+    <string name="button_link_delete_field">Lier et supprimer le champ</string>
+    <string name="section_custom_fields">Personnalisés</string>
+    <string name="menu_add_field">Ajouter un champ</string>
+    <string name="desc_add_field">Choisissez une valeur à attribuer</string>
+    <string name="label_pick_add_to">Ajouter à &lt;b>%1$s&lt;/b></string>
+    <string name="title_pick_value">Choisissez une valeur</string>
+    <string name="hint_pick_value">Les valeurs possibles sont mises en évidence</string>
+    <string name="content_description_cancel_new_field">Annuler le nouveau champ</string>
+    <string name="button_add_value">Ajouter une valeur</string>
+    <string name="label_builtin_field_context">Champ intégré : &lt;b>%1$s&lt;/b></string>
+    <string name="desc_builtin_field_name">Nom intégré : %1$s (%2$d/%3$d)</string>
+    <string name="content_description_use_builtin_name">Utiliser le nom intégré : %1$s</string>
+    <!-- A field and its value in a summary ("CFG: 7") -->
+    <string name="label_name_value">%1$s : %2$s</string>
+    <!-- Subgraphs in the editor (spec §19) -->
+    <string name="sg_open">Ouvrir</string>
+    <plurals name="sg_nodes_count">
+        <item quantity="one">%d nœud</item>
+        <item quantity="many">%d nœuds</item>
+        <item quantity="other">%d nœuds</item>
+    </plurals>
+    <plurals name="sg_copies">
+        <item quantity="one">%d copie</item>
+        <item quantity="many">%d copies</item>
+        <item quantity="other">%d copies</item>
+    </plurals>
+    <string name="sg_path_a11y">Chemin, %1$s. Appuyez deux fois pour choisir un niveau</string>
+    <string name="sg_inputs">Entrées</string>
+    <string name="sg_outputs">Sorties</string>
+    <plurals name="sg_inside_announce">
+        <item quantity="one">Dans %1$s, %2$d nœud</item>
+        <item quantity="many">Dans %1$s, %2$d nœuds</item>
+        <item quantity="other">Dans %1$s, %2$d nœuds</item>
+    </plurals>
+    <plurals name="sg_used_announce">
+        <item quantity="one">utilisé %d fois</item>
+        <item quantity="many">utilisé %d fois</item>
+        <item quantity="other">utilisé %d fois</item>
+    </plurals>
+    <string name="sg_back_announce">De retour dans %1$s</string>
+    <string name="sg_open_action">Ouvrir le sous-graphe</string>
+    <string name="sg_subgraph">Sous-graphe</string>
+    <!-- Editing subgraphs (spec §19.3–19.5) -->
+    <string name="sg_add_socket">ajouter</string>
+    <string name="sg_show_on">Afficher sur &lt;b>%1$s&lt;/b></string>
+    <string name="sg_hide_from">Masquer de &lt;b>%1$s&lt;/b></string>
+    <string name="sg_hide_from_node">Masquer du nœud</string>
+    <string name="sg_move_up">Monter</string>
+    <string name="sg_move_down">Descendre</string>
+    <string name="sg_shown_from">&lt;b>%1$s&lt;/b> (depuis &lt;b>%2$s&lt;/b>)</string>
+    <string name="sg_make">Créer un sous-graphe</string>
+    <string name="sg_new_title">Nouveau sous-graphe</string>
+    <string name="sg_new_nodes">Nœuds : %1$d</string>
+    <string name="sg_new_inputs">Entrées : %1$d</string>
+    <string name="sg_new_outputs">Sorties : %1$d</string>
+    <string name="sg_make_confirm">Créer</string>
+    <string name="sg_unpack">Décompresser</string>
+    <string name="sg_rename">Renommer le sous-graphe</string>
+    <string name="sg_rename_this">Renommer ce sous-graphe</string>
+    <string name="sg_rename_used">Copies : %1$d</string>
+    <string name="sg_rename_all">Renommer toutes les copies (%1$d)</string>
+    <string name="sg_name">Nom</string>
+    <string name="sg_name_count">%1$d/%2$d</string>
+    <string name="sg_error_name_empty">Saisissez un nom</string>
+    <string name="sg_error_input_taken">Une autre entrée s’appelle %1$s</string>
+    <string name="sg_error_output_taken">Une autre sortie s’appelle %1$s</string>
+    <string name="sg_input_of">&lt;b>%1$s&lt;/b> (entrée de &lt;b>%2$s&lt;/b>)</string>
+    <string name="sg_output_of">&lt;b>%1$s&lt;/b> (sortie de &lt;b>%2$s&lt;/b>)</string>
+    <string name="sg_rename_input">Renommer l’entrée</string>
+    <string name="sg_rename_output">Renommer la sortie</string>
+    <string name="sg_remove_input">Supprimer l’entrée</string>
+    <string name="sg_remove_output">Supprimer la sortie</string>
+    <string name="sg_connect_hint_inputs">Touchez une sortie mise en évidence ou une prise « ajouter »</string>
+    <string name="sg_connect_hint_outputs">Touchez une entrée mise en évidence ou une prise « ajouter »</string>
 </resources>

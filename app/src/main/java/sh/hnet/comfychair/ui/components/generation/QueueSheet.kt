@@ -21,7 +21,8 @@ import androidx.compose.material.icons.rounded.ClearAll
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.VerticalAlignTop
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -29,10 +30,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,6 +52,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import sh.hnet.comfychair.R
+import sh.hnet.comfychair.ui.components.settings.SettingsActionRow
+import sh.hnet.comfychair.ui.components.settings.SettingsGroup
 import sh.hnet.comfychair.queue.JobRegistry
 import sh.hnet.comfychair.queue.QueueSnapshot
 import sh.hnet.comfychair.ui.components.dialogs.ConfirmDialog
@@ -110,7 +111,7 @@ fun QueueSheet(generationViewModel: GenerationViewModel, onDismiss: () -> Unit) 
     val waitingOwn = current?.pending?.filter { it in own }.orEmpty()
     val waitingOther = current?.pending?.filterNot { it in own }.orEmpty()
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberBottomSheetState(SheetValue.Hidden)) {
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -176,12 +177,14 @@ fun QueueSheet(generationViewModel: GenerationViewModel, onDismiss: () -> Unit) 
                 }
             }
 
+            // Other clients' jobs: each with its prompt, as the server shares it with every client; no actions (their
+            // work), and no progress (the server sends it only to the client that queued the job)
             if (runningOther.isNotEmpty()) {
                 item { SectionHeader(stringResource(R.string.label_queue_running_other)) }
-                item {
+                items(runningOther, key = { "run-other-$it" }) { promptId ->
                     QueueRow(
-                        leading = { Icon(Icons.Rounded.Group, contentDescription = null) },
-                        headline = stringResource(R.string.label_queue_running_other_job),
+                        leading = { OtherClientIcon() },
+                        headline = otherJobTitle(current?.prompts?.get(promptId)),
                         supporting = { LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) }
                     )
                 }
@@ -225,14 +228,13 @@ fun QueueSheet(generationViewModel: GenerationViewModel, onDismiss: () -> Unit) 
 
             if (waitingOther.isNotEmpty()) {
                 item { SectionHeader(stringResource(R.string.label_queue_others)) }
-                item {
-                    val positions = waitingOther.mapNotNull { current?.positionOf(it) }.joinToString(", ")
+                items(waitingOther, key = { "wait-other-$it" }) { promptId ->
                     QueueRow(
-                        leading = { Icon(Icons.Rounded.Group, contentDescription = null) },
-                        headline = pluralStringResource(R.plurals.label_queue_other_jobs, waitingOther.size, waitingOther.size),
+                        leading = { OtherClientIcon() },
+                        headline = otherJobTitle(current?.prompts?.get(promptId)),
                         supporting = {
                             Text(
-                                stringResource(R.string.label_queue_other_positions, positions),
+                                stringResource(R.string.label_queue_other_position, current?.positionOf(promptId) ?: 0),
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
@@ -243,17 +245,17 @@ fun QueueSheet(generationViewModel: GenerationViewModel, onDismiss: () -> Unit) 
             if (current != null && current.pending.isNotEmpty()) {
                 item {
                     Spacer(Modifier.height(16.dp))
-                    OutlinedButton(
-                        onClick = { confirmClear = true },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        // Same height as the other full-width buttons (Log out, Add server)
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                    ) {
-                        Icon(Icons.Rounded.ClearAll, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
-                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                        Text(stringResource(R.string.button_clear_queue_confirm))
+                    // Apart, at the end, confirmed: as Delete workflow on a workflow's page
+                    SettingsGroup {
+                        row { shapes ->
+                            SettingsActionRow(
+                                shapes = shapes,
+                                icon = Icons.Rounded.ClearAll,
+                                title = stringResource(R.string.button_clear_queue_confirm),
+                                destructive = true,
+                                onClick = { confirmClear = true }
+                            )
+                        }
                     }
                 }
             }
@@ -298,6 +300,22 @@ private fun jobTitle(owner: OwnerInfo?, description: sh.hnet.comfychair.queue.Jo
     description != null && description.prompt.isNotBlank() -> description.prompt.lineSequence().first()
     owner != null -> stringResource(owner.nameRes)
     else -> stringResource(R.string.title_queue)
+}
+
+/** Another client's job by the first line of its prompt, or "Job" when none was found in its workflow. */
+@Composable
+private fun otherJobTitle(prompt: String?): String =
+    prompt?.lineSequence()?.firstOrNull()?.takeIf(String::isNotBlank) ?: stringResource(R.string.label_queue_running_other_job)
+
+/** Another client's job: the group icon where our jobs have their screen's. */
+@Composable
+private fun OtherClientIcon() {
+    Box(
+        Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(Icons.Rounded.Group, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 @Composable

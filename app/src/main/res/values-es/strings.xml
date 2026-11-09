@@ -118,25 +118,25 @@
     <string name="state_generate_no_source_video">Elige primero un vídeo de origen</string>
     <string name="state_generate_invalid">Revisa las opciones – falta un valor o no es válido</string>
     <string name="label_offline">Sin conexión</string>
-    <string name="content_description_queue_empty">La cola está vacía</string>
+    <string name="content_description_queue_empty">No hay trabajos en la cola</string>
     <string name="content_description_queue">Cola: %1$s</string>
     <string name="label_step_of">Paso %1$d de %2$d</string>
     <string name="label_preparing">Preparando…</string>
     <string name="content_description_cancel_job">Cancelar este trabajo</string>
     <string name="title_queue">Cola</string>
-    <string name="msg_queue_empty">La cola está vacía</string>
-    <string name="label_queue_running_yours">Tu trabajo está en curso</string>
-    <string name="label_queue_running_other">En curso para otro cliente</string>
-    <string name="label_queue_running_other_job">Trabajo de otro cliente</string>
-    <string name="label_queue_waiting_yours">Tus trabajos en espera (%1$d)</string>
-    <string name="label_queue_position">%1$s – n.º %2$d en la cola</string>
-    <string name="label_queue_others">Otros clientes</string>
-    <string name="label_queue_other_positions">Posiciones %1$s – contenido no mostrado</string>
+    <string name="msg_queue_empty">No hay trabajos en la cola</string>
+    <string name="label_queue_running_yours">Trabajos en curso</string>
+    <string name="label_queue_running_other">Trabajos en curso (otro cliente)</string>
+    <string name="label_queue_running_other_job">Trabajo</string>
+    <string name="label_queue_waiting_yours">Trabajos en espera (%1$d)</string>
+    <string name="label_queue_position">%1$s (posición: %2$d)</string>
+    <string name="label_queue_others">Trabajos en espera (otro cliente)</string>
+    <string name="label_queue_other_position">Posición: %1$d</string>
     <string name="content_description_move_job_to_front">Mover «%1$s» al principio</string>
     <string name="content_description_remove_job">Quitar «%1$s» de la cola</string>
-    <string name="button_clear_queue_confirm">Vaciar la cola…</string>
+    <string name="button_clear_queue_confirm">Vaciar la cola</string>
     <string name="title_clear_queue">¿Vaciar toda la cola?</string>
-    <string name="msg_clear_queue_own">Se quitarán todos tus trabajos en espera. Un trabajo en curso no se detiene.</string>
+    <string name="msg_clear_queue_own">Se quitarán todos los trabajos en espera. Los trabajos en curso no se detienen.</string>
     <string name="button_clear">Vaciar</string>
     <string name="error_queue_action">No se pudo cambiar la cola</string>
     <string name="content_description_open_queue">Abrir la cola</string>
@@ -147,14 +147,14 @@
     </plurals>
     <string name="content_description_generating_progress">Generando, %1$d %%</string>
     <plurals name="label_more_queued">
-        <item quantity="one">%d trabajo tuyo más en cola</item>
-        <item quantity="many">%d trabajos tuyos más en cola</item>
-        <item quantity="other">%d trabajos tuyos más en cola</item>
+        <item quantity="one">Trabajos en espera: %d</item>
+        <item quantity="many">Trabajos en espera: %d</item>
+        <item quantity="other">Trabajos en espera: %d</item>
     </plurals>
     <plurals name="label_queue_own_jobs">
-        <item quantity="one">%d trabajo tuyo</item>
-        <item quantity="many">%d trabajos tuyos</item>
-        <item quantity="other">%d trabajos tuyos</item>
+        <item quantity="one">%d trabajo</item>
+        <item quantity="many">%d trabajos</item>
+        <item quantity="other">%d trabajos</item>
     </plurals>
     <plurals name="label_queue_other_jobs">
         <item quantity="one">%d trabajo de otros clientes</item>
@@ -195,7 +195,7 @@
     <string name="title_confirm_clear_history">¿Borrar el historial del servidor?</string>
     <string name="msg_confirm_clear_history">Todos los resultados desaparecen del historial del servidor y de la galería. Los archivos permanecen en el disco del servidor.</string>
     <string name="label_memory_usage">%1$.1f / %2$.1f GB</string>
-    <string name="label_vram_of">VRAM – %1$s</string>
+    <string name="label_vram_of">VRAM (%1$s)</string>
     <string name="title_server_software">Software</string>
     <string name="label_operating_system">Sistema operativo</string>
     <string name="title_server_maintenance">Mantenimiento</string>
@@ -325,9 +325,9 @@
         <item quantity="other">%d seleccionados</item>
     </plurals>
     <plurals name="label_gallery_subtitle">
-        <item quantity="one">Historial del servidor – %d elemento</item>
-        <item quantity="many">Historial del servidor – %d elementos</item>
-        <item quantity="other">Historial del servidor – %d elementos</item>
+        <item quantity="one">Historial del servidor (%d elemento)</item>
+        <item quantity="many">Historial del servidor (%d elementos)</item>
+        <item quantity="other">Historial del servidor (%d elementos)</item>
     </plurals>
     <string name="button_select_all">Seleccionar todo</string>
     <string name="title_delete_selected">¿Eliminar del servidor?</string>
@@ -454,7 +454,7 @@
     <string name="label_socket_input">Entrada</string>
     <string name="label_socket_output">Salida</string>
     <string name="button_reset_node">Restablecer nodo</string>
-    <string name="label_value_changed">Cambiado – por defecto %1$s</string>
+    <string name="label_value_changed">Cambiado (por defecto: %1$s)</string>
     <string name="content_description_reset_value">Restablecer %1$s a %2$s</string>
     <string name="title_node_values_linked">Conectadas</string>
     <string name="desc_node_values_linked">Sus valores vienen de otros nodos.</string>
@@ -478,6 +478,9 @@
     <string name="title_node_editor_rename">Renombrar nodo</string>
     <string name="label_node_editor_rename">Nombre del nodo</string>
     <string name="node_editor_bypass">Omitir</string>
+    <!-- A bypassed node (spec §20): its badge in the title bar, its state after a dash -->
+    <string name="node_bypassed_badge">Omitido</string>
+    <string name="node_bypassed_state">omitido</string>
 
     <!-- Settings screen strings -->
     <string name="nav_server_settings">Servidor</string>
@@ -499,23 +502,24 @@
     <string name="content_description_workflows_filter">Mostrar</string>
     <string name="menu_switch_all_on">Activar todos</string>
     <string name="menu_switch_all_off">Desactivar todos</string>
-    <string name="label_workflows_yours">Tuyos</string>
+    <string name="label_workflows_yours">Propios</string>
     <string name="label_workflows_builtin">Integrados</string>
     <string name="content_description_workflow_details">%1$s, detalles</string>
     <string name="msg_workflows_none_on">La pantalla «%1$s» no tiene ningún workflow activado y no puede generar.</string>
     <string name="content_description_section_actions">%1$s. Acciones de la sección</string>
     <string name="msg_needs_server">Requiere conexión con el servidor</string>
-    <string name="label_workflow_subtitle">%1$s – %2$s</string>
+    <string name="label_workflow_subtitle">%1$s (%2$s)</string>
     <string name="label_workflow_kind_builtin">integrado</string>
-    <string name="label_workflow_kind_yours">tuyo</string>
+    <string name="label_workflow_kind_yours">propio</string>
     <string name="label_show_in_screens">Mostrar en las pantallas de generación</string>
     <string name="button_view_graph">Ver grafo</string>
     <string name="button_edit_graph">Editar grafo</string>
-    <string name="button_name_and_description">Nombre y descripción</string>
+    <string name="button_name_and_description">Cambiar el nombre o la descripción</string>
     <string name="desc_duplicate_builtin">Crear una copia editable</string>
-    <string name="title_workflow_export">Exportar</string>
-    <string name="button_export_app">Exportar para ComfyChair</string>
-    <string name="button_export_api">Exportar en formato API de ComfyUI</string>
+    <string name="title_workflow_export">Exportar a archivo</string>
+    <string name="button_export_app">ComfyChair</string>
+    <string name="button_export_ui">ComfyUI</string>
+    <string name="button_export_api">ComfyUI (API)</string>
     <string name="button_delete_workflow">Eliminar workflow</string>
     <string name="title_delete_named">¿Eliminar «%1$s»?</string>
     <string name="msg_delete_workflow_device">Se eliminará de este dispositivo. Los archivos exportados no se ven afectados.</string>
@@ -545,10 +549,11 @@
     <string name="msg_workflow_export_success">Workflow exportado</string>
     <string name="error_workflow_duplicate">No se pudo duplicar el flujo de trabajo</string>
     <string name="error_workflow_export">Error al exportar workflow</string>
+    <string name="error_export_needs_definitions">Conéctate primero al servidor: el formato ComfyUI toma de él el orden de los valores de los nodos</string>
     <plurals name="msg_litegraph_conversion_notes">
-        <item quantity="one">Conversión completada con %d nota</item>
-        <item quantity="many">Conversión completada con %d notas</item>
-        <item quantity="other">Conversión completada con %d notas</item>
+        <item quantity="one">Conversión completada (%d nota)</item>
+        <item quantity="many">Conversión completada (%d notas)</item>
+        <item quantity="other">Conversión completada (%d notas)</item>
     </plurals>
 
     <!-- Content descriptions for accessibility -->
@@ -600,6 +605,26 @@
     <string name="label_pip_source">Origen</string>
     <string name="msg_results_appear_here">Tus resultados aparecerán aquí</string>
     <string name="button_pick_source_image">Elegir imagen de origen</string>
+    <!-- Source sheet (spec §21): From device, then the server's input files -->
+    <string name="source_sheet_title_image">Imagen de origen</string>
+    <string name="source_sheet_title_video">Vídeo de origen</string>
+    <plurals name="source_count_images">
+        <item quantity="one">%d imagen</item>
+        <item quantity="many">%d de imágenes</item>
+        <item quantity="other">%d imágenes</item>
+    </plurals>
+    <plurals name="source_count_videos">
+        <item quantity="one">%d vídeo</item>
+        <item quantity="many">%d de vídeos</item>
+        <item quantity="other">%d vídeos</item>
+    </plurals>
+    <string name="source_offline">sin conexión</string>
+    <string name="source_from_device">Desde el dispositivo</string>
+    <string name="source_empty_images">Todavía no hay imágenes en el servidor</string>
+    <string name="source_empty_videos">Todavía no hay vídeos en el servidor</string>
+    <string name="source_offline_title">Los archivos del servidor no están disponibles sin conexión</string>
+    <string name="source_offline_body">Se puede elegir un archivo del dispositivo; se sube al generar.</string>
+    <string name="source_load_failed">No se pudieron cargar los archivos del servidor</string>
     <string name="button_pick_source_video">Elegir vídeo de origen</string>
     <string name="content_description_replace_source">Reemplazar imagen de origen</string>
     <string name="content_description_replace_source_video">Reemplazar vídeo de origen</string>
@@ -656,24 +681,29 @@
     <string name="label_all_node_values">Todos los valores de nodos</string>
     <string name="desc_all_node_values">Valores que no aparecen arriba</string>
     <string name="label_new_workflow">Nuevo flujo de trabajo</string>
-    <string name="label_editor_mode_graph">Grafo – solo lectura</string>
+    <string name="label_editor_mode_graph">Grafo</string>
     <string name="label_editor_mode_node_values">Valores de nodos</string>
     <string name="label_editor_mode_editing">Edición</string>
-    <string name="label_editor_mode_editing_unsaved">Edición – cambios sin guardar</string>
-    <string name="label_editor_mode_placement">Edición – colocación</string>
+    <!-- The pill's line 2: a mode in bold, its state after a dash in italics, parameters in parentheses -->
+    <string name="label_editor_mode_import">Importación</string>
+    <string name="label_editor_mode_saving">Guardar</string>
+    <string name="label_editor_state_read_only">solo lectura</string>
+    <string name="label_editor_state_unsaved">cambios sin guardar</string>
+    <string name="label_editor_state_placement">colocación</string>
+    <string name="label_editor_state_zoom_in">acerca para conectar</string>
+    <string name="label_editor_state_map_fields">asignar campos</string>
     <string name="label_editor_zoom_in_to_connect">Acerca para conectar</string>
-    <string name="label_editor_mode_mapping">Importación – asignar campos</string>
     <string name="label_editor_connecting">Conectando %1$s</string>
     <string name="hint_editor_tap_input">Toca una entrada resaltada</string>
     <string name="hint_editor_tap_output">Toca una salida resaltada</string>
     <string name="label_editor_linking">Conectando %1$s</string>
     <string name="hint_editor_tap_input_or_value">Toca una entrada o un valor resaltados</string>
     <string name="hint_editor_no_target">Nada en este flujo de trabajo acepta %1$s</string>
-    <string name="label_editor_socket_menu_header">&lt;b>%1$s&lt;/b> – desde %2$s</string>
+    <string name="label_editor_socket_menu_header">&lt;b>%1$s&lt;/b> (desde %2$s)</string>
     <string name="menu_editor_connect">Conectar</string>
     <string name="menu_editor_disconnect">Desconectar</string>
-    <string name="label_editor_socket_menu_free">&lt;b>%1$s&lt;/b> – sin conectar</string>
-    <string name="label_editor_output_menu_header">&lt;b>%1$s&lt;/b> – hacia %2$s</string>
+    <string name="label_editor_socket_menu_free">&lt;b>%1$s&lt;/b> – &lt;i>sin conectar&lt;/i></string>
+    <string name="label_editor_output_menu_header">&lt;b>%1$s&lt;/b> (hacia %2$s)</string>
     <string name="label_editor_socket_in">&lt;b>%1$s&lt;/b> en &lt;b>%2$s&lt;/b></string>
     <string name="menu_editor_add_node">Añadir un nodo</string>
     <string name="msg_editor_link_mapped_new_node">Una vez conectado, &lt;b>%1$s&lt;/b> tomará su valor del nuevo nodo y el campo &lt;b>%2$s&lt;/b> dejará de cambiarlo.</string>
@@ -684,11 +714,6 @@
     <string name="button_edit_structure">Editar estructura</string>
     <string name="content_description_clear_selection">Borrar selección</string>
     <string name="content_description_zoom_level">Zoom %1$d por ciento, toca para 100 por ciento</string>
-    <plurals name="label_editor_mode_node_values_changed">
-        <item quantity="one">Valores de nodos – %d cambiado</item>
-        <item quantity="many">Valores de nodos – %d cambiados</item>
-        <item quantity="other">Valores de nodos – %d cambiados</item>
-    </plurals>
     <string name="workflow_editor_zoom_in">Acercar</string>
     <string name="workflow_editor_zoom_out">Alejar</string>
     <string name="workflow_editor_reset_zoom">Ajustar el grafo a la pantalla</string>
@@ -706,8 +731,8 @@
     <string name="button_copy_names">Copiar nombres</string>
     <string name="title_missing_on_server">Faltan en el servidor</string>
     <string name="msg_missing_fields_none">La pantalla «%1$s» necesita estos campos, pero ningún nodo de este workflow los proporciona. Revisa el tipo o añade los nodos en ComfyUI.</string>
-    <string name="label_copy_name">%1$s – copia</string>
-    <string name="label_copy_name_numbered">%1$s – copia %2$d</string>
+    <string name="label_copy_name">%1$s (copia)</string>
+    <string name="label_copy_name_numbered">%1$s (copia %2$d)</string>
     <string name="error_name_taken">Ya existe un workflow con este nombre</string>
     <string name="msg_names_copied">Nombres copiados</string>
     <plurals name="msg_missing_nodes_count">
@@ -721,8 +746,8 @@
     <string name="button_clear_all_mapping">Borrar todo</string>
     <string name="label_field_n_of_m">Campo %1$d de %2$d</string>
     <string name="button_all_fields">Todos los campos</string>
-    <string name="hint_mapping_required">Toca el nodo que lo contiene – obligatorio</string>
-    <string name="hint_mapping_optional">Toca el nodo que lo contiene – opcional</string>
+    <string name="hint_mapping_required">Toca el nodo que lo contiene (obligatorio)</string>
+    <string name="hint_mapping_optional">Toca el nodo que lo contiene (opcional)</string>
     <string name="content_description_previous_field">Campo anterior</string>
     <string name="content_description_next_field">Campo siguiente</string>
     <string name="button_finish">Finalizar</string>
@@ -731,7 +756,6 @@
     <string name="msg_cancel_import">El flujo de trabajo no se añadirá.</string>
     <string name="button_cancel_import">Cancelar importación</string>
     <string name="button_keep_mapping">Seguir asignando</string>
-    <string name="label_editor_mode_mapping_save">Guardar – asignar campos</string>
     <string name="label_not_chosen">Aún sin elegir</string>
     <string name="section_necessary">Necesario</string>
     <string name="section_optional">Opcional</string>
@@ -807,6 +831,7 @@
     <string name="label_about_version">Versión %1$s</string>
     <string name="title_about_license">Licencia</string>
     <string name="label_about_license_name">GNU General Public License v3.0 (GPL-3.0)</string>
+    <string name="msg_license_english_only">Solo el texto original en inglés es jurídicamente vinculante.</string>
     <string name="title_about_source">Código fuente</string>
 
     <!-- Debug Logging strings -->
@@ -843,26 +868,29 @@
     <string name="node_browser_no_match">Ningún nodo coincide con «%1$s»</string>
     <string name="content_description_custom_node">Nodo de una extensión</string>
     <string name="content_description_remove_filter">Mostrar todos los nodos</string>
-    <plurals name="node_browser_compatible_count">
-        <item quantity="one">%d nodo compatible</item>
-        <item quantity="many">%d nodos compatibles</item>
-        <item quantity="other">%d nodos compatibles</item>
+    <plurals name="node_search_hint">
+        <item quantity="one">Buscar en %d nodo</item>
+        <item quantity="many">Buscar en %d nodos</item>
+        <item quantity="other">Buscar en %d nodos</item>
     </plurals>
+    <string name="node_section_builtin">Integrados</string>
+    <string name="node_section_extensions">Extensiones</string>
+    <string name="node_folder_api">Nodos API</string>
+    <string name="node_folder_other">Otros</string>
+    <string name="node_row_supporting">%1$s (entradas: %2$d, salidas: %3$d)</string>
+    <string name="node_row_io">entradas: %1$d, salidas: %2$d</string>
+    <string name="node_mark_deprecated">obsoleto</string>
+    <string name="node_mark_experimental">experimental</string>
+    <string name="node_count">Nodos: %1$d</string>
+    <string name="node_count_of">Nodos: %1$d de %2$d</string>
+    <string name="node_none_body">Revisa la ortografía o busca en todos los nodos.</string>
+    <string name="node_search_all">Buscar en todos los nodos</string>
+    <string name="node_not_connected">Sin conectar: el nodo no tiene conector %1$s</string>
+    <string name="node_view_tree">Árbol</string>
+    <string name="node_view_list">Lista</string>
+    <string name="content_description_node_view">Vista</string>
     <string name="node_browser_title">Agregar nodo</string>
-    <string name="placeholder_node_browser_search">Buscar nodos…</string>
     <string name="node_browser_no_results">No se encontraron nodos coincidentes</string>
-    <plurals name="node_browser_inputs_count">
-        <item quantity="one">%d entrada</item>
-        <item quantity="many">%d entradas</item>
-        <item quantity="other">%d entradas</item>
-    </plurals>
-    <plurals name="node_browser_outputs_count">
-        <item quantity="one">%d salida</item>
-        <item quantity="many">%d salidas</item>
-        <item quantity="other">%d salidas</item>
-    </plurals>
-    <string name="node_browser_deprecated">Obsoleto</string>
-    <string name="node_browser_experimental">Experimental</string>
     <string name="node_browser_accepts_input">Acepta %1$s</string>
     <string name="node_browser_provides_output">Da %1$s</string>
     <string name="button_clear_search">Borrar búsqueda</string>
@@ -939,7 +967,16 @@
     <string name="prompt_preset_reset_prompt">Restablecer prompt</string>
     <string name="msg_prompt_preset_reset_success">Prompt restablecido por defecto</string>
     <string name="title_prompt_library">Biblioteca de prompts</string>
-    <string name="placeholder_prompt_library_search">Buscar prompts…</string>
+    <plurals name="prompts_search_hint">
+        <item quantity="one">Buscar en %d prompt</item>
+        <item quantity="many">Buscar en %d prompts</item>
+        <item quantity="other">Buscar en %d prompts</item>
+    </plurals>
+    <string name="prompts_more_tags">Más etiquetas: %d</string>
+    <string name="prompts_count">Prompts: %1$d</string>
+    <string name="prompts_none_title">Ningún prompt coincide con «%1$s»</string>
+    <string name="prompts_none_body">Revisa la ortografía o busca en todos los prompts.</string>
+    <string name="prompts_search_all">Buscar en todos los prompts</string>
     <string name="msg_prompt_library_empty">Sin prompts guardados</string>
     <string name="msg_delete_prompt">Se eliminará de la biblioteca de prompts.</string>
     <string name="msg_prompt_library_no_match">Ningún prompt coincide</string>
@@ -1136,11 +1173,109 @@
         <item quantity="many">Buscar en %d flujos de trabajo</item>
         <item quantity="other">Buscar en %d flujos de trabajo</item>
     </plurals>
-    <plurals name="label_server_import_count">
-        <item quantity="one">%1$d de %2$d flujo de trabajo</item>
-        <item quantity="many">%1$d de %2$d flujos de trabajo</item>
-        <item quantity="other">%1$d de %2$d flujos de trabajo</item>
-    </plurals>
+    <string name="label_server_import_count_of">Flujos de trabajo: %1$d de %2$d</string>
     <string name="state_expanded">Expandido</string>
     <string name="state_collapsed">Contraído</string>
+
+    <!-- Custom fields -->
+    <string name="menu_editor_make_field">Crear un campo</string>
+    <string name="menu_editor_add_to_field">Añadir a un campo</string>
+    <string name="label_editor_add_to_field_header">Añadir &lt;b>%1$s&lt;/b> a</string>
+    <string name="menu_editor_edit_field">Editar campo</string>
+    <string name="menu_editor_remove_from_field">Quitar del campo</string>
+    <string name="label_field_type_int">número entero</string>
+    <string name="label_field_type_float">número decimal</string>
+    <string name="label_field_type_bool">sí/no</string>
+    <string name="label_field_type_list">lista</string>
+    <string name="label_field_type_text">texto</string>
+    <string name="label_field_type_with_range">%1$s, %2$s</string>
+    <string name="title_new_field">Campo nuevo</string>
+    <string name="label_new_field_context">Desde &lt;b>%1$s&lt;/b> en &lt;b>%2$s&lt;/b> (%3$s)</string>
+    <string name="label_field_name">Nombre</string>
+    <string name="desc_field_name">Visible en la pantalla de generación (%1$d/%2$d)</string>
+    <string name="error_field_name_empty">Escribe un nombre</string>
+    <string name="error_field_name_taken">%1$s ya es un campo de este flujo de trabajo</string>
+    <string name="button_add">Añadir</string>
+    <string name="title_edit_field">Editar campo</string>
+    <string name="title_field_fills">Rellena</string>
+    <string name="content_description_remove_field_value">Quitar %2$s en %1$s</string>
+    <string name="error_field_needs_value">Un campo necesita al menos un valor</string>
+    <string name="button_delete_field">Eliminar campo</string>
+    <string name="title_delete_field">¿Eliminar %1$s?</string>
+    <string name="msg_delete_field_last">&lt;b>%1$s&lt;/b> es su único valor. Conservará el valor del campo como propio.</string>
+    <string name="msg_editor_link_deletes_field">&lt;b>%1$s&lt;/b> no tiene otro valor y se eliminará.</string>
+    <string name="button_link_delete_field">Conectar y eliminar campo</string>
+    <string name="section_custom_fields">Personalizados</string>
+    <string name="menu_add_field">Añadir un campo</string>
+    <string name="desc_add_field">Elige un valor para asignar</string>
+    <string name="label_pick_add_to">Añadir a &lt;b>%1$s&lt;/b></string>
+    <string name="title_pick_value">Elige un valor</string>
+    <string name="hint_pick_value">Los valores admitidos están resaltados</string>
+    <string name="content_description_cancel_new_field">Cancelar campo nuevo</string>
+    <string name="button_add_value">Añadir un valor</string>
+    <string name="label_builtin_field_context">Campo integrado: &lt;b>%1$s&lt;/b></string>
+    <string name="desc_builtin_field_name">Nombre integrado: %1$s (%2$d/%3$d)</string>
+    <string name="content_description_use_builtin_name">Usar el nombre integrado: %1$s</string>
+    <!-- A field and its value in a summary ("CFG: 7") -->
+    <string name="label_name_value">%1$s: %2$s</string>
+    <!-- Subgraphs in the editor (spec §19) -->
+    <string name="sg_open">Abrir</string>
+    <plurals name="sg_nodes_count">
+        <item quantity="one">%d nodo</item>
+        <item quantity="many">%d nodos</item>
+        <item quantity="other">%d nodos</item>
+    </plurals>
+    <plurals name="sg_copies">
+        <item quantity="one">%d copia</item>
+        <item quantity="many">%d copias</item>
+        <item quantity="other">%d copias</item>
+    </plurals>
+    <string name="sg_path_a11y">Ruta, %1$s. Toca dos veces para elegir un nivel</string>
+    <string name="sg_inputs">Entradas</string>
+    <string name="sg_outputs">Salidas</string>
+    <plurals name="sg_inside_announce">
+        <item quantity="one">Dentro de %1$s, %2$d nodo</item>
+        <item quantity="many">Dentro de %1$s, %2$d nodos</item>
+        <item quantity="other">Dentro de %1$s, %2$d nodos</item>
+    </plurals>
+    <plurals name="sg_used_announce">
+        <item quantity="one">usado %d vez</item>
+        <item quantity="many">usado %d veces</item>
+        <item quantity="other">usado %d veces</item>
+    </plurals>
+    <string name="sg_back_announce">De vuelta en %1$s</string>
+    <string name="sg_open_action">Abrir subgrafo</string>
+    <string name="sg_subgraph">Subgrafo</string>
+    <!-- Editing subgraphs (spec §19.3–19.5) -->
+    <string name="sg_add_socket">añadir</string>
+    <string name="sg_show_on">Mostrar en &lt;b>%1$s&lt;/b></string>
+    <string name="sg_hide_from">Ocultar de &lt;b>%1$s&lt;/b></string>
+    <string name="sg_hide_from_node">Ocultar del nodo</string>
+    <string name="sg_move_up">Subir</string>
+    <string name="sg_move_down">Bajar</string>
+    <string name="sg_shown_from">&lt;b>%1$s&lt;/b> (desde &lt;b>%2$s&lt;/b>)</string>
+    <string name="sg_make">Crear subgrafo</string>
+    <string name="sg_new_title">Nuevo subgrafo</string>
+    <string name="sg_new_nodes">Nodos: %1$d</string>
+    <string name="sg_new_inputs">Entradas: %1$d</string>
+    <string name="sg_new_outputs">Salidas: %1$d</string>
+    <string name="sg_make_confirm">Crear</string>
+    <string name="sg_unpack">Desempaquetar</string>
+    <string name="sg_rename">Cambiar nombre del subgrafo</string>
+    <string name="sg_rename_this">Cambiar nombre de este subgrafo</string>
+    <string name="sg_rename_used">Copias: %1$d</string>
+    <string name="sg_rename_all">Cambiar el nombre de todas las copias (%1$d)</string>
+    <string name="sg_name">Nombre</string>
+    <string name="sg_name_count">%1$d/%2$d</string>
+    <string name="sg_error_name_empty">Escribe un nombre</string>
+    <string name="sg_error_input_taken">Ya hay una entrada llamada %1$s</string>
+    <string name="sg_error_output_taken">Ya hay una salida llamada %1$s</string>
+    <string name="sg_input_of">&lt;b>%1$s&lt;/b> (entrada de &lt;b>%2$s&lt;/b>)</string>
+    <string name="sg_output_of">&lt;b>%1$s&lt;/b> (salida de &lt;b>%2$s&lt;/b>)</string>
+    <string name="sg_rename_input">Cambiar nombre de la entrada</string>
+    <string name="sg_rename_output">Cambiar nombre de la salida</string>
+    <string name="sg_remove_input">Quitar entrada</string>
+    <string name="sg_remove_output">Quitar salida</string>
+    <string name="sg_connect_hint_inputs">Toca una salida resaltada o una toma «añadir»</string>
+    <string name="sg_connect_hint_outputs">Toca una entrada resaltada o una toma «añadir»</string>
 </resources>

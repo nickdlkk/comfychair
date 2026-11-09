@@ -118,25 +118,25 @@
     <string name="state_generate_no_source_video">Wähle zuerst ein Quellvideo</string>
     <string name="state_generate_invalid">Prüfe die Optionen – ein Wert fehlt oder ist ungültig</string>
     <string name="label_offline">Offline</string>
-    <string name="content_description_queue_empty">Warteschlange ist leer</string>
+    <string name="content_description_queue_empty">Keine Aufträge in der Warteschlange</string>
     <string name="content_description_queue">Warteschlange: %1$s</string>
     <string name="label_step_of">Schritt %1$d von %2$d</string>
     <string name="label_preparing">Vorbereitung…</string>
     <string name="content_description_cancel_job">Diesen Auftrag abbrechen</string>
     <string name="title_queue">Warteschlange</string>
-    <string name="msg_queue_empty">Die Warteschlange ist leer</string>
-    <string name="label_queue_running_yours">Dein Auftrag läuft</string>
-    <string name="label_queue_running_other">Läuft für einen anderen Client</string>
-    <string name="label_queue_running_other_job">Auftrag eines anderen Clients</string>
-    <string name="label_queue_waiting_yours">Deine wartenden Aufträge (%1$d)</string>
-    <string name="label_queue_position">%1$s – Platz %2$d in der Warteschlange</string>
-    <string name="label_queue_others">Andere Clients</string>
-    <string name="label_queue_other_positions">Plätze %1$s – Inhalte werden nicht angezeigt</string>
+    <string name="msg_queue_empty">Keine Aufträge in der Warteschlange</string>
+    <string name="label_queue_running_yours">Laufende Aufträge</string>
+    <string name="label_queue_running_other">Laufende Aufträge (anderer Client)</string>
+    <string name="label_queue_running_other_job">Auftrag</string>
+    <string name="label_queue_waiting_yours">Wartende Aufträge (%1$d)</string>
+    <string name="label_queue_position">%1$s (Platz: %2$d)</string>
+    <string name="label_queue_others">Wartende Aufträge (anderer Client)</string>
+    <string name="label_queue_other_position">Position: %1$d</string>
     <string name="content_description_move_job_to_front">„%1$s“ nach vorne verschieben</string>
     <string name="content_description_remove_job">„%1$s“ aus der Warteschlange entfernen</string>
-    <string name="button_clear_queue_confirm">Warteschlange leeren…</string>
+    <string name="button_clear_queue_confirm">Warteschlange leeren</string>
     <string name="title_clear_queue">Ganze Warteschlange leeren?</string>
-    <string name="msg_clear_queue_own">Damit werden alle deine wartenden Aufträge entfernt. Ein laufender Auftrag wird nicht abgebrochen.</string>
+    <string name="msg_clear_queue_own">Damit werden alle wartenden Aufträge entfernt. Laufende Aufträge werden nicht abgebrochen.</string>
     <string name="button_clear">Leeren</string>
     <string name="error_queue_action">Die Warteschlange konnte nicht geändert werden</string>
     <string name="content_description_open_queue">Warteschlange öffnen</string>
@@ -146,12 +146,12 @@
     </plurals>
     <string name="content_description_generating_progress">Generierung, %1$d %%</string>
     <plurals name="label_more_queued">
-        <item quantity="one">%d weiterer eigener Auftrag in der Warteschlange</item>
-        <item quantity="other">%d weitere eigene Aufträge in der Warteschlange</item>
+        <item quantity="one">Wartende Aufträge: %d</item>
+        <item quantity="other">Wartende Aufträge: %d</item>
     </plurals>
     <plurals name="label_queue_own_jobs">
-        <item quantity="one">%d eigener Auftrag</item>
-        <item quantity="other">%d eigene Aufträge</item>
+        <item quantity="one">%d Auftrag</item>
+        <item quantity="other">%d Aufträge</item>
     </plurals>
     <plurals name="label_queue_other_jobs">
         <item quantity="one">%d Auftrag anderer Clients</item>
@@ -191,7 +191,7 @@
     <string name="title_confirm_clear_history">Verlauf des Servers leeren?</string>
     <string name="msg_confirm_clear_history">Alle Ergebnisse verschwinden aus dem Serververlauf und der Galerie. Die Dateien bleiben auf dem Datenträger des Servers.</string>
     <string name="label_memory_usage">%1$.1f / %2$.1f GB</string>
-    <string name="label_vram_of">VRAM – %1$s</string>
+    <string name="label_vram_of">VRAM (%1$s)</string>
     <string name="title_server_software">Software</string>
     <string name="label_operating_system">Betriebssystem</string>
     <string name="title_server_maintenance">Wartung</string>
@@ -349,8 +349,8 @@
         <item quantity="other">%d ausgewählt</item>
     </plurals>
     <plurals name="label_gallery_subtitle">
-        <item quantity="one">Serververlauf – %d Element</item>
-        <item quantity="other">Serververlauf – %d Elemente</item>
+        <item quantity="one">Serververlauf (%d Element)</item>
+        <item quantity="other">Serververlauf (%d Elemente)</item>
     </plurals>
     <string name="button_select_all">Alle auswählen</string>
     <string name="title_delete_selected">Vom Server löschen?</string>
@@ -471,7 +471,7 @@
     <string name="label_socket_input">Eingang</string>
     <string name="label_socket_output">Ausgang</string>
     <string name="button_reset_node">Knoten zurücksetzen</string>
-    <string name="label_value_changed">Geändert – Standard %1$s</string>
+    <string name="label_value_changed">Geändert (Standard: %1$s)</string>
     <string name="content_description_reset_value">%1$s auf %2$s zurücksetzen</string>
     <string name="title_node_values_linked">Verbunden</string>
     <string name="desc_node_values_linked">Ihre Werte kommen von anderen Knoten.</string>
@@ -494,6 +494,9 @@
     <string name="title_node_editor_rename">Knoten umbenennen</string>
     <string name="label_node_editor_rename">Node-Name</string>
     <string name="node_editor_bypass">Umgehen</string>
+    <!-- A bypassed node (spec §20): its badge in the title bar, its state after a dash -->
+    <string name="node_bypassed_badge">Umgangen</string>
+    <string name="node_bypassed_state">umgangen</string>
 
     <!-- Settings screen strings -->
     <string name="nav_server_settings">Server</string>
@@ -521,17 +524,18 @@
     <string name="msg_workflows_none_on">Der Bildschirm „%1$s“ hat keinen eingeschalteten Workflow und kann nicht generieren.</string>
     <string name="content_description_section_actions">%1$s. Abschnittsaktionen</string>
     <string name="msg_needs_server">Erfordert eine Serververbindung</string>
-    <string name="label_workflow_subtitle">%1$s – %2$s</string>
+    <string name="label_workflow_subtitle">%1$s (%2$s)</string>
     <string name="label_workflow_kind_builtin">integriert</string>
     <string name="label_workflow_kind_yours">eigener</string>
     <string name="label_show_in_screens">In Generierungsbildschirmen anzeigen</string>
     <string name="button_view_graph">Graph ansehen</string>
     <string name="button_edit_graph">Graph bearbeiten</string>
-    <string name="button_name_and_description">Name und Beschreibung</string>
+    <string name="button_name_and_description">Name oder Beschreibung ändern</string>
     <string name="desc_duplicate_builtin">Eine bearbeitbare Kopie erstellen</string>
-    <string name="title_workflow_export">Export</string>
-    <string name="button_export_app">Für ComfyChair exportieren</string>
-    <string name="button_export_api">Im ComfyUI-API-Format exportieren</string>
+    <string name="title_workflow_export">Export in Datei</string>
+    <string name="button_export_app">ComfyChair</string>
+    <string name="button_export_ui">ComfyUI</string>
+    <string name="button_export_api">ComfyUI (API)</string>
     <string name="button_delete_workflow">Workflow löschen</string>
     <string name="title_delete_named">„%1$s“ löschen?</string>
     <string name="msg_delete_workflow_device">Er wird von diesem Gerät entfernt. Exportierte Dateien sind nicht betroffen.</string>
@@ -561,9 +565,10 @@
     <string name="msg_workflow_export_success">Workflow exportiert</string>
     <string name="error_workflow_duplicate">Workflow konnte nicht dupliziert werden</string>
     <string name="error_workflow_export">Workflow konnte nicht exportiert werden</string>
+    <string name="error_export_needs_definitions">Verbinde dich zuerst mit dem Server – das ComfyUI-Format übernimmt von ihm die Reihenfolge der Knotenwerte</string>
     <plurals name="msg_litegraph_conversion_notes">
-        <item quantity="one">Konvertierung abgeschlossen mit %d Hinweis</item>
-        <item quantity="other">Konvertierung abgeschlossen mit %d Hinweisen</item>
+        <item quantity="one">Konvertierung abgeschlossen (%d Hinweis)</item>
+        <item quantity="other">Konvertierung abgeschlossen (%d Hinweise)</item>
     </plurals>
 
     <!-- Content descriptions for accessibility -->
@@ -615,6 +620,24 @@
     <string name="label_pip_source">Quelle</string>
     <string name="msg_results_appear_here">Hier erscheinen deine Ergebnisse</string>
     <string name="button_pick_source_image">Quellbild auswählen</string>
+    <!-- Source sheet (spec §21): From device, then the server's input files -->
+    <string name="source_sheet_title_image">Quellbild</string>
+    <string name="source_sheet_title_video">Quellvideo</string>
+    <plurals name="source_count_images">
+        <item quantity="one">%d Bild</item>
+        <item quantity="other">%d Bilder</item>
+    </plurals>
+    <plurals name="source_count_videos">
+        <item quantity="one">%d Video</item>
+        <item quantity="other">%d Videos</item>
+    </plurals>
+    <string name="source_offline">offline</string>
+    <string name="source_from_device">Vom Gerät</string>
+    <string name="source_empty_images">Noch keine Bilder auf dem Server</string>
+    <string name="source_empty_videos">Noch keine Videos auf dem Server</string>
+    <string name="source_offline_title">Die Dateien des Servers sind offline nicht verfügbar</string>
+    <string name="source_offline_body">Eine Datei vom Gerät lässt sich weiterhin wählen; sie wird beim Generieren hochgeladen.</string>
+    <string name="source_load_failed">Die Dateien des Servers konnten nicht geladen werden</string>
     <string name="button_pick_source_video">Quellvideo auswählen</string>
     <string name="content_description_replace_source">Quellbild ersetzen</string>
     <string name="content_description_replace_source_video">Quellvideo ersetzen</string>
@@ -668,24 +691,29 @@
     <string name="label_all_node_values">Alle Knotenwerte</string>
     <string name="desc_all_node_values">Werte, die oben fehlen</string>
     <string name="label_new_workflow">Neuer Workflow</string>
-    <string name="label_editor_mode_graph">Graph – nur lesen</string>
+    <string name="label_editor_mode_graph">Graph</string>
     <string name="label_editor_mode_node_values">Knotenwerte</string>
     <string name="label_editor_mode_editing">Bearbeitung</string>
-    <string name="label_editor_mode_editing_unsaved">Bearbeitung – nicht gespeichert</string>
-    <string name="label_editor_mode_placement">Bearbeitung – Anordnen</string>
+    <!-- The pill's line 2: a mode in bold, its state after a dash in italics, parameters in parentheses -->
+    <string name="label_editor_mode_import">Import</string>
+    <string name="label_editor_mode_saving">Speichern</string>
+    <string name="label_editor_state_read_only">nur lesen</string>
+    <string name="label_editor_state_unsaved">nicht gespeichert</string>
+    <string name="label_editor_state_placement">Anordnen</string>
+    <string name="label_editor_state_zoom_in">zum Verbinden heranzoomen</string>
+    <string name="label_editor_state_map_fields">Felder zuordnen</string>
     <string name="label_editor_zoom_in_to_connect">Zum Verbinden heranzoomen</string>
-    <string name="label_editor_mode_mapping">Import – Felder zuordnen</string>
     <string name="label_editor_connecting">Verbinde %1$s</string>
     <string name="hint_editor_tap_input">Tippe auf einen hervorgehobenen Eingang</string>
     <string name="hint_editor_tap_output">Tippe auf einen hervorgehobenen Ausgang</string>
     <string name="label_editor_linking">%1$s verbinden</string>
     <string name="hint_editor_tap_input_or_value">Tippe auf einen markierten Eingang oder Wert</string>
     <string name="hint_editor_no_target">Nichts in diesem Workflow nimmt %1$s an</string>
-    <string name="label_editor_socket_menu_header">&lt;b>%1$s&lt;/b> – von %2$s</string>
+    <string name="label_editor_socket_menu_header">&lt;b>%1$s&lt;/b> (von %2$s)</string>
     <string name="menu_editor_connect">Verbinden</string>
     <string name="menu_editor_disconnect">Trennen</string>
-    <string name="label_editor_socket_menu_free">&lt;b>%1$s&lt;/b> – nicht verbunden</string>
-    <string name="label_editor_output_menu_header">&lt;b>%1$s&lt;/b> – zu %2$s</string>
+    <string name="label_editor_socket_menu_free">&lt;b>%1$s&lt;/b> – &lt;i>nicht verbunden&lt;/i></string>
+    <string name="label_editor_output_menu_header">&lt;b>%1$s&lt;/b> (zu %2$s)</string>
     <string name="label_editor_socket_in">&lt;b>%1$s&lt;/b> in &lt;b>%2$s&lt;/b></string>
     <string name="menu_editor_add_node">Knoten hinzufügen</string>
     <string name="msg_editor_link_mapped_new_node">Nach dem Verbinden kommt &lt;b>%1$s&lt;/b> vom neuen Knoten, und das Feld &lt;b>%2$s&lt;/b> ändert den Wert nicht mehr.</string>
@@ -696,10 +724,6 @@
     <string name="button_edit_structure">Struktur bearbeiten</string>
     <string name="content_description_clear_selection">Auswahl aufheben</string>
     <string name="content_description_zoom_level">Zoom %1$d Prozent, tippen für 100 Prozent</string>
-    <plurals name="label_editor_mode_node_values_changed">
-        <item quantity="one">Knotenwerte – %d geändert</item>
-        <item quantity="other">Knotenwerte – %d geändert</item>
-    </plurals>
     <string name="workflow_editor_zoom_in">Vergrößern</string>
     <string name="workflow_editor_zoom_out">Verkleinern</string>
     <string name="workflow_editor_reset_zoom">Graph an Bildschirm anpassen</string>
@@ -717,8 +741,8 @@
     <string name="button_copy_names">Namen kopieren</string>
     <string name="title_missing_on_server">Fehlt auf dem Server</string>
     <string name="msg_missing_fields_none">Der Bildschirm „%1$s“ braucht diese Felder, aber kein Knoten dieses Workflows liefert sie. Prüfe den Typ oder füge die Knoten in ComfyUI hinzu.</string>
-    <string name="label_copy_name">%1$s – Kopie</string>
-    <string name="label_copy_name_numbered">%1$s – Kopie %2$d</string>
+    <string name="label_copy_name">%1$s (Kopie)</string>
+    <string name="label_copy_name_numbered">%1$s (Kopie %2$d)</string>
     <string name="error_name_taken">Ein Workflow mit diesem Namen existiert bereits</string>
     <string name="msg_names_copied">Namen kopiert</string>
     <plurals name="msg_missing_nodes_count">
@@ -731,8 +755,8 @@
     <string name="button_clear_all_mapping">Alle löschen</string>
     <string name="label_field_n_of_m">Feld %1$d von %2$d</string>
     <string name="button_all_fields">Alle Felder</string>
-    <string name="hint_mapping_required">Tippe auf den Knoten, der es enthält – erforderlich</string>
-    <string name="hint_mapping_optional">Tippe auf den Knoten, der es enthält – optional</string>
+    <string name="hint_mapping_required">Tippe auf den Knoten, der es enthält (erforderlich)</string>
+    <string name="hint_mapping_optional">Tippe auf den Knoten, der es enthält (optional)</string>
     <string name="content_description_previous_field">Vorheriges Feld</string>
     <string name="content_description_next_field">Nächstes Feld</string>
     <string name="button_finish">Fertig</string>
@@ -741,7 +765,6 @@
     <string name="msg_cancel_import">Der Workflow wird nicht hinzugefügt.</string>
     <string name="button_cancel_import">Import abbrechen</string>
     <string name="button_keep_mapping">Weiter zuordnen</string>
-    <string name="label_editor_mode_mapping_save">Speichern – Felder zuordnen</string>
     <string name="label_not_chosen">Noch nicht gewählt</string>
     <string name="section_necessary">Erforderlich</string>
     <string name="section_optional">Optional</string>
@@ -786,6 +809,7 @@
     <string name="label_about_version">Version %1$s</string>
     <string name="title_about_license">Lizenz</string>
     <string name="label_about_license_name">GNU General Public License v3.0 (GPL-3.0)</string>
+    <string name="msg_license_english_only">Rechtsverbindlich ist nur der englische Originaltext.</string>
     <string name="title_about_source">Quellcode</string>
 
     <!-- Debug Logging strings -->
@@ -822,23 +846,28 @@
     <string name="node_browser_no_match">Keine Knoten passen zu „%1$s“</string>
     <string name="content_description_custom_node">Knoten aus einer Erweiterung</string>
     <string name="content_description_remove_filter">Alle Knoten zeigen</string>
-    <plurals name="node_browser_compatible_count">
-        <item quantity="one">%d passender Knoten</item>
-        <item quantity="other">%d passende Knoten</item>
+    <plurals name="node_search_hint">
+        <item quantity="one">%d Knoten durchsuchen</item>
+        <item quantity="other">%d Knoten durchsuchen</item>
     </plurals>
+    <string name="node_section_builtin">Integriert</string>
+    <string name="node_section_extensions">Erweiterungen</string>
+    <string name="node_folder_api">API-Knoten</string>
+    <string name="node_folder_other">Sonstige</string>
+    <string name="node_row_supporting">%1$s (Eingänge: %2$d, Ausgänge: %3$d)</string>
+    <string name="node_row_io">Eingänge: %1$d, Ausgänge: %2$d</string>
+    <string name="node_mark_deprecated">veraltet</string>
+    <string name="node_mark_experimental">experimentell</string>
+    <string name="node_count">Knoten: %1$d</string>
+    <string name="node_count_of">Knoten: %1$d von %2$d</string>
+    <string name="node_none_body">Prüfe die Schreibweise oder durchsuche alle Knoten.</string>
+    <string name="node_search_all">Alle Knoten durchsuchen</string>
+    <string name="node_not_connected">Nicht verbunden: Der Knoten hat keinen %1$s-Anschluss</string>
+    <string name="node_view_tree">Baum</string>
+    <string name="node_view_list">Liste</string>
+    <string name="content_description_node_view">Ansicht</string>
     <string name="node_browser_title">Knoten hinzufügen</string>
-    <string name="placeholder_node_browser_search">Knoten suchen…</string>
     <string name="node_browser_no_results">Keine passenden Knoten gefunden</string>
-    <plurals name="node_browser_inputs_count">
-        <item quantity="one">%d Eingang</item>
-        <item quantity="other">%d Eingänge</item>
-    </plurals>
-    <plurals name="node_browser_outputs_count">
-        <item quantity="one">%d Ausgang</item>
-        <item quantity="other">%d Ausgänge</item>
-    </plurals>
-    <string name="node_browser_deprecated">Veraltet</string>
-    <string name="node_browser_experimental">Experimentell</string>
     <string name="node_browser_accepts_input">Nimmt %1$s</string>
     <string name="node_browser_provides_output">Liefert %1$s</string>
     <string name="button_clear_search">Suche löschen</string>
@@ -915,7 +944,15 @@
     <string name="prompt_preset_reset_prompt">Prompt zurücksetzen</string>
     <string name="msg_prompt_preset_reset_success">Prompt auf Standard zurückgesetzt</string>
     <string name="title_prompt_library">Prompt-Bibliothek</string>
-    <string name="placeholder_prompt_library_search">Prompts suchen…</string>
+    <plurals name="prompts_search_hint">
+        <item quantity="one">%d Prompt durchsuchen</item>
+        <item quantity="other">%d Prompts durchsuchen</item>
+    </plurals>
+    <string name="prompts_more_tags">Weitere Tags: %d</string>
+    <string name="prompts_count">Prompts: %1$d</string>
+    <string name="prompts_none_title">Keine Prompts passen zu „%1$s“</string>
+    <string name="prompts_none_body">Prüfe die Schreibweise oder durchsuche alle Prompts.</string>
+    <string name="prompts_search_all">Alle Prompts durchsuchen</string>
     <string name="msg_prompt_library_empty">Keine gespeicherten Prompts</string>
     <string name="msg_delete_prompt">Er wird aus der Prompt-Bibliothek entfernt.</string>
     <string name="msg_prompt_library_no_match">Keine passenden Prompts</string>
@@ -1107,10 +1144,105 @@
         <item quantity="one">%d Workflow durchsuchen</item>
         <item quantity="other">%d Workflows durchsuchen</item>
     </plurals>
-    <plurals name="label_server_import_count">
-        <item quantity="one">%1$d von %2$d Workflow</item>
-        <item quantity="other">%1$d von %2$d Workflows</item>
-    </plurals>
+    <string name="label_server_import_count_of">Workflows: %1$d von %2$d</string>
     <string name="state_expanded">Ausgeklappt</string>
     <string name="state_collapsed">Eingeklappt</string>
+
+    <!-- Custom fields -->
+    <string name="menu_editor_make_field">Feld erstellen</string>
+    <string name="menu_editor_add_to_field">Zu Feld hinzufügen</string>
+    <string name="label_editor_add_to_field_header">&lt;b>%1$s&lt;/b> hinzufügen zu</string>
+    <string name="menu_editor_edit_field">Feld bearbeiten</string>
+    <string name="menu_editor_remove_from_field">Aus Feld entfernen</string>
+    <string name="label_field_type_int">Ganzzahl</string>
+    <string name="label_field_type_float">Dezimalzahl</string>
+    <string name="label_field_type_bool">ein/aus</string>
+    <string name="label_field_type_list">Liste</string>
+    <string name="label_field_type_text">Text</string>
+    <string name="label_field_type_with_range">%1$s, %2$s</string>
+    <string name="title_new_field">Neues Feld</string>
+    <string name="label_new_field_context">Aus &lt;b>%1$s&lt;/b> in &lt;b>%2$s&lt;/b> (%3$s)</string>
+    <string name="label_field_name">Name</string>
+    <string name="desc_field_name">Auf dem Generierungsbildschirm sichtbar (%1$d/%2$d)</string>
+    <string name="error_field_name_empty">Gib einen Namen ein</string>
+    <string name="error_field_name_taken">%1$s ist bereits ein Feld dieses Workflows</string>
+    <string name="button_add">Hinzufügen</string>
+    <string name="title_edit_field">Feld bearbeiten</string>
+    <string name="title_field_fills">Füllt</string>
+    <string name="content_description_remove_field_value">%2$s in %1$s entfernen</string>
+    <string name="error_field_needs_value">Ein Feld braucht mindestens einen Wert</string>
+    <string name="button_delete_field">Feld löschen</string>
+    <string name="title_delete_field">%1$s löschen?</string>
+    <string name="msg_delete_field_last">&lt;b>%1$s&lt;/b> ist sein einziger Wert. Er behält den Wert des Felds als eigenen.</string>
+    <string name="msg_editor_link_deletes_field">&lt;b>%1$s&lt;/b> hat keinen anderen Wert und wird gelöscht.</string>
+    <string name="button_link_delete_field">Verbinden und Feld löschen</string>
+    <string name="section_custom_fields">Eigene</string>
+    <string name="menu_add_field">Feld hinzufügen</string>
+    <string name="desc_add_field">Wähle einen Wert zum Zuweisen</string>
+    <string name="label_pick_add_to">Zu &lt;b>%1$s&lt;/b> hinzufügen</string>
+    <string name="title_pick_value">Wähle einen Wert</string>
+    <string name="hint_pick_value">Zulässige Werte sind hervorgehoben</string>
+    <string name="content_description_cancel_new_field">Neues Feld abbrechen</string>
+    <string name="button_add_value">Wert hinzufügen</string>
+    <string name="label_builtin_field_context">Integriertes Feld: &lt;b>%1$s&lt;/b></string>
+    <string name="desc_builtin_field_name">Integrierter Name: %1$s (%2$d/%3$d)</string>
+    <string name="content_description_use_builtin_name">Integrierten Namen verwenden: %1$s</string>
+    <!-- A field and its value in a summary ("CFG: 7") -->
+    <string name="label_name_value">%1$s: %2$s</string>
+    <!-- Subgraphs in the editor (spec §19) -->
+    <string name="sg_open">Öffnen</string>
+    <plurals name="sg_nodes_count">
+        <item quantity="one">%d Knoten</item>
+        <item quantity="other">%d Knoten</item>
+    </plurals>
+    <plurals name="sg_copies">
+        <item quantity="one">%d Kopie</item>
+        <item quantity="other">%d Kopien</item>
+    </plurals>
+    <string name="sg_path_a11y">Pfad, %1$s. Doppeltippen, um eine Ebene zu wählen</string>
+    <string name="sg_inputs">Eingänge</string>
+    <string name="sg_outputs">Ausgänge</string>
+    <plurals name="sg_inside_announce">
+        <item quantity="one">In %1$s, %2$d Knoten</item>
+        <item quantity="other">In %1$s, %2$d Knoten</item>
+    </plurals>
+    <plurals name="sg_used_announce">
+        <item quantity="one">%d-mal verwendet</item>
+        <item quantity="other">%d-mal verwendet</item>
+    </plurals>
+    <string name="sg_back_announce">Zurück in %1$s</string>
+    <string name="sg_open_action">Subgraph öffnen</string>
+    <string name="sg_subgraph">Subgraph</string>
+    <!-- Editing subgraphs (spec §19.3–19.5) -->
+    <string name="sg_add_socket">hinzufügen</string>
+    <string name="sg_show_on">Auf &lt;b>%1$s&lt;/b> zeigen</string>
+    <string name="sg_hide_from">Auf &lt;b>%1$s&lt;/b> ausblenden</string>
+    <string name="sg_hide_from_node">Am Knoten ausblenden</string>
+    <string name="sg_move_up">Nach oben</string>
+    <string name="sg_move_down">Nach unten</string>
+    <string name="sg_shown_from">&lt;b>%1$s&lt;/b> (aus &lt;b>%2$s&lt;/b>)</string>
+    <string name="sg_make">Subgraph erstellen</string>
+    <string name="sg_new_title">Neuer Subgraph</string>
+    <string name="sg_new_nodes">Knoten: %1$d</string>
+    <string name="sg_new_inputs">Eingänge: %1$d</string>
+    <string name="sg_new_outputs">Ausgänge: %1$d</string>
+    <string name="sg_make_confirm">Erstellen</string>
+    <string name="sg_unpack">Entpacken</string>
+    <string name="sg_rename">Subgraph umbenennen</string>
+    <string name="sg_rename_this">Diesen Subgraph umbenennen</string>
+    <string name="sg_rename_used">Kopien: %1$d</string>
+    <string name="sg_rename_all">Alle Kopien umbenennen (%1$d)</string>
+    <string name="sg_name">Name</string>
+    <string name="sg_name_count">%1$d/%2$d</string>
+    <string name="sg_error_name_empty">Gib einen Namen ein</string>
+    <string name="sg_error_input_taken">Es gibt bereits einen Eingang %1$s</string>
+    <string name="sg_error_output_taken">Es gibt bereits einen Ausgang %1$s</string>
+    <string name="sg_input_of">&lt;b>%1$s&lt;/b> (Eingang von &lt;b>%2$s&lt;/b>)</string>
+    <string name="sg_output_of">&lt;b>%1$s&lt;/b> (Ausgang von &lt;b>%2$s&lt;/b>)</string>
+    <string name="sg_rename_input">Eingang umbenennen</string>
+    <string name="sg_rename_output">Ausgang umbenennen</string>
+    <string name="sg_remove_input">Eingang entfernen</string>
+    <string name="sg_remove_output">Ausgang entfernen</string>
+    <string name="sg_connect_hint_inputs">Tippe auf einen hervorgehobenen Ausgang oder eine Hinzufügen-Buchse</string>
+    <string name="sg_connect_hint_outputs">Tippe auf einen hervorgehobenen Eingang oder eine Hinzufügen-Buchse</string>
 </resources>

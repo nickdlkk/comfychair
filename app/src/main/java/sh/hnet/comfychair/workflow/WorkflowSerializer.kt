@@ -1,5 +1,6 @@
 package sh.hnet.comfychair.workflow
 
+import sh.hnet.comfychair.model.CustomFields
 import org.json.JSONArray
 import org.json.JSONObject
 import sh.hnet.comfychair.util.DebugLogger
@@ -70,6 +71,16 @@ class WorkflowSerializer {
             rootJson.put("manual_placement", true)
         }
 
+        // Custom fields and labels of built-in fields go with the workflow
+        if (graph.customFields.isNotEmpty()) rootJson.put(CustomFields.FIELDS_KEY, CustomFields.toJson(graph.customFields))
+        if (graph.fieldLabels.isNotEmpty()) rootJson.put(CustomFields.LABELS_KEY, CustomFields.labelsToJson(graph.fieldLabels))
+
+        // Subgraph definitions, with the values their instances show taken back into them
+        graph.subgraphs?.let { definitions ->
+            rootJson.put(Subgraphs.KEY, JSONObject(definitions))
+            Subgraphs.absorb(rootJson)
+        }
+
         val result = rootJson.toString(2)
         DebugLogger.d(TAG, "Serialized workflow with wrapper: ${result.length} chars")
         return result
@@ -96,7 +107,7 @@ class WorkflowSerializer {
         val groupsArray = JSONArray()
 
         for (group in groups) {
-            DebugLogger.d(TAG, "serializeGroups: processing group id=${group.id} '${group.title}' with ${group.memberNodeIds.size} members: ${group.memberNodeIds}")
+            DebugLogger.d(TAG, "serializeGroups: processing group id=${group.id} ${Obfuscator.title(group.title)} with ${group.memberNodeIds.size} members: ${group.memberNodeIds}")
 
             val groupJson = JSONObject()
             groupJson.put("id", group.id)
@@ -151,7 +162,7 @@ class WorkflowSerializer {
                 noteJson.put("position", positionArray)
                 DebugLogger.d(TAG, "serializeNotes: note id=${note.id} ${Obfuscator.title(note.title)} with manual position: (${note.x}, ${note.y})")
             } else {
-                DebugLogger.d(TAG, "serializeNotes: note id=${note.id} '${note.title}' (${note.content.length} chars)")
+                DebugLogger.d(TAG, "serializeNotes: note id=${note.id} ${Obfuscator.title(note.title)} (${note.content.length} chars)")
             }
 
             notesArray.put(noteJson)
@@ -298,6 +309,8 @@ class WorkflowSerializer {
             is Double -> value
             is Boolean -> value
             is Number -> value.toDouble()
+            // Objects and lists as they are (see WorkflowParser)
+            is JSONObject, is JSONArray -> value
             else -> value.toString()
         }
     }

@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconToggleButton
@@ -33,7 +35,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -67,6 +68,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
 import sh.hnet.comfychair.R
 import sh.hnet.comfychair.WorkflowEditorActivity
+import sh.hnet.comfychair.WorkflowManager
 import sh.hnet.comfychair.connection.ConnectionManager
 import sh.hnet.comfychair.model.ScreenType
 import sh.hnet.comfychair.navigation.MainRoute
@@ -80,6 +82,7 @@ import sh.hnet.comfychair.ui.components.config.BottomSheetConfig
 import sh.hnet.comfychair.ui.components.config.CommonGenerationState
 import sh.hnet.comfychair.ui.components.config.ConfigBottomSheetContent
 import sh.hnet.comfychair.ui.components.config.UnifiedCallbacks
+import sh.hnet.comfychair.ui.components.config.customFieldEntries
 import sh.hnet.comfychair.ui.components.config.optionsLayout
 import sh.hnet.comfychair.util.AppError
 import sh.hnet.comfychair.util.AppErrors
@@ -230,8 +233,9 @@ fun GenerationTopBar(
     }
 
     TopAppBar(
-        // What the screen generates from; the tab (Image or Video) is selected in the navigation bar
-        title = { SourceSwitch(screen) },
+        // What the screen generates from; the tab (Image or Video) is selected in the navigation bar. The switch
+        // itself is drawn over the screens; the bar keeps its place
+        title = { SourceSwitchPlaceholder(screen) },
         windowInsets = WindowInsets(0, 0, 0, 0),
         actions = {
             // The bar leaves 4 dp at the end for icon buttons, which bring their own inset; the chip doesn't, so it gets
@@ -595,8 +599,16 @@ fun GenerationOptionsSheet(
     }
     val callbacks = remember(viewModel) { extraCallbacks(generationCallbacks(viewModel)) }
     val config = remember(state, callbacks) { buildConfig(callbacks) }
-    val layout = remember(state.capabilities) { optionsLayout(state.capabilities) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = layout.sectioned)
+    // The workflow's custom fields with their inputs' definitions (spec §18.6)
+    val customFields = remember(state.selectedWorkflowId, state.capabilities) { customFieldEntries(state.selectedWorkflowId) }
+    val fieldLabels = remember(state.selectedWorkflowId, state.capabilities) {
+        WorkflowManager.getWorkflowById(state.selectedWorkflowId)?.fieldLabels.orEmpty()
+    }
+    val layout = remember(state.capabilities, customFields.size) { optionsLayout(state.capabilities, customFields.size) }
+    val sheetState = rememberBottomSheetState(
+        SheetValue.Hidden,
+        enabledValues = if (layout.sectioned) setOf(SheetValue.Hidden, SheetValue.Expanded) else SheetValue.entries.toSet()
+    )
     LaunchedEffect(visible) {
         if (!visible) {
             sheetState.hide()
@@ -614,7 +626,12 @@ fun GenerationOptionsSheet(
             layout = layout,
             workflowId = state.selectedWorkflowId,
             modifier = Modifier.navigationBarsPadding(),
-            onOpenNodeValues = openNodeValues
+            onOpenNodeValues = openNodeValues,
+            customFields = customFields,
+            customValues = state.customValues,
+            customErrors = state.customErrors,
+            onCustomFieldChange = viewModel::onCustomFieldChange,
+            fieldLabels = fieldLabels
         )
     }
 }
@@ -645,6 +662,9 @@ fun PromptPresetDialogs(
             onDuplicatePreset = { presetViewModel.onDuplicatePreset(it) },
             onDeletePreset = { presetViewModel.onDeletePreset(it) },
             onDismiss = { presetViewModel.dismissLibrary() },
+            onClearFilters = { presetViewModel.clearFilters() },
+            totalCount = presetUiState.allPresets.size,
+            tagCounts = presetUiState.allPresets.flatMap { it.tags }.groupingBy { it }.eachCount(),
             onSaveCurrent = currentPrompt.takeIf { it.isNotBlank() }?.let { prompt -> { presetViewModel.showSaveDialog(prompt) } }
         )
     }

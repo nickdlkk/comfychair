@@ -1,7 +1,5 @@
 package sh.hnet.comfychair.ui.screens
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -66,11 +64,13 @@ import sh.hnet.comfychair.ui.components.generation.ResultActionsMenu
 import sh.hnet.comfychair.ui.components.generation.ResultMedia
 import sh.hnet.comfychair.ui.components.generation.ScreenJobStatus
 import sh.hnet.comfychair.ui.components.generation.SourceResultSwitcher
+import sh.hnet.comfychair.ui.components.generation.SourceSheet
 import sh.hnet.comfychair.ui.components.generation.SourceToolbar
 import sh.hnet.comfychair.ui.components.generation.WorkflowIcons
 import sh.hnet.comfychair.ui.components.generation.rememberJobSubmitter
 import sh.hnet.comfychair.ui.components.generation.rememberOutputThumbnail
 import sh.hnet.comfychair.ui.components.generation.rememberPromptInputState
+import sh.hnet.comfychair.ui.components.generation.rememberSourcePickerState
 import sh.hnet.comfychair.ui.components.generation.rememberVideoFrame
 import sh.hnet.comfychair.ui.components.generation.resultSendActions
 import sh.hnet.comfychair.ui.components.generation.videoSendActions
@@ -84,6 +84,7 @@ import sh.hnet.comfychair.viewmodel.GenerationViewModel
 import sh.hnet.comfychair.viewmodel.ImageToVideoViewMode
 import sh.hnet.comfychair.viewmodel.ImageToVideoViewModel
 import sh.hnet.comfychair.viewmodel.PromptPresetViewModel
+import sh.hnet.comfychair.viewmodel.nameWhile
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,12 +128,21 @@ fun ImageToVideoScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val imagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let {
-            imageToVideoViewModel.onSourceImageChange(context, it)
+    // The source sheet (spec §21): from the device or the server's input folder
+    val sourcePicker = rememberSourcePickerState()
+    SourceSheet(
+        state = sourcePicker,
+        video = false,
+        current = uiState.sourceServer.nameWhile(uiState.sourceImage),
+        onDevice = { uri ->
+            imageToVideoViewModel.onSourceImageChange(context, uri)
+            imageToVideoViewModel.onViewModeChange(ImageToVideoViewMode.SOURCE)
+        },
+        onServer = { name ->
+            imageToVideoViewModel.onServerSourceImage(context, name)
             imageToVideoViewModel.onViewModeChange(ImageToVideoViewMode.SOURCE)
         }
-    }
+    )
 
     // Secondary pick through the system file API (DocumentsUI): covers Downloads, file managers and
     // cloud providers that the photo picker may not expose; the grant is taken for later reads
@@ -226,18 +236,21 @@ fun ImageToVideoScreen(
                             // Tools appear once the swap animation is done
                             if (!inTransition) {
                                 SourceToolbar(
-                                    onReplace = { imagePickerLauncher.launch("image/*") },
+                                    onReplace = sourcePicker::open,
                                     onReplaceFromFiles = { documentPickerLauncher.launch(arrayOf("image/*")) },
-                                    onPickFromServer = pickFromServer,
                                     onRemove = imageToVideoViewModel::clearSourceImage
                                 )
                             }
                         } else {
+<<<<<<< HEAD
                             EmptySourcePicker(
                                 onPick = { imagePickerLauncher.launch("image/*") },
                                 onPickFromFiles = { documentPickerLauncher.launch(arrayOf("image/*")) },
                                 onPickFromServer = pickFromServer
                             )
+=======
+                            EmptySourcePicker(onPick = sourcePicker::open)
+>>>>>>> origin/main
                         }
                     },
                     // The video surface can't follow the swap animation, so a still stands in meanwhile

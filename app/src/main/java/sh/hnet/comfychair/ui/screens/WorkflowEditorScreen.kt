@@ -4,6 +4,7 @@ package sh.hnet.comfychair.ui.screens
 
 import android.text.TextUtils
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
@@ -37,11 +38,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.rounded.AddCircleOutline
+import androidx.compose.material.icons.rounded.AddLink
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.RemoveCircle
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.automirrored.rounded.ArrowRight
 import androidx.compose.material.icons.rounded.Cable
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.automirrored.rounded.Label
+import androidx.compose.material.icons.automirrored.rounded.LabelOff
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LinkOff
+import androidx.compose.material.icons.rounded.NewLabel
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
@@ -52,16 +65,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorPosition
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetScaffoldState
-import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.rememberStandardBottomSheetState
+import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -74,7 +90,21 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.util.lerp
+import org.json.JSONObject
+import sh.hnet.comfychair.ui.components.SubgraphSummary
+import sh.hnet.comfychair.workflow.SubgraphLevels
+import kotlin.coroutines.cancellation.CancellationException
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -86,13 +116,19 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.fromHtml
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import sh.hnet.comfychair.R
+import sh.hnet.comfychair.model.CustomFields
 import sh.hnet.comfychair.ui.components.LinkedValue
 import sh.hnet.comfychair.ui.components.NodeBrowserBottomSheet
 import sh.hnet.comfychair.ui.components.NodeValuesSheetContent
@@ -106,7 +142,10 @@ import sh.hnet.comfychair.ui.components.graphCanvasColor
 import sh.hnet.comfychair.ui.components.rememberGraphDetailLevel
 import sh.hnet.comfychair.ui.components.settings.groupShapes
 import sh.hnet.comfychair.ui.components.shared.boldNamesResource
+import sh.hnet.comfychair.ui.components.shared.rememberMenuScrollModifier
 import sh.hnet.comfychair.ui.components.workflow.AllFieldsSheet
+import sh.hnet.comfychair.ui.components.workflow.BuiltInFieldDialog
+import sh.hnet.comfychair.ui.components.workflow.EditFieldDialog
 import sh.hnet.comfychair.ui.components.workflow.EditorEditActions
 import sh.hnet.comfychair.ui.components.workflow.EditorMode
 import sh.hnet.comfychair.ui.components.workflow.EditorStatus
@@ -116,15 +155,24 @@ import sh.hnet.comfychair.ui.components.workflow.EditorTopRow
 import sh.hnet.comfychair.ui.components.workflow.FieldMappingCard
 import sh.hnet.comfychair.ui.components.workflow.MissingFieldsDialog
 import sh.hnet.comfychair.ui.components.workflow.MissingNodesDialog
+import sh.hnet.comfychair.ui.components.workflow.NewFieldDialog
+import sh.hnet.comfychair.ui.components.workflow.NewSubgraphDialog
+import sh.hnet.comfychair.ui.components.workflow.RenameInstanceDialog
+import sh.hnet.comfychair.ui.components.workflow.RenameSubgraphDialog
+import sh.hnet.comfychair.ui.components.workflow.RenameSubgraphPortDialog
 import sh.hnet.comfychair.ui.components.workflow.WorkflowDetailsDialog
+import sh.hnet.comfychair.ui.components.workflow.fieldTypeDescription
 import sh.hnet.comfychair.util.ConnectionValidator
 import sh.hnet.comfychair.viewmodel.WorkflowEditorViewModel
 import sh.hnet.comfychair.workflow.ConnectionDirection
 import sh.hnet.comfychair.workflow.FieldDisplayRegistry
+import sh.hnet.comfychair.workflow.FieldMappingState
 import sh.hnet.comfychair.workflow.GraphDetailLevel
 import sh.hnet.comfychair.workflow.InputValue
 import sh.hnet.comfychair.workflow.NodeTypeDefinition
 import sh.hnet.comfychair.workflow.SlotPosition
+import sh.hnet.comfychair.workflow.Subgraphs
+import sh.hnet.comfychair.workflow.TemplateKeyRegistry
 import sh.hnet.comfychair.workflow.WorkflowGraph
 import sh.hnet.comfychair.workflow.WorkflowLayoutEngine
 import sh.hnet.comfychair.workflow.WorkflowNode
@@ -168,7 +216,7 @@ fun WorkflowEditorScreen(
     var editingNoteId by remember { mutableStateOf<Int?>(null) }
 
     // Node browser bottom sheet state (hoisted outside conditional for animation stability)
-    val nodeBrowserSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val nodeBrowserSheetState = rememberBottomSheetState(SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
 
     val mode = when {
         uiState.isFieldMappingMode -> EditorMode.MAPPING
@@ -177,9 +225,98 @@ fun WorkflowEditorScreen(
         else -> EditorMode.NODE_VALUES
     }
     val connection = uiState.connectionModeState
+
+    // Entering and leaving a subgraph (spec §19.2.1): the level shown grows out of its instance (or shrinks back into
+    // it) while the other one, a picture taken as the level changed, fades; standard spatial motion, no bounce
+    val canvasLayer = rememberGraphicsLayer()
+    val levelMotion = remember { Animatable(1f) }
+    var levelPicture by remember { mutableStateOf<ImageBitmap?>(null) }
+    var levelPivot by remember { mutableStateOf(Offset.Zero) }
+    var levelRatio by remember { mutableFloatStateOf(1f) }
+    var levelEntering by remember { mutableStateOf(true) }
+    var levelChanges by remember { mutableIntStateOf(0) }
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    // Predictive Back inside a subgraph: how far the gesture went (the level shrinks a little)
+    var backProgress by remember { mutableFloatStateOf(0f) }
+    val levelScope = rememberCoroutineScope()
+    val levelSpatial = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
+    // An instance on screen now: its centre, and how many times wider the canvas is
+    fun instanceOnScreen(instanceId: String): Pair<Offset, Float>? {
+        val now = viewModel.uiState.value
+        val node = now.graph?.nodes?.find { it.id == instanceId } ?: return null
+        val center = Offset((node.x + node.width / 2) * now.scale + now.offset.x, (node.y + node.height / 2) * now.scale + now.offset.y)
+        return center to (canvasSize.width / (node.width * now.scale)).coerceIn(1.5f, 12f)
+    }
+    fun changeLevel(entering: Boolean, instanceId: String, change: () -> Unit) {
+        levelScope.launch {
+            val picture = runCatching { canvasLayer.toImageBitmap() }.getOrNull()
+            val before = if (entering) instanceOnScreen(instanceId) else null
+            change()
+            val place = before ?: instanceOnScreen(instanceId) ?: (Offset(canvasSize.width / 2f, canvasSize.height / 2f) to 3f)
+            levelPivot = place.first
+            levelRatio = place.second
+            levelEntering = entering
+            levelPicture = picture
+            levelChanges++
+            backProgress = 0f
+            levelMotion.snapTo(0f)
+            levelMotion.animateTo(1f, levelSpatial)
+            levelPicture = null
+        }
+    }
+    val openSubgraph: (String) -> Unit = { id -> changeLevel(entering = true, instanceId = id) { viewModel.openSubgraph(id) } }
+    // Up to level [depth] of the path (0: the workflow), shrinking into the instance it was entered through
+    val leaveTo: (Int) -> Unit = { depth ->
+        viewModel.uiState.value.subgraphPath.getOrNull(depth)?.let { level ->
+            changeLevel(entering = false, instanceId = level.instanceId) { viewModel.leaveSubgraphsTo(depth) }
+        }
+    }
+    val leaveOne = { leaveTo(viewModel.uiState.value.subgraphPath.size - 1) }
+    val levelKey = uiState.subgraphPath.joinToString("/") { it.instanceId }
+    // The workflow's subgraphs, for instances' names and node counts (values sheet, nodes list)
+    val definitionsJson = remember(uiState.graph?.subgraphs) {
+        uiState.graph?.subgraphs?.let { runCatching { JSONObject(it) }.getOrNull() }
+    }
     // A linked input socket's menu (Disconnect, Change source), and the app's field names for the linking question
     var socketMenu by remember { mutableStateOf<SlotPosition?>(null) }
-    val fieldNameOf: (String) -> String = remember(context) { { key -> FieldDisplayRegistry.getDisplayName(context, key) } }
+    // Custom fields by the names the user gave them ("field_<id>" -> name), built-in fields by their labels in this
+    // workflow (spec §18.4; also under the input key a mapping may name them by), else by the app's names
+    val customFieldNames = remember(uiState.graph?.customFields, uiState.graph?.fieldLabels) {
+        val labels = uiState.graph?.fieldLabels.orEmpty()
+        labels.flatMap { (key, label) ->
+            val inputKey = TemplateKeyRegistry.getJsonKeyForPlaceholder(key)
+            listOfNotNull(key to label, (inputKey to label).takeIf { inputKey != key && TemplateKeyRegistry.getPlaceholderForKey(inputKey) == key })
+        }.toMap() + uiState.graph?.customFields.orEmpty().associate { "${CustomFields.PLACEHOLDER_PREFIX}${it.id}" to it.name }
+    }
+    val currentCustomFieldNames by rememberUpdatedState(customFieldNames)
+    val fieldNameOf: (String) -> String = remember(context) {
+        { key -> currentCustomFieldNames[key] ?: FieldDisplayRegistry.getDisplayName(context, key) }
+    }
+    // Names a new field can't take: the workflow's built-in fields as shown
+    // (while mapping, also the fields mapped so far)
+    val builtInFieldShown = remember(uiState.graph?.templateVariables, uiState.graph?.fieldLabels, uiState.mappingState) {
+        val labels = uiState.graph?.fieldLabels.orEmpty()
+        uiState.graph?.templateVariables.orEmpty().filterNot { it.startsWith(CustomFields.PLACEHOLDER_PREFIX) }
+            .associateWith { labels[it] ?: FieldDisplayRegistry.getDisplayName(context, TemplateKeyRegistry.getJsonKeyForPlaceholder(it)) } +
+            uiState.mappingState?.fieldMappings.orEmpty().filter { it.isMapped }
+                .associate { m -> TemplateKeyRegistry.getPlaceholderForKey(m.field.fieldKey).let { it to (labels[it] ?: m.field.displayName) } }
+    }
+    val builtInFieldNames = builtInFieldShown.values
+    // A built-in field's label being edited (its placeholder key)
+    var editBuiltInKey by remember { mutableStateOf<String?>(null) }
+    // Map fields: the fields by their labels in this workflow
+    fun labelled(fields: List<FieldMappingState>) = fields.map { m ->
+        customFieldNames[TemplateKeyRegistry.getPlaceholderForKey(m.field.fieldKey)]?.let { m.copy(field = m.field.copy(displayName = it)) } ?: m
+    }
+    // Subgraphs (spec §19.4, §19.5): making one of the selection (its numbers), renaming one (definition, the instance
+    // whose own title may go), renaming one's input or output (input?, index)
+    var makeSubgraph by remember { mutableStateOf<Triple<Int, Int, Int>?>(null) }
+    var renameSubgraph by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    var renamePort by remember { mutableStateOf<Pair<Boolean, Int>?>(null) }
+    // Custom fields (spec §18): naming a new one, editing one, confirming a last value's removal
+    var newFieldFor by remember { mutableStateOf<SlotPosition?>(null) }
+    var editFieldId by remember { mutableStateOf<String?>(null) }
+    var removeLastFrom by remember { mutableStateOf<SlotPosition?>(null) }
     // Values that differ from the workflow's (edits that only fill an empty value with the node's default don't count)
     val changedValues = remember(uiState.graph, uiState.nodeDefinitions, uiState.nodeAttributeEdits) {
         uiState.graph?.let { changedValueCount(it, uiState.nodeDefinitions, uiState.nodeAttributeEdits) } ?: 0
@@ -192,7 +329,8 @@ fun WorkflowEditorScreen(
             inputName = connection.sourceSlot.slotName.takeIf { connection.direction == ConnectionDirection.INPUT_TO_OUTPUT },
             noTargets = connection.validTargetSlots.isEmpty(),
             // Zoomed out, sockets can't be tapped: the connection waits until zoomed in
-            zoomInToConnect = detailLevel != GraphDetailLevel.FULL
+            zoomInToConnect = detailLevel != GraphDetailLevel.FULL,
+            toAddSocket = connection.validTargetSlots.any { SubgraphLevels.isAddSocket(it.slotName) }
         )
         mode == EditorMode.MAPPING -> EditorStatus.Mapping(import = uiState.isImportMapping)
         mode == EditorMode.EDIT -> EditorStatus.Editing(
@@ -226,8 +364,11 @@ fun WorkflowEditorScreen(
     // dropping changes. The system Back and the Back button do the same.
     val goBack = {
         when {
+            uiState.fieldPick != null -> viewModel.cancelFieldPick()
             connection != null -> viewModel.exitConnectionMode()
             uiState.isEditingNode -> viewModel.dismissNodeEditor()
+            // Inside a subgraph: up one level (spec §19.2.3)
+            uiState.subgraphPath.isNotEmpty() -> leaveOne()
             // Importing: asks; saving from the editor: back to editing, nothing lost
             uiState.isFieldMappingMode -> if (uiState.isImportMapping) confirmCancelImport = true else viewModel.returnFromSaveMapping()
             uiState.isCreateMode -> viewModel.handleCreateModeClose()
@@ -238,12 +379,24 @@ fun WorkflowEditorScreen(
     // Taken over only when Back has something to do first or might not leave (unsaved changes ask); otherwise it's the
     // system's, with its predictive animation back to the previous screen (goBack would only close the editor too)
     val backHasWork = connection != null || uiState.isEditingNode || uiState.isFieldMappingMode ||
+        uiState.subgraphPath.isNotEmpty() ||
         ((uiState.isCreateMode || uiState.isEditMode) &&
             (uiState.hasUnsavedChanges || (uiState.isCreateMode && uiState.graph?.nodes?.isNotEmpty() == true)))
-    BackHandler(enabled = backHasWork, onBack = goBack)
+    // Inside a subgraph with nothing else to close, Back goes up a level with a predictive preview of it
+    val backLeavesLevel = uiState.subgraphPath.isNotEmpty() && connection == null && uiState.fieldPick == null && !uiState.isEditingNode
+    BackHandler(enabled = backHasWork && !backLeavesLevel, onBack = goBack)
+    PredictiveBackHandler(enabled = backLeavesLevel) { progress ->
+        try {
+            progress.collect { event -> backProgress = event.progress }
+            leaveOne()
+        } catch (e: CancellationException) {
+            backProgress = 0f
+            throw e
+        }
+    }
 
     // Node values: a standard (non-modal) bottom sheet, so the graph stays pannable; swiping it down closes the node
-    val valuesSheetState = rememberStandardBottomSheetState(initialValue = SheetValue.Hidden, skipHiddenState = false)
+    val valuesSheetState = rememberBottomSheetState(SheetValue.Hidden)
     val scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = valuesSheetState)
     LaunchedEffect(uiState.isEditingNode) {
         if (uiState.isEditingNode) valuesSheetState.expand() else valuesSheetState.hide()
@@ -298,7 +451,15 @@ fun WorkflowEditorScreen(
                         .navigationBarsPadding(),
                     linkedValues = linkedValuesOf(node, uiState.graph, uiState.nodeDefinitions[node.classType]),
                     // A linked value's row opens its source node, as tapping that node does
-                    onOpenNode = { id -> uiState.graph?.nodes?.find { it.id == id }?.let(viewModel::onNodeTappedForEditing) }
+                    onOpenNode = { id -> uiState.graph?.nodes?.find { it.id == id }?.let(viewModel::onNodeTappedForEditing) },
+                    fieldNames = customFieldNames,
+                    subgraph = definitionsJson?.takeIf { node.isSubgraphInstance && it.has(node.classType) }?.let { definitions ->
+                        SubgraphSummary(
+                            name = SubgraphLevels.nameOf(definitions, node.classType).takeIf { it != node.title },
+                            nodeCount = SubgraphLevels.nodeCount(definitions, node.classType),
+                            labels = SubgraphLevels.promotedLabels(definitions, node.classType, node.inputs.keys)
+                        )
+                    }
                 )
             }
         }
@@ -442,7 +603,65 @@ fun WorkflowEditorScreen(
                     ) {
                         // A socket's menu, anchored at the socket
                         socketMenu?.let { slot ->
+                            // Subgraphs: a socket of a strip, a value shown on the instance entered through, a value
+                            // an instance shows from inside (spec §19.3, §19.5)
+                            val slotNode = uiState.graph?.nodes?.find { it.id == slot.nodeId }
+                            val onStrip = slotNode != null && SubgraphLevels.isPortNode(slotNode)
+                            val addSocket = onStrip && SubgraphLevels.isAddSocket(slot.slotName)
+                            // The Inputs strip's sockets are outputs of its node: the subgraph's inputs
+                            val portIsInput = slot.isOutput
+                            val portIndex = if (slot.isOutput) slot.outputIndex else slotNode?.inputs?.keys?.indexOf(slot.slotName) ?: -1
+                            val levelName = uiState.subgraphPath.lastOrNull()?.name.orEmpty()
+                            val slotValue = (slotNode?.inputs?.get(slot.slotName) as? InputValue.Literal)?.value
+                            val appFilled = slotValue?.let(TemplateKeyRegistry::isAppManagedValue) == true
+                            val shownValue = slotNode?.isSubgraphInstance == true && !slot.isOutput && Subgraphs.isPromotedKey(slot.slotName)
+                            val shownKeys = if (shownValue) slotNode.inputs.keys.filter(Subgraphs::isPromotedKey) else emptyList()
+                            val header = when {
+                                addSocket -> AnnotatedString(stringResource(R.string.sg_add_socket))
+                                onStrip -> boldNamesResource(if (portIsInput) R.string.sg_input_of else R.string.sg_output_of, slot.slotName, levelName)
+                                shownValue -> definitionsJson?.let { definitions ->
+                                    boldNamesResource(
+                                        R.string.sg_shown_from,
+                                        SubgraphLevels.promotedLabels(definitions, slotNode.classType, listOf(slot.slotName))[slot.slotName] ?: Subgraphs.displayName(slot.slotName),
+                                        SubgraphLevels.innerNodeTitle(definitions, slotNode.classType, slot.slotName).orEmpty()
+                                    )
+                                }
+                                else -> null
+                            }
+                            val shownItems = if (shownValue) listOf(
+                                    SocketMenuItem(R.string.sg_move_up, Icons.Rounded.ArrowUpward, enabled = shownKeys.firstOrNull() != slot.slotName) {
+                                        viewModel.moveShownValue(slot.nodeId, slot.slotName, up = true)
+                                    },
+                                    SocketMenuItem(R.string.sg_move_down, Icons.Rounded.ArrowDownward, enabled = shownKeys.lastOrNull() != slot.slotName) {
+                                        viewModel.moveShownValue(slot.nodeId, slot.slotName, up = false)
+                                    }
+                                ) + (if (!appFilled) listOf(SocketMenuItem(R.string.sg_hide_from_node, Icons.Rounded.VisibilityOff) {
+                                    viewModel.hideShownValue(slot.nodeId, slot.slotName)
+                                }) else emptyList())
+                            else emptyList()
+                            // A nested instance's shown value can be shown one level up too
+                            val subgraphItems = shownItems + when {
+                                onStrip && !addSocket -> listOf(SocketMenuItem(R.string.button_rename, Icons.Rounded.Edit) { renamePort = portIsInput to portIndex })
+                                uiState.subgraphPath.isNotEmpty() && !onStrip && !slot.isOutput && slotValue != null ->
+                                    if ((slot.nodeId to slot.slotName) in uiState.shownOnInstance) {
+                                        if (appFilled) emptyList() else listOf(SocketMenuItem(
+                                            R.string.sg_hide_from, Icons.Rounded.VisibilityOff, label = boldNamesResource(R.string.sg_hide_from, levelName)
+                                        ) { viewModel.hideFromInstance(slot.nodeId, slot.slotName) })
+                                    } else listOf(SocketMenuItem(
+                                        R.string.sg_show_on, Icons.Rounded.Visibility, label = boldNamesResource(R.string.sg_show_on, levelName)
+                                    ) { viewModel.showOnInstance(slot.nodeId, slot.slotName) })
+                                else -> emptyList()
+                            }
+                            val removeItems = if (onStrip && !addSocket) listOf(
+                                SocketMenuItem(if (portIsInput) R.string.sg_remove_input else R.string.sg_remove_output, Icons.Rounded.RemoveCircle) {
+                                    viewModel.removeSubgraphPort(portIsInput, portIndex)
+                                }
+                            ) else emptyList()
                             SocketMenu(
+                                header = header,
+                                subgraphItems = subgraphItems,
+                                removeItems = removeItems,
+                                addNode = !addSocket,
                                 slot = slot,
                                 graph = uiState.graph,
                                 anchor = IntOffset(
@@ -457,9 +676,30 @@ fun WorkflowEditorScreen(
                                 onDisconnect = {
                                     if (slot.isOutput) viewModel.disconnectOutput(slot.nodeId, slot.outputIndex)
                                     else viewModel.deleteConnection(slot.nodeId, slot.slotName)
-                                }
+                                },
+                                // A value an instance shows from inside isn't linked from outside (spec §19.3)
+                                linkable = !shownValue && (slot.isOutput || uiState.graph?.nodes?.find { it.id == slot.nodeId }?.inputs?.get(slot.slotName) !is InputValue.Literal ||
+                                    slot.slotType?.uppercase() in ConnectionValidator.LINKABLE_VALUE_TYPES),
+                                fieldItems = fieldMenuItems(
+                                    slot = slot,
+                                    graph = uiState.graph,
+                                    viewModel = viewModel,
+                                    onMake = { newFieldFor = slot },
+                                    onEdit = { editFieldId = it },
+                                    onEditBuiltIn = { editBuiltInKey = it },
+                                    onRemove = {
+                                        if (viewModel.customFieldOf(slot.nodeId, slot.slotName)?.targets?.size == 1) removeLastFrom = slot
+                                        else viewModel.removeFromCustomField(slot.nodeId, slot.slotName)
+                                    }
+                                ),
+                                addToFields = if (slot.isOutput) emptyList() else viewModel.compatibleCustomFields(slot.nodeId, slot.slotName)
+                                    .takeIf { viewModel.customFieldOf(slot.nodeId, slot.slotName) == null && literalIsOwnValue(uiState.graph, slot) }
+                                    .orEmpty().map { it.id to it.name },
+                                onAddToField = { fieldId -> viewModel.addToCustomField(fieldId, slot.nodeId, slot.slotName) }
                             )
                         }
+                        // A fresh canvas for each level, showing it in place (the level's own motion moves it)
+                        key(levelKey) {
                         WorkflowGraphCanvas(
                             graph = uiState.graph!!,
                             scale = displayScale,
@@ -477,6 +717,14 @@ fun WorkflowEditorScreen(
                             connectionModeState = uiState.connectionModeState,
                             renderedGroups = renderedGroups,
                             nodeDefinitions = uiState.nodeDefinitions,
+                            fieldNames = customFieldNames,
+                            valuePickTargets = uiState.fieldPick?.targets,
+                            onValuePicked = { slot ->
+                                // A new field is named next; another value joins its field at once
+                                val fieldId = uiState.fieldPick?.fieldId
+                                viewModel.cancelFieldPick()
+                                if (fieldId == null) newFieldFor = slot else viewModel.addToCustomField(fieldId, slot.nodeId, slot.slotName)
+                            },
                             onNodeTapped = { nodeId ->
                                 when {
                                     uiState.isFieldMappingMode -> {
@@ -602,8 +850,31 @@ fun WorkflowEditorScreen(
                                 shouldAnimateZoomChange.value = true
                                 viewModel.onTransform(scale, offset)
                             },
+                            onOpenSubgraph = openSubgraph,
+                            shownOnInstance = uiState.shownOnInstance,
+                            levelBypassed = uiState.subgraphPath.lastOrNull()?.inheritedMode == 4,
+                            appearInPlace = levelChanges > 0 || uiState.subgraphPath.isNotEmpty(),
                             modifier = Modifier
                                 .fillMaxSize()
+                                .onSizeChanged { canvasSize = it }
+                                // The level comes in from its instance (entering) or from around it (leaving)
+                                .graphicsLayer {
+                                    val p = levelMotion.value
+                                    val center = Offset(size.width / 2, size.height / 2)
+                                    val zoom = if (levelEntering) lerp(1f / levelRatio, 1f, p) else lerp(levelRatio, 1f, p)
+                                    val back = 1f - 0.1f * backProgress
+                                    val shift = if (levelEntering) (levelPivot - center) * (1f - p) else (levelPivot - center) * (1f - zoom)
+                                    scaleX = zoom * back
+                                    scaleY = zoom * back
+                                    translationX = shift.x
+                                    translationY = shift.y
+                                    alpha = if (levelPicture != null) p else 1f
+                                }
+                                // What's drawn is kept, for the picture the next level change fades out
+                                .drawWithContent {
+                                    canvasLayer.record { this@drawWithContent.drawContent() }
+                                    drawLayer(canvasLayer)
+                                }
                                 .semantics {
                                     if (mode == EditorMode.EDIT || mode == EditorMode.NODE_VALUES) {
                                         customActions = buildList {
@@ -626,6 +897,26 @@ fun WorkflowEditorScreen(
                                     }
                                 }
                         )
+                        }
+
+                        // The level left, as a picture: growing past its instance (entering) or shrinking into it
+                        levelPicture?.let { picture ->
+                            Canvas(
+                                Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        val p = levelMotion.value
+                                        val center = Offset(size.width / 2, size.height / 2)
+                                        val zoom = if (levelEntering) lerp(1f, levelRatio, p) else lerp(1f, 1f / levelRatio, p)
+                                        val shift = if (levelEntering) (levelPivot - center) * (1f - zoom) else (levelPivot - center) * p
+                                        scaleX = zoom
+                                        scaleY = zoom
+                                        translationX = shift.x
+                                        translationY = shift.y
+                                        alpha = 1f - p
+                                    }
+                            ) { drawImage(picture) }
+                        }
 
                         EditorTopRow(
                             workflowName = uiState.workflowName,
@@ -637,6 +928,8 @@ fun WorkflowEditorScreen(
                             } else null,
                             selectedCount = if (mode == EditorMode.EDIT) uiState.selectedNodeIds.size + uiState.selectedNoteIds.size else 0,
                             onClearSelection = { viewModel.clearSelection() },
+                            path = uiState.subgraphPath,
+                            onPickLevel = leaveTo,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(start = 12.dp, end = 12.dp, top = 8.dp)
@@ -650,10 +943,13 @@ fun WorkflowEditorScreen(
         // Map fields: the current field on a card above the toolbar
         if (uiState.isFieldMappingMode && uiState.mappingState != null) {
             FieldMappingCard(
-                fields = viewModel.orderedMappingFields(),
+                fields = labelled(viewModel.orderedMappingFields()),
                 currentKey = uiState.selectedFieldKey,
                 onSelectField = { viewModel.selectFieldForMapping(it) },
                 onAllFields = { showAllFields = true },
+                pick = uiState.fieldPick,
+                pickFieldName = uiState.fieldPick?.fieldId?.let { id -> uiState.graph?.customFields?.find { it.id == id }?.name },
+                onCancelPick = viewModel::cancelFieldPick,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -661,14 +957,24 @@ fun WorkflowEditorScreen(
             )
             if (showAllFields) {
                 AllFieldsSheet(
-                    fields = viewModel.allMappingFields(),
+                    fields = labelled(viewModel.allMappingFields()),
                     onSelectField = {
                         viewModel.selectFieldForMapping(it)
                         showAllFields = false
                     },
                     onClearField = { viewModel.clearFieldMapping(it) },
                     onClearAll = { viewModel.clearAllMappings() },
-                    onDismiss = { showAllFields = false }
+                    onDismiss = { showAllFields = false },
+                    customFields = uiState.graph?.customFields.orEmpty(),
+                    targetLabel = { t -> "${uiState.graph?.nodes?.find { it.id == t.nodeId }?.title ?: t.nodeId} – ${t.input}" },
+                    onEditCustomField = {
+                        showAllFields = false
+                        editFieldId = it
+                    },
+                    onAddField = {
+                        showAllFields = false
+                        viewModel.startFieldPick(null)
+                    }
                 )
             }
         }
@@ -705,10 +1011,25 @@ fun WorkflowEditorScreen(
         }
         if (showNodeList) {
             NodeListSheet(
-                nodes = uiState.graph?.nodes ?: emptyList(),
+                // A level's Inputs and Outputs strips aren't nodes; in Edit structure they're listed for their sockets
+                nodes = uiState.graph?.nodes.orEmpty().mapNotNull { node ->
+                    when {
+                        !SubgraphLevels.isPortNode(node) -> node
+                        mode != EditorMode.EDIT -> null
+                        else -> stringResource(if (SubgraphLevels.isInputsNode(node)) R.string.sg_inputs else R.string.sg_outputs)
+                            .let { word -> node.copy(title = word, classType = word) }
+                    }
+                },
+                nodeCount = { node -> definitionsJson?.takeIf { node.isSubgraphInstance }?.let { SubgraphLevels.nodeCount(it, node.classType) } },
+                onOpen = { node ->
+                    showNodeList = false
+                    openSubgraph(node.id)
+                },
                 onPick = { node ->
                     showNodeList = false
-                    if (mode == EditorMode.EDIT) {
+                    if (uiState.graph?.nodes?.find { it.id == node.id }?.let(SubgraphLevels::isPortNode) == true) {
+                        socketListNodeId = node.id
+                    } else if (mode == EditorMode.EDIT) {
                         viewModel.clearSelection()
                         viewModel.toggleNodeSelection(node.id)
                     } else {
@@ -718,6 +1039,27 @@ fun WorkflowEditorScreen(
                 onDismiss = { showNodeList = false }
             )
         }
+        // TalkBack: where a level change took the user (spec §19.7), read out without moving focus
+        var announcedPath by remember { mutableStateOf(levelKey) }
+        var announcement by remember { mutableStateOf("") }
+        LaunchedEffect(levelKey) {
+            if (levelKey == announcedPath) return@LaunchedEffect
+            val path = uiState.subgraphPath
+            val deeper = levelKey.length > announcedPath.length
+            announcement = path.lastOrNull()?.takeIf { deeper }?.let { level ->
+                resources.getQuantityString(R.plurals.sg_inside_announce, level.nodeCount, level.name, level.nodeCount) +
+                    (if (level.usedCount > 1) ", " + resources.getQuantityString(R.plurals.sg_used_announce, level.usedCount, level.usedCount) else "")
+            } ?: resources.getString(R.string.sg_back_announce, path.lastOrNull()?.name ?: uiState.workflowName)
+            announcedPath = levelKey
+        }
+        Box(
+            Modifier
+                .size(1.dp)
+                .semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    contentDescription = announcement
+                }
+        )
         if (confirmCancelImport) {
             ConfirmDialog(
                 title = stringResource(R.string.title_cancel_import),
@@ -787,9 +1129,12 @@ fun WorkflowEditorScreen(
                     },
                     onGroup = { viewModel.createGroupFromSelection() },
                     onUngroup = { viewModel.ungroupSelectedNode() },
+                    // A subgraph instance has its own dialog: this copy only, or the subgraph and all its copies
                     onRenameNode = uiState.selectedNodeIds.singleOrNull()?.takeIf { uiState.selectedNoteIds.isEmpty() }?.let { nodeId ->
                         {
-                            uiState.graph?.nodes?.find { it.id == nodeId }?.let { node ->
+                            val instance = viewModel.selectedInstance()
+                            if (instance != null) renameSubgraph = instance.classType to instance.id
+                            else uiState.graph?.nodes?.find { it.id == nodeId }?.let { node ->
                                 renamingNodeId = nodeId
                                 renameDialogText = node.title
                                 showRenameDialog = true
@@ -817,6 +1162,9 @@ fun WorkflowEditorScreen(
                         }
                     },
                     onDelete = { viewModel.deleteSelectedNodes() },
+                    onMakeSubgraph = if (uiState.selectedNodeIds.isNotEmpty()) ({ makeSubgraph = viewModel.subgraphFromSelection() }) else null,
+                    onUnpackSubgraph = viewModel.selectedInstance()?.let { { viewModel.unpackSubgraph() } },
+                    onRenameThisSubgraph = uiState.subgraphPath.lastOrNull()?.let { level -> { renameSubgraph = level.definitionId to null } },
                     onSave = { viewModel.showSaveDialog(context) }
                 ) else null,
                 onFinishMapping = if (mode == EditorMode.MAPPING) {
@@ -857,7 +1205,7 @@ fun WorkflowEditorScreen(
 
         // Filtered node browser for long-press connection mode
         if (uiState.showCompatibleNodeBrowser) {
-            val compatibleBrowserSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            val compatibleBrowserSheetState = rememberBottomSheetState(SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
             val scope = rememberCoroutineScope()
             val sourceSlot = uiState.longPressSourceSlot
 
@@ -886,16 +1234,113 @@ fun WorkflowEditorScreen(
         }
 
         // Several compatible inputs or outputs: which one (a tap connects)
+        // Custom fields: naming a new one, editing one, deleting one with its last value (spec §18)
+        newFieldFor?.let { slot ->
+            val node = uiState.graph?.nodes?.find { it.id == slot.nodeId }
+            val definition = node?.let { uiState.nodeDefinitions[it.classType] }?.inputs?.find { it.name == slot.slotName }
+            val type = viewModel.fieldValueTypeOf(slot.nodeId, slot.slotName)
+            if (node == null || type == null) {
+                newFieldFor = null
+            } else {
+                NewFieldDialog(
+                    inputName = slot.slotName,
+                    nodeTitle = node.title,
+                    typeDescription = fieldTypeDescription(type, definition?.min, definition?.max),
+                    isTaken = { viewModel.isFieldNameTaken(it, null, builtInFieldNames) },
+                    onAdd = { name ->
+                        viewModel.createCustomField(slot.nodeId, slot.slotName, name)
+                        newFieldFor = null
+                    },
+                    onDismiss = { newFieldFor = null }
+                )
+            }
+        }
+        editFieldId?.let { id ->
+            val field = uiState.graph?.customFields?.find { it.id == id }
+            val first = field?.targets?.firstOrNull()
+            val firstNode = first?.let { t -> uiState.graph?.nodes?.find { it.id == t.nodeId } }
+            val definition = firstNode?.let { uiState.nodeDefinitions[it.classType] }?.inputs?.find { it.name == first.input }
+            if (field == null) {
+                editFieldId = null
+            } else {
+                EditFieldDialog(
+                    field = field,
+                    typeDescription = fieldTypeDescription(field.type, definition?.min, definition?.max),
+                    targetLines = field.targets.map { t -> t to ((uiState.graph?.nodes?.find { it.id == t.nodeId }?.title ?: t.nodeId) to Subgraphs.displayName(t.input)) },
+                    isTaken = { viewModel.isFieldNameTaken(it, field.id, builtInFieldNames) },
+                    onSave = { name, targets ->
+                        viewModel.updateCustomField(field.id, name, targets)
+                        editFieldId = null
+                    },
+                    onDelete = {
+                        viewModel.deleteCustomField(field.id)
+                        editFieldId = null
+                    },
+                    onDismiss = { editFieldId = null },
+                    // Map fields: another value is picked on the graph; the dialog's changes are kept when valid
+                    onAddValue = if (uiState.isFieldMappingMode) { name, targets ->
+                        if (targets.isNotEmpty() && name.isNotBlank() && !viewModel.isFieldNameTaken(name, field.id, builtInFieldNames)) {
+                            viewModel.updateCustomField(field.id, name, targets)
+                        }
+                        editFieldId = null
+                        viewModel.startFieldPick(field.id)
+                    } else null
+                )
+            }
+        }
+        editBuiltInKey?.let { key ->
+            val placeholder = "{{$key}}"
+            val targets = uiState.graph?.nodes.orEmpty().flatMap { node ->
+                node.inputs.filter { (_, v) -> (v as? InputValue.Literal)?.value == placeholder }.map { (input, _) -> node.title to Subgraphs.displayName(input) }
+            }
+            BuiltInFieldDialog(
+                builtInName = FieldDisplayRegistry.getDisplayName(context, TemplateKeyRegistry.getJsonKeyForPlaceholder(key)),
+                label = uiState.graph?.fieldLabels?.get(key),
+                targetLines = targets,
+                isTaken = { name ->
+                    viewModel.isFieldNameTaken(name, null, builtInFieldShown.filterKeys { it != key }.values)
+                },
+                onSave = { label ->
+                    viewModel.setFieldLabel(key, label)
+                    editBuiltInKey = null
+                },
+                onDismiss = { editBuiltInKey = null }
+            )
+        }
+        removeLastFrom?.let { slot ->
+            val field = viewModel.customFieldOf(slot.nodeId, slot.slotName)
+            if (field == null) {
+                removeLastFrom = null
+            } else {
+                ConfirmDialog(
+                    title = stringResource(R.string.title_delete_field, field.name),
+                    text = boldNamesResource(R.string.msg_delete_field_last, slot.slotName),
+                    confirmLabel = stringResource(R.string.button_delete_field),
+                    icon = Icons.AutoMirrored.Rounded.LabelOff,
+                    destructive = true,
+                    onConfirm = { viewModel.removeFromCustomField(slot.nodeId, slot.slotName) },
+                    onDismiss = { removeLastFrom = null }
+                )
+            }
+        }
+
         // Linking a value the app fills: what it means, before it's done (spec §17.2.3)
         uiState.pendingMappedLink?.let { pending ->
             ConfirmDialog(
                 title = stringResource(R.string.title_editor_link_mapped, pending.inputName),
-                text = if (pending.addNode) {
-                    boldNamesResource(R.string.msg_editor_link_mapped_new_node, pending.inputName, pending.fieldName)
-                } else {
-                    boldNamesResource(R.string.msg_editor_link_mapped, pending.inputName, pending.fieldName, pending.sourceTitle)
+                text = buildAnnotatedString {
+                    append(
+                        if (pending.addNode) boldNamesResource(R.string.msg_editor_link_mapped_new_node, pending.inputName, pending.fieldName)
+                        else boldNamesResource(R.string.msg_editor_link_mapped, pending.inputName, pending.fieldName, pending.sourceTitle)
+                    )
+                    // The custom field's last value: the field goes with it
+                    if (pending.deletesField) {
+                        append(" ")
+                        append(boldNamesResource(R.string.msg_editor_link_deletes_field, pending.fieldName))
+                    }
                 },
-                confirmLabel = stringResource(R.string.button_link),
+                confirmLabel = stringResource(if (pending.deletesField) R.string.button_link_delete_field else R.string.button_link),
+                destructive = pending.deletesField,
                 icon = Icons.Rounded.Link,
                 onConfirm = { viewModel.confirmMappedLink(pending) },
                 onDismiss = viewModel::dismissMappedLink
@@ -948,6 +1393,60 @@ fun WorkflowEditorScreen(
                 onConfirm = { viewModel.confirmDisableManualPlacement() },
                 onDismiss = { viewModel.cancelDisableManualPlacement() }
             )
+        }
+
+        // Subgraphs: make one of the selection, rename one, rename one's input or output
+        makeSubgraph?.let { (nodes, inputs, outputs) ->
+            NewSubgraphDialog(
+                nodes = nodes, inputs = inputs, outputs = outputs,
+                onMake = { name ->
+                    makeSubgraph = null
+                    viewModel.makeSubgraph(name)
+                },
+                onDismiss = { makeSubgraph = null }
+            )
+        }
+        renameSubgraph?.let { (definitionId, instanceId) ->
+            val usedCount = viewModel.subgraphUsage(definitionId)
+            val instance = instanceId?.let { id -> uiState.graph?.nodes?.find { it.id == id } }
+            if (instance != null) {
+                // A copy: its own title, or (ticked, or the only copy) the subgraph's name for every copy
+                RenameInstanceDialog(
+                    current = instance.title,
+                    usedCount = usedCount,
+                    onRename = { new, all ->
+                        renameSubgraph = null
+                        if (all || usedCount <= 1) viewModel.renameSubgraph(definitionId, new, everyCopy = true)
+                        else viewModel.renameNode(instance.id, new)
+                    },
+                    onDismiss = { renameSubgraph = null }
+                )
+            } else {
+                RenameSubgraphDialog(
+                    current = viewModel.subgraphName(definitionId),
+                    usedCount = usedCount,
+                    onRename = { new ->
+                        renameSubgraph = null
+                        viewModel.renameSubgraph(definitionId, new)
+                    },
+                    onDismiss = { renameSubgraph = null }
+                )
+            }
+        }
+        renamePort?.let { (input, index) ->
+            val names = viewModel.subgraphPortNames(input)
+            names.getOrNull(index)?.let { current ->
+                RenameSubgraphPortDialog(
+                    input = input,
+                    current = current,
+                    taken = names,
+                    onRename = { new ->
+                        renamePort = null
+                        viewModel.renameSubgraphPort(input, index, new)
+                    },
+                    onDismiss = { renamePort = null }
+                )
+            } ?: run { renamePort = null }
         }
 
         // Rename node: an empty name goes back to the node's class name
@@ -1082,7 +1581,18 @@ fun WorkflowEditorScreen(
 /** The graph's nodes as a list (accessibility): picking one selects it or opens its values. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NodeListSheet(nodes: List<WorkflowNode>, onPick: (WorkflowNode) -> Unit, onDismiss: () -> Unit) {
+private fun NodeListSheet(
+    nodes: List<WorkflowNode>,
+    onPick: (WorkflowNode) -> Unit,
+    onDismiss: () -> Unit,
+    // A subgraph instance's nodes inside (null for other nodes), and opening it (spec §19.7)
+    nodeCount: (WorkflowNode) -> Int? = { null },
+    onOpen: (WorkflowNode) -> Unit = {}
+) {
+    val openAction = stringResource(R.string.sg_open_action)
+    val subgraphLabel = stringResource(R.string.sg_subgraph)
+    val bypassedState = stringResource(R.string.node_bypassed_state)
+    val resources = LocalResources.current
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Text(
             stringResource(R.string.label_nodes_list),
@@ -1095,11 +1605,32 @@ private fun NodeListSheet(nodes: List<WorkflowNode>, onPick: (WorkflowNode) -> U
             modifier = Modifier.navigationBarsPadding()
         ) {
             itemsIndexed(nodes, key = { _, node -> node.id }) { index, node ->
+                val count = nodeCount(node)
                 SegmentedListItem(
                     onClick = { onPick(node) },
                     shapes = groupShapes(index, nodes.size),
                     colors = ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                    supportingContent = if (node.title != node.classType) ({ Text(node.classType) }) else null
+                    // The type (a subgraph with its node count in parentheses), a bypassed node's state after a dash in
+                    // italics (spec §20.4: TalkBack reads it with the node)
+                    supportingContent = run {
+                        val type = when {
+                            count != null -> "$subgraphLabel (" + resources.getQuantityString(R.plurals.sg_nodes_count, count, count) + ")"
+                            node.title != node.classType -> node.classType
+                            else -> null
+                        }
+                        if (type == null && !node.isBypassed) null else ({
+                            Text(buildAnnotatedString {
+                                type?.let { append(it) }
+                                if (node.isBypassed) {
+                                    if (type != null) append(" – ")
+                                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(bypassedState) }
+                                }
+                            })
+                        })
+                    },
+                    modifier = if (count != null) Modifier.semantics {
+                        customActions = listOf(CustomAccessibilityAction(openAction) { onOpen(node); true })
+                    } else Modifier
                 ) {
                     Text(node.title)
                 }
@@ -1175,7 +1706,17 @@ private fun SocketMenu(
     onDismiss: () -> Unit,
     onConnect: () -> Unit,
     onAddNode: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    linkable: Boolean = true,
+    fieldItems: List<SocketMenuItem> = emptyList(),
+    addToFields: List<Pair<String, String>> = emptyList(),
+    onAddToField: (fieldId: String) -> Unit = {},
+    // Subgraphs (spec §19.3, §19.5): a header naming the socket otherwise, a group after the field items, items that
+    // remove in the last group (with Disconnect); [addNode] false: Connect only
+    header: AnnotatedString? = null,
+    subgraphItems: List<SocketMenuItem> = emptyList(),
+    removeItems: List<SocketMenuItem> = emptyList(),
+    addNode: Boolean = true
 ) {
     val node = graph?.nodes?.find { it.id == slot.nodeId }
     val link = node?.inputs?.get(slot.slotName) as? InputValue.Connection
@@ -1203,22 +1744,31 @@ private fun SocketMenu(
             else -> resources.getString(R.string.label_editor_socket_menu_header, TextUtils.htmlEncode(slot.slotName), otherEnds.first())
         }
     )
-    data class Item(val labelRes: Int, val icon: ImageVector, val action: () -> Unit)
+    // Add to field opens a second menu of the fields this value can join
+    var addToOpen by remember { mutableStateOf(false) }
     val items = buildList {
-        // Connect, as its opposite Disconnect: the label says which socket and where it's linked
-        add(Item(R.string.menu_editor_connect, Icons.Rounded.Cable, onConnect))
-        add(Item(R.string.menu_editor_add_node, Icons.Rounded.AddCircleOutline, onAddNode))
+        // Connect, as its opposite Disconnect: the label says which socket and where it's linked (a list value can't
+        // take a link: only its field items)
+        if (linkable) {
+            add(SocketMenuItem(R.string.menu_editor_connect, Icons.Rounded.Cable, action = onConnect))
+            if (addNode) add(SocketMenuItem(R.string.menu_editor_add_node, Icons.Rounded.AddCircleOutline, action = onAddNode))
+        }
     }
-    val disconnect = if (connected) listOf(Item(R.string.menu_editor_disconnect, Icons.Rounded.LinkOff, onDisconnect)) else emptyList()
-    // Disconnect in a group of its own, apart from the actions that add a link (as Delete in the server menu)
-    val groups = listOf(items, disconnect).filter { it.isNotEmpty() }
+    val fields = fieldItems + if (addToFields.isNotEmpty()) {
+        listOf(SocketMenuItem(R.string.menu_editor_add_to_field, Icons.Rounded.AddLink, Icons.AutoMirrored.Rounded.ArrowRight, closesMenu = false) { addToOpen = true })
+    } else emptyList()
+    val disconnect = (if (connected) listOf(SocketMenuItem(R.string.menu_editor_disconnect, Icons.Rounded.LinkOff, action = onDisconnect)) else emptyList()) +
+        removeItems
+    // Disconnect in a group of its own, apart from the actions that add a link (as Delete in the server menu); a
+    // value's field items and subgraph items between them
+    val groups = listOf(items, fields, subgraphItems, disconnect).filter { it.isNotEmpty() }
     Box(Modifier.offset { anchor }) {
         DropdownMenuPopup(expanded = true, onDismissRequest = onDismiss) {
             groups.forEachIndexed { groupIndex, group ->
                 DropdownMenuGroup(shapes = MenuDefaults.groupShape(groupIndex, groups.size)) {
                     if (groupIndex == 0) {
                         Text(
-                            label,
+                            header ?: label,
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
@@ -1226,11 +1776,13 @@ private fun SocketMenu(
                     }
                     group.forEachIndexed { index, item ->
                         DropdownMenuItem(
-                            text = { Text(stringResource(item.labelRes)) },
+                            text = { Text(item.label ?: AnnotatedString(stringResource(item.labelRes))) },
                             leadingIcon = { Icon(item.icon, contentDescription = null) },
+                            trailingContent = item.trailing?.let { { Icon(it, contentDescription = null) } },
                             shape = MenuDefaults.itemShape(index, group.size).shape,
+                            enabled = item.enabled,
                             onClick = {
-                                onDismiss()
+                                if (item.closesMenu) onDismiss()
                                 item.action()
                             }
                         )
@@ -1239,6 +1791,83 @@ private fun SocketMenu(
                 if (groupIndex < groups.size - 1) Spacer(Modifier.height(MenuDefaults.GroupSpacing))
             }
         }
+        // The fields this value can join, over the first menu; Back or a tap outside closes only this one
+        DropdownMenuPopup(
+            expanded = addToOpen,
+            onDismissRequest = { addToOpen = false },
+            popupPositionProvider = MenuDefaults.rememberDropdownMenuPopupPositionProvider(MenuAnchorPosition.Below, DpOffset(32.dp, 24.dp)),
+            modifier = rememberMenuScrollModifier()
+        ) {
+            DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 1)) {
+                Text(
+                    boldNamesResource(R.string.label_editor_add_to_field_header, slot.slotName),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
+                )
+                addToFields.forEachIndexed { index, (id, name) ->
+                    DropdownMenuItem(
+                        text = { Text(name) },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Rounded.Label, contentDescription = null) },
+                        shape = MenuDefaults.itemShape(index, addToFields.size).shape,
+                        onClick = {
+                            addToOpen = false
+                            onDismiss()
+                            onAddToField(id)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** An item of a socket's menu; [closesMenu] false for one that opens another menu (Add to field). */
+private class SocketMenuItem(
+    val labelRes: Int,
+    val icon: ImageVector,
+    val trailing: ImageVector? = null,
+    val closesMenu: Boolean = true,
+    // A label with names in it (bold), in place of [labelRes]'s text
+    val label: AnnotatedString? = null,
+    val enabled: Boolean = true,
+    val action: () -> Unit
+)
+
+/** Whether a value input holds its own value (not a placeholder of a field, nor a link). */
+private fun literalIsOwnValue(graph: WorkflowGraph?, slot: SlotPosition): Boolean {
+    val value = (graph?.nodes?.find { it.id == slot.nodeId }?.inputs?.get(slot.slotName) as? InputValue.Literal)?.value ?: return false
+    return !TemplateKeyRegistry.isAppManagedValue(value)
+}
+
+/**
+ * A value's field items (spec §18.2.1): in a custom field – Edit field, Remove from field; its own value – Make a field.
+ * A value a built-in field fills: Edit field (its label). Nothing for an output or a link.
+ */
+private fun fieldMenuItems(
+    slot: SlotPosition,
+    graph: WorkflowGraph?,
+    viewModel: WorkflowEditorViewModel,
+    onMake: () -> Unit,
+    onEdit: (fieldId: String) -> Unit,
+    onEditBuiltIn: (key: String) -> Unit,
+    onRemove: () -> Unit
+): List<SocketMenuItem> {
+    if (slot.isOutput) return emptyList()
+    val field = viewModel.customFieldOf(slot.nodeId, slot.slotName)
+    // A built-in field's placeholder: its label can be edited
+    val builtInKey = ((graph?.nodes?.find { it.id == slot.nodeId }?.inputs?.get(slot.slotName) as? InputValue.Literal)?.value as? String)
+        ?.let { Regex("""^\{\{(\w+)\}\}$""").find(it)?.groupValues?.get(1) }
+        ?.takeUnless { it.startsWith(CustomFields.PLACEHOLDER_PREFIX) }
+    return when {
+        builtInKey != null -> listOf(SocketMenuItem(R.string.menu_editor_edit_field, Icons.Rounded.Edit) { onEditBuiltIn(builtInKey) })
+        field != null -> listOf(
+            SocketMenuItem(R.string.menu_editor_edit_field, Icons.Rounded.Edit) { onEdit(field.id) },
+            SocketMenuItem(R.string.menu_editor_remove_from_field, Icons.Rounded.LinkOff, action = onRemove)
+        )
+        literalIsOwnValue(graph, slot) && viewModel.fieldValueTypeOf(slot.nodeId, slot.slotName) != null ->
+            listOf(SocketMenuItem(R.string.menu_editor_make_field, Icons.Rounded.NewLabel, action = onMake))
+        else -> emptyList()
     }
 }
 

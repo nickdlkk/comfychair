@@ -2,7 +2,6 @@ package sh.hnet.comfychair.viewmodel
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -34,7 +33,7 @@ import sh.hnet.comfychair.util.GenerationOutput
 import sh.hnet.comfychair.util.GenerationOutputs
 import sh.hnet.comfychair.util.Obfuscator
 import sh.hnet.comfychair.util.SeasonalPrompts
-import sh.hnet.comfychair.util.UuidUtils
+import sh.hnet.comfychair.util.ServerInputs
 import sh.hnet.comfychair.viewmodel.base.BaseGenerationViewModel
 import sh.hnet.comfychair.viewmodel.base.GenerationParams
 
@@ -84,6 +83,10 @@ data class ImageToImageUiState(
     // View state
     val viewMode: ImageToImageViewMode = ImageToImageViewMode.SOURCE,
     val sourceImage: Bitmap? = null,
+    // The server's input files the source and the references are, while they are (spec §21: used by name)
+    val sourceServer: ServerSource? = null,
+    val reference1Server: ServerSource? = null,
+    val reference2Server: ServerSource? = null,
     val previewImage: Bitmap? = null,
     val maskPaths: List<MaskPathData> = emptyList(),
     val brushSize: Float = 50f,
@@ -362,38 +365,27 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
     }
 
     // Reference image handlers (for Editing mode)
-    fun onReferenceImage1Change(context: Context, uri: Uri) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream?.close()
+    fun onReferenceImage1Change(context: Context, uri: Uri) = setReference(1, context) { SourceUploads.decodeImage(context, uri) }
 
-                if (bitmap != null) {
-                    // Store in cache (memory or disk based on mode)
-                    MediaStateHolder.putBitmap(MediaStateHolder.MediaKey.IteReferenceImage1, bitmap, context)
-                    _uiState.value = _uiState.value.copy(referenceImage1 = bitmap)
-                }
-            } catch (e: Exception) {
+    fun onReferenceImage2Change(context: Context, uri: Uri) = setReference(2, context) { SourceUploads.decodeImage(context, uri) }
+
+    /** Reference [slot] (1 or 2) from the server's input folder: shown as any, used by name (spec §21). */
+    fun onServerReferenceImage(slot: Int, context: Context, name: String) =
+        setReference(slot, context, name) { SourceUploads.serverImage(name) }
+
+    private fun setReference(slot: Int, context: Context, serverName: String? = null, load: suspend () -> Bitmap?) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val bitmap = load() ?: run {
                 _events.emit(GenerationScreenEvent.ShowToast(R.string.error_save_image))
+                return@launch
             }
-        }
-    }
-
-    fun onReferenceImage2Change(context: Context, uri: Uri) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream?.close()
-
-                if (bitmap != null) {
-                    // Store in cache (memory or disk based on mode)
-                    MediaStateHolder.putBitmap(MediaStateHolder.MediaKey.IteReferenceImage2, bitmap, context)
-                    _uiState.value = _uiState.value.copy(referenceImage2 = bitmap)
-                }
-            } catch (e: Exception) {
-                _events.emit(GenerationScreenEvent.ShowToast(R.string.error_save_image))
+            val key = if (slot == 1) MediaStateHolder.MediaKey.IteReferenceImage1 else MediaStateHolder.MediaKey.IteReferenceImage2
+            // Store in cache (memory or disk based on mode)
+            MediaStateHolder.putBitmap(key, bitmap, context)
+            val server = serverName?.let { ServerSource(it, bitmap) }
+            _uiState.update {
+                if (slot == 1) it.copy(referenceImage1 = bitmap, reference1Server = server)
+                else it.copy(referenceImage2 = bitmap, reference2Server = server)
             }
         }
     }
@@ -480,27 +472,26 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
     }
 
     // Source image
-    fun onSourceImageChange(context: Context, uri: Uri) {
+    fun onSourceImageChange(context: Context, uri: Uri) = setSource(context) { SourceUploads.decodeImage(context, uri) }
+
+    /** The source from the server's input folder: shown as any, used by name when generating (spec §21). */
+    fun onServerSourceImage(context: Context, name: String) = setSource(context, name) { SourceUploads.serverImage(name) }
+
+    private fun setSource(context: Context, serverName: String? = null, load: suspend () -> Bitmap?) {
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream?.close()
-
-                if (bitmap != null) {
-                    // Store in cache (memory or disk based on mode)
-                    MediaStateHolder.putBitmap(MediaStateHolder.MediaKey.ItiSource, bitmap, context)
-
-                    // A locally picked file never carries server provenance
-                    directSources.remove(1)
-
-                    _uiState.value = _uiState.value.copy(
-                        sourceImage = bitmap,
-                        maskPaths = emptyList() // Clear mask when new image is loaded
-                    )
-                }
-            } catch (e: Exception) {
+            val bitmap = load() ?: run {
                 _events.emit(GenerationScreenEvent.ShowToast(R.string.error_save_image))
+                return@launch
+            }
+            // Store in cache (memory or disk based on mode)
+            MediaStateHolder.putBitmap(MediaStateHolder.MediaKey.ItiSource, bitmap, context)
+            _uiState.update {
+                // A new image clears the mask; a locally picked file never carries server provenance
+                it.copy(
+                    sourceImage = bitmap,
+                    sourceServer = serverName?.let { name -> ServerSource(name, bitmap) },
+                    maskPaths = emptyList()
+                ).also { if (serverName == null) directSources.remove(1) }
             }
         }
     }
@@ -761,6 +752,11 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
         sourceImage: Bitmap,
         state: ImageToImageUiState
     ): String? {
+        // The source coming from the server's input folder (spec §21): used by name, nothing uploaded
+        state.sourceServer.nameWhile(sourceImage)?.let { serverName ->
+            return@prepareEditingWorkflow finishEditingWorkflow(client, state, serverName)
+        }
+
         // Convert source image to PNG bytes
         val sourceBytes = withContext(Dispatchers.IO) {
             val outputStream = java.io.ByteArrayOutputStream()
@@ -798,32 +794,53 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
             }
         }
 
-        // Upload reference image 1 (if present) with content-addressed reuse
+        // Upload reference image 1 (if present) with content-addressed reuse, or by name when it's a server file
         var uploadedRef1: String? = null
         if (state.referenceImage1 != null) {
-            val ref1Bytes = withContext(Dispatchers.IO) {
-                val outputStream = java.io.ByteArrayOutputStream()
-                state.referenceImage1.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-                outputStream.toByteArray()
-            }
-            uploadedRef1 = uploadImageWithReuse(client, ref1Bytes, "png") ?: return null
+            uploadedRef1 = state.reference1Server.nameWhile(state.referenceImage1)
+                ?: uploadImageWithReuse(
+                    client,
+                    withContext(Dispatchers.IO) {
+                        val outputStream = java.io.ByteArrayOutputStream()
+                        state.referenceImage1.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+                        outputStream.toByteArray()
+                    },
+                    "png"
+                ) ?: return null
         }
 
-        // Upload reference image 2 (if present) with content-addressed reuse
+        // Upload reference image 2 (if present) with content-addressed reuse, or by name when it's a server file
         var uploadedRef2: String? = null
         if (state.referenceImage2 != null) {
-            val ref2Bytes = withContext(Dispatchers.IO) {
-                val outputStream = java.io.ByteArrayOutputStream()
-                state.referenceImage2.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-                outputStream.toByteArray()
-            }
-            uploadedRef2 = uploadImageWithReuse(client, ref2Bytes, "png") ?: return null
+            uploadedRef2 = state.reference2Server.nameWhile(state.referenceImage2)
+                ?: uploadImageWithReuse(
+                    client,
+                    withContext(Dispatchers.IO) {
+                        val outputStream = java.io.ByteArrayOutputStream()
+                        state.referenceImage2.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+                        outputStream.toByteArray()
+                    },
+                    "png"
+                ) ?: return null
         }
 
         val p = state.editingParams
         return WorkflowManager.prepareWorkflow(
             p.selectedWorkflowId, withSubmittedSeed(p),
             WorkflowManager.WorkflowImages(source = uploadedSource, reference1 = uploadedRef1, reference2 = uploadedRef2)
+        )
+    }
+
+    /** Editing with a source straight from the server's input folder: by name, no snapshot, no upload. */
+    private fun finishEditingWorkflow(
+        client: ComfyUIClient,
+        state: ImageToImageUiState,
+        serverName: String
+    ): String? {
+        val p = state.editingParams
+        return WorkflowManager.prepareWorkflow(
+            p.selectedWorkflowId, withSubmittedSeed(p),
+            WorkflowManager.WorkflowImages(source = serverName, reference1 = null, reference2 = null)
         )
     }
 
@@ -855,7 +872,11 @@ class ImageToImageViewModel : BaseGenerationViewModel<ImageToImageUiState>() {
 
         imageWithMask.recycle()
 
-        // Upload to ComfyUI with content-addressed reuse
+        // The unmasked source goes to the server's input folder too, so it can be picked there later (spec §21);
+        // by name when it's already a server file, once per content otherwise. Failure doesn't stop the job.
+        SourceUploads.image(client, "inpainting_image", sourceImage, state.sourceServer)
+
+        // Upload to ComfyUI with content-addressed reuse (the mask is in the file: always this image)
         val uploadedFilename = uploadImageWithReuse(client, imageBytes, "png") ?: return null
 
         val p = state.inpaintingParams

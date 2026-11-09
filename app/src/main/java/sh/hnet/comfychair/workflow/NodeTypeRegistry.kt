@@ -31,7 +31,17 @@ data class InputDefinition(
      * For a dynamic combo (COMFY_DYNAMICCOMBO_V3): each option's own inputs (required, then optional), which the
      * frontend shows right after the combo as "combo.input" while that option is chosen
      */
-    val dynamicOptions: Map<String, List<InputDefinition>>? = null
+    val dynamicOptions: Map<String, List<InputDefinition>>? = null,
+    /** A widget without a socket (an image comparer, a colour, a bounding box editor…): drawn by the frontend only */
+    val socketless: Boolean = false,
+    /** Followed by the frontend's "control after generate" widget (fixed, increment, decrement, randomize) */
+    val controlAfterGenerate: Boolean = false,
+    /** Has the frontend's upload button (image, video or file), which may save a value of its own after it */
+    val upload: Boolean = false,
+    /** Which upload button: the flag's name without "_upload" ("image", "video", "audio", "file"…) */
+    val uploadKind: String? = null,
+    /** The widget the frontend draws for an input of several types ("FLOAT,INT" drawn as FLOAT) */
+    val widgetType: String? = null
 )
 
 /**
@@ -40,7 +50,7 @@ data class InputDefinition(
  * sockets (COMFY_MATCHTYPE_V3, COMFY_AUTOGROW_V3, COMFY_DYNAMICGROUP_V3) and inputs forced to be connected.
  */
 val InputDefinition.isWidget: Boolean
-    get() = !forceInput && type in WIDGET_TYPES
+    get() = !forceInput && (type in WIDGET_TYPES || widgetType in WIDGET_TYPES)
 
 private val WIDGET_TYPES = setOf("INT", "FLOAT", "STRING", "BOOLEAN", "ENUM", "COMBO", DYNAMIC_COMBO_TYPE)
 
@@ -110,9 +120,31 @@ class NodeTypeRegistry {
     private var nodeTypes: Map<String, NodeTypeInfo> = emptyMap()
     @Volatile
     private var nodeDefinitions: Map<String, NodeTypeDefinition> = emptyMap()
+    // Types of one workflow (its subgraphs), looked up before the server's; not listed with the server's types
+    private var localDefinitions: Map<String, NodeTypeDefinition> = emptyMap()
+
+    /** Changes whenever the server's types are replaced, for views and caches built from them. */
+    @Volatile
+    var version: Int = 0
+        private set
 
     companion object {
         private const val TAG = "NodeTypeRegistry"
+    }
+
+    /**
+     * This registry with a workflow's own types added ([local], by class type: its subgraphs), for lookups of that
+     * workflow's nodes. A view of the server's types as they are now; the node browser and option lists keep only those.
+     */
+    fun withLocalTypes(local: Map<String, NodeTypeDefinition>): NodeTypeRegistry {
+        if (local.isEmpty() && localDefinitions.isEmpty()) return this
+        val base = this
+        return NodeTypeRegistry().apply {
+            nodeTypes = base.nodeTypes
+            nodeDefinitions = base.nodeDefinitions
+            localDefinitions = local
+            version = base.version
+        }
     }
 
     /**
@@ -143,6 +175,7 @@ class NodeTypeRegistry {
 
         nodeTypes = newNodeTypes
         nodeDefinitions = newNodeDefinitions
+        version++
 
         DebugLogger.i(TAG, "NodeTypeRegistry populated: ${newNodeDefinitions.size} node types parsed")
     }
@@ -329,7 +362,11 @@ class NodeTypeRegistry {
                                     options = options,
                                     forceInput = forceInput,
                                     tooltip = tooltip,
-                                    multiselect = multiselect
+                                    multiselect = multiselect,
+                                    socketless = optionsObj.optBoolean("socketless", false),
+                                    controlAfterGenerate = optionsObj.hasControlAfterGenerate(),
+                                    upload = optionsObj.hasUploadFlag(),
+                                    uploadKind = optionsObj.uploadKind()
                                 )
                             )
                             continue
@@ -361,7 +398,11 @@ class NodeTypeRegistry {
                             default = default,
                             options = options,
                             forceInput = forceInput,
-                            tooltip = tooltip
+                            tooltip = tooltip,
+                            socketless = optionsObj?.optBoolean("socketless", false) ?: false,
+                            controlAfterGenerate = optionsObj?.hasControlAfterGenerate() ?: false,
+                            upload = optionsObj?.hasUploadFlag() ?: false,
+                            uploadKind = optionsObj?.uploadKind()
                         )
                     )
                 }
@@ -415,14 +456,34 @@ class NodeTypeRegistry {
             forceInput = forceInput,
             tooltip = tooltip,
             round = round,
-            dynamicOptions = dynamicOptions
+            dynamicOptions = dynamicOptions,
+            socketless = options?.optBoolean("socketless", false) ?: false,
+            controlAfterGenerate = options?.hasControlAfterGenerate() ?: false,
+            upload = options?.hasUploadFlag() ?: false,
+            uploadKind = options?.uploadKind(),
+            widgetType = options?.optString("widgetType", "")?.takeIf { it.isNotEmpty() }
         )
     }
+
+    /** The "control after generate" flag: true, or the control's starting value ("fixed", as primitive nodes give it). */
+    private fun JSONObject.hasControlAfterGenerate(): Boolean = when (val flag = opt("control_after_generate")) {
+        is Boolean -> flag
+        is String -> flag.isNotEmpty()
+        else -> false
+    }
+
+    private fun JSONObject.uploadKind(): String? =
+        keys().asSequence().firstOrNull { it.endsWith("_upload") && optBoolean(it, false) }?.removeSuffix("_upload")
+
+    /** Whether an input's options ask the frontend for an upload button (image_upload, video_upload, file_upload…). */
+    private fun JSONObject.hasUploadFlag(): Boolean =
+        keys().asSequence().any { it.endsWith("_upload") && optBoolean(it, false) }
 
     /**
      * Get the output type for a node at a specific output index.
      */
     fun getOutputType(classType: String, outputIndex: Int): String? {
+        localDefinitions[classType]?.let { return it.outputs.getOrNull(outputIndex)?.type }
         val info = nodeTypes[classType] ?: return null
         return info.outputTypes.getOrNull(outputIndex)
     }
@@ -431,6 +492,7 @@ class NodeTypeRegistry {
      * Get the input type for a specific input on a node.
      */
     fun getInputType(classType: String, inputName: String): String? {
+        localDefinitions[classType]?.let { local -> return local.inputs.find { it.name == inputName }?.type }
         val info = nodeTypes[classType] ?: return null
         return info.inputTypes[inputName]
     }
@@ -439,7 +501,7 @@ class NodeTypeRegistry {
      * Get the full node definition for a class type.
      */
     fun getNodeDefinition(classType: String): NodeTypeDefinition? {
-        return nodeDefinitions[classType]
+        return localDefinitions[classType] ?: nodeDefinitions[classType]
     }
 
     /**
@@ -447,7 +509,7 @@ class NodeTypeRegistry {
      * Convenience method combining getNodeDefinition and finding the input.
      */
     fun getInputDefinition(classType: String, inputName: String): InputDefinition? {
-        val definition = nodeDefinitions[classType]
+        val definition = localDefinitions[classType] ?: nodeDefinitions[classType]
         if (definition == null) {
             DebugLogger.d(TAG, "getInputDefinition: Node type '$classType' not found in registry")
             return null
@@ -526,5 +588,6 @@ class NodeTypeRegistry {
     fun clear() {
         nodeTypes = emptyMap()
         nodeDefinitions = emptyMap()
+        version++
     }
 }

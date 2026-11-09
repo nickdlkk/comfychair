@@ -1,5 +1,6 @@
 package sh.hnet.comfychair.workflow
 
+import sh.hnet.comfychair.model.CustomFields
 import org.json.JSONArray
 import org.json.JSONObject
 import sh.hnet.comfychair.util.DebugLogger
@@ -32,6 +33,10 @@ class WorkflowParser(private val logDetails: Boolean = true) {
     fun parse(jsonContent: String, workflowName: String = "", workflowDescription: String = ""): WorkflowGraph {
         logD("Parsing workflow: name=$workflowName")
         val json = JSONObject(jsonContent)
+        // Subgraph instances show their values as inputs; the definitions are carried as stored
+        val definitionsJson = Subgraphs.definitionsOf(json)
+        val subgraphDefinitions = definitionsJson?.toString()
+        Subgraphs.expose(json)
 
         val nodes = mutableListOf<WorkflowNode>()
         val edges = mutableListOf<WorkflowEdge>()
@@ -74,7 +79,7 @@ class WorkflowParser(private val logDetails: Boolean = true) {
             val title = meta?.optString("title")?.takeIf { it.isNotEmpty() } ?: classType
 
             val inputsJson = nodeJson.optJSONObject("inputs") ?: JSONObject()
-            val inputs = parseInputs(inputsJson)
+            val inputs = parseInputs(inputsJson).toMutableMap()
 
             // Find inputs that contain template placeholders like {{positive_prompt}}
             val templateKeys = mutableSetOf<String>()
@@ -119,12 +124,19 @@ class WorkflowParser(private val logDetails: Boolean = true) {
                 logD("Parsed node $nodeId with manual position: ($manualX, $manualY)")
             }
 
+            // An instance's subgraph inputs no link feeds and no value fills are sockets to link
+            definitionsJson?.let { definitions ->
+                Subgraphs.portsOf(definitions, classType, "inputs").forEach { (name, type) ->
+                    if (name !in inputs) inputs[name] = InputValue.UnconnectedSlot(type)
+                }
+            }
+
             nodes.add(
                 WorkflowNode(
                     id = nodeId,
                     classType = classType,
                     title = title,
-                    category = nodeCategoryOf(classType),
+                    category = if (definitionsJson?.has(classType) == true) NodeCategory.SUBGRAPH else nodeCategoryOf(classType),
                     inputs = sortInputsForLayout(inputs),
                     templateInputKeys = templateKeys,
                     mode = mode,
@@ -182,7 +194,10 @@ class WorkflowParser(private val logDetails: Boolean = true) {
             notes = notes,
             templateVariables = allTemplateVars,
             mappedFields = mappedFields,
-            isManualPlacementMode = isManualPlacementMode
+            isManualPlacementMode = isManualPlacementMode,
+            customFields = CustomFields.fromJson(json.optJSONArray(CustomFields.FIELDS_KEY)),
+            fieldLabels = CustomFields.labelsFromJson(json.optJSONObject(CustomFields.LABELS_KEY)),
+            subgraphs = subgraphDefinitions
         )
     }
 
@@ -334,7 +349,8 @@ class WorkflowParser(private val logDetails: Boolean = true) {
      */
     private fun literalValue(value: Any): Any {
         return when (value) {
-            is String, is Number, is Boolean -> value
+            // Objects and lists too (a region, a comparer's images…): ComfyUI takes them as they are, not as text
+            is String, is Number, is Boolean, is JSONObject, is JSONArray -> value
             else -> value.toString()
         }
     }

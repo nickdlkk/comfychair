@@ -16,10 +16,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -31,10 +34,12 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.FitScreen
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.SelectAll
-import androidx.compose.material.icons.rounded.StickyNote2
+import androidx.compose.material.icons.automirrored.rounded.StickyNote2
+import androidx.compose.material.icons.rounded.UnfoldMore
 import androidx.compose.material.icons.rounded.ViewModule
 import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
@@ -54,23 +59,35 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import sh.hnet.comfychair.R
 import sh.hnet.comfychair.ui.components.shared.TooltipIconButton
+import sh.hnet.comfychair.ui.components.shared.rememberMenuScrollModifier
 import sh.hnet.comfychair.util.ConnectionValidator
+import sh.hnet.comfychair.workflow.SubgraphLevelInfo
 
 /*
  * The workflow editor's frame (spec §10.2): Back and a title pill at the top, one floating toolbar at the bottom whose
@@ -107,7 +124,9 @@ sealed interface EditorStatus {
         val fromOutput: Boolean,
         val inputName: String? = null,
         val noTargets: Boolean = false,
-        val zoomInToConnect: Boolean = false
+        val zoomInToConnect: Boolean = false,
+        /** Inside a subgraph: a strip's add socket takes it too (spec §19.5) */
+        val toAddSocket: Boolean = false
     ) : EditorStatus
 }
 
@@ -124,7 +143,10 @@ fun EditorTopRow(
     modifier: Modifier = Modifier,
     onEditStructure: (() -> Unit)? = null,
     selectedCount: Int = 0,
-    onClearSelection: () -> Unit = {}
+    onClearSelection: () -> Unit = {},
+    // Inside a subgraph: the levels from the top (spec §19.2.2); a level picked in the path menu, 0 the workflow
+    path: List<SubgraphLevelInfo> = emptyList(),
+    onPickLevel: (Int) -> Unit = {}
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -144,7 +166,7 @@ fun EditorTopRow(
 
         // The pill as wide as its text; the rest of the row stays free, the control sits at the end
         Box(Modifier.weight(1f)) {
-            TitlePill(workflowName, status, onCancelConnection, Modifier)
+            TitlePill(workflowName, status, onCancelConnection, Modifier, path, onPickLevel)
         }
 
         when {
@@ -179,19 +201,23 @@ fun EditorTopRow(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun TitlePill(workflowName: String, status: EditorStatus, onCancelConnection: () -> Unit, modifier: Modifier) {
+private fun TitlePill(
+    workflowName: String,
+    status: EditorStatus,
+    onCancelConnection: () -> Unit,
+    modifier: Modifier,
+    path: List<SubgraphLevelInfo> = emptyList(),
+    onPickLevel: (Int) -> Unit = {}
+) {
     val connecting = status as? EditorStatus.Connecting
     val fade = MaterialTheme.motionScheme.defaultEffectsSpec<Float>()
-    Surface(
-        shape = CircleShape,
-        color = if (connecting != null) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = if (connecting != null) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
-        modifier = modifier
-            .heightIn(min = 48.dp)
-            .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())
-            // Mode changes (connecting, unsaved changes) are read out without moving focus
-            .semantics { liveRegion = LiveRegionMode.Polite }
-    ) {
+    // Inside a subgraph the pill names the level and opens the path (spec §19.2.2)
+    val level = path.lastOrNull()?.takeIf { connecting == null }
+    var menuOpen by remember { mutableStateOf(false) }
+    var pillWidth by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val pathLabel = level?.let { stringResource(R.string.sg_path_a11y, it.name) }
+    val content: @Composable () -> Unit = {
         AnimatedContent(
             targetState = status,
             contentKey = { it::class },
@@ -203,10 +229,23 @@ private fun TitlePill(workflowName: String, status: EditorStatus, onCancelConnec
                     verticalArrangement = Arrangement.Center,
                     modifier = Modifier
                         .weight(1f, fill = false)
-                        .padding(start = 20.dp, end = if (current is EditorStatus.Connecting) 0.dp else 20.dp, top = 6.dp, bottom = 6.dp)
+                        .padding(
+                            start = 20.dp,
+                            end = if (current is EditorStatus.Connecting || level != null) 0.dp else 20.dp,
+                            top = 6.dp,
+                            bottom = 6.dp
+                        )
                 ) {
-                    val (line1, line2) = pillLines(workflowName, current)
-                    Text(line1, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val (line1, line2) = pillLines(workflowName, current, level)
+                    if (level != null && current !is EditorStatus.Connecting) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Layers, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(level.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    } else {
+                        Text(line1, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                     Text(
                         line2,
                         style = MaterialTheme.typography.labelMedium,
@@ -220,44 +259,118 @@ private fun TitlePill(workflowName: String, status: EditorStatus, onCancelConnec
                     IconButton(onClick = onCancelConnection) {
                         Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.content_description_cancel_connection))
                     }
+                } else if (level != null) {
+                    Icon(
+                        Icons.Rounded.ArrowDropDown,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .padding(start = 4.dp, end = 12.dp)
+                            .size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+    val pillModifier = modifier
+        .heightIn(min = 48.dp)
+        .animateContentSize(MaterialTheme.motionScheme.defaultSpatialSpec())
+        .onSizeChanged { pillWidth = it.width }
+        // Mode changes (connecting, unsaved changes) are read out without moving focus
+        .semantics {
+            liveRegion = LiveRegionMode.Polite
+            if (pathLabel != null) contentDescription = pathLabel
+        }
+    Box {
+        if (level != null) {
+            Surface(
+                onClick = { menuOpen = true },
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                modifier = pillModifier,
+                content = content
+            )
+        } else {
+            Surface(
+                shape = CircleShape,
+                color = if (connecting != null) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = if (connecting != null) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+                modifier = pillModifier,
+                content = content
+            )
+        }
+        // The path: the workflow, then each level down to this one (checked); names wrap, a long path scrolls
+        DropdownMenuPopup(
+            expanded = menuOpen && level != null,
+            onDismissRequest = { menuOpen = false },
+            modifier = rememberMenuScrollModifier().widthIn(min = with(density) { pillWidth.toDp() })
+        ) {
+            val names = listOf(workflowName.ifEmpty { stringResource(R.string.label_new_workflow) }) + path.map { it.name }
+            DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 1)) {
+                names.forEachIndexed { index, name ->
+                    val current = index == names.lastIndex
+                    DropdownMenuItem(
+                        text = { Text(name, fontWeight = if (current) FontWeight.Bold else null) },
+                        leadingIcon = { Icon(if (index == 0) Icons.Rounded.AccountTree else Icons.Rounded.Layers, contentDescription = null) },
+                        trailingContent = if (current) ({ Icon(Icons.Rounded.Check, contentDescription = null) }) else null,
+                        shape = MenuDefaults.itemShape(index, names.size).shape,
+                        onClick = {
+                            menuOpen = false
+                            if (!current) onPickLevel(index)
+                        },
+                        modifier = Modifier.semantics { if (current) selected = true }
+                    )
                 }
             }
         }
     }
 }
 
+/**
+ * The pill's two lines: the workflow's name, then the mode in bold, its parameters in parentheses (inside a shared
+ * subgraph its number of copies) and its state after a dash in italics; while connecting, what to connect and a hint.
+ */
 @Composable
-private fun pillLines(workflowName: String, status: EditorStatus): Pair<String, String> {
+private fun pillLines(workflowName: String, status: EditorStatus, level: SubgraphLevelInfo?): Pair<String, AnnotatedString> {
     val name = workflowName.ifEmpty { stringResource(R.string.label_new_workflow) }
-    return when (status) {
-        is EditorStatus.Connecting -> {
-            val title = status.inputName?.let { stringResource(R.string.label_editor_linking, it) }
-                ?: stringResource(R.string.label_editor_connecting, status.slotType)
-            val hint = when {
-                status.zoomInToConnect -> stringResource(R.string.label_editor_zoom_in_to_connect)
-                status.noTargets -> stringResource(R.string.hint_editor_no_target, status.slotType)
-                // An output a value can take: values are targets too
-                status.fromOutput && status.slotType.uppercase() in ConnectionValidator.LINKABLE_VALUE_TYPES ->
-                    stringResource(R.string.hint_editor_tap_input_or_value)
-                status.fromOutput -> stringResource(R.string.hint_editor_tap_input)
-                else -> stringResource(R.string.hint_editor_tap_output)
-            }
-            title to hint
+    if (status is EditorStatus.Connecting) {
+        val title = status.inputName?.let { stringResource(R.string.label_editor_linking, it) }
+            ?: stringResource(R.string.label_editor_connecting, status.slotType)
+        val hint = when {
+            status.zoomInToConnect -> stringResource(R.string.label_editor_zoom_in_to_connect)
+            status.noTargets -> stringResource(R.string.hint_editor_no_target, status.slotType)
+            status.toAddSocket && status.fromOutput -> stringResource(R.string.sg_connect_hint_outputs)
+            status.toAddSocket -> stringResource(R.string.sg_connect_hint_inputs)
+            // An output a value can take: values are targets too
+            status.fromOutput && status.slotType.uppercase() in ConnectionValidator.LINKABLE_VALUE_TYPES ->
+                stringResource(R.string.hint_editor_tap_input_or_value)
+            status.fromOutput -> stringResource(R.string.hint_editor_tap_input)
+            else -> stringResource(R.string.hint_editor_tap_output)
         }
-        EditorStatus.Graph -> name to stringResource(R.string.label_editor_mode_graph)
-        is EditorStatus.NodeValues -> name to (
-            if (status.changed > 0) pluralStringResource(R.plurals.label_editor_mode_node_values_changed, status.changed, status.changed)
-            else stringResource(R.string.label_editor_mode_node_values)
-        )
-        is EditorStatus.Editing -> name to stringResource(
-            when {
-                status.placement -> R.string.label_editor_mode_placement
-                status.zoomInToConnect -> R.string.label_editor_zoom_in_to_connect
-                status.unsaved -> R.string.label_editor_mode_editing_unsaved
-                else -> R.string.label_editor_mode_editing
-            }
-        )
-        is EditorStatus.Mapping -> name to stringResource(if (status.import) R.string.label_editor_mode_mapping else R.string.label_editor_mode_mapping_save)
+        return title to AnnotatedString(hint)
+    }
+    val (mode, state) = when (status) {
+        EditorStatus.Graph -> stringResource(R.string.label_editor_mode_graph) to stringResource(R.string.label_editor_state_read_only)
+        is EditorStatus.NodeValues -> stringResource(R.string.label_editor_mode_node_values) to
+            (if (status.changed > 0) pluralStringResource(R.plurals.label_node_changed_count, status.changed, status.changed) else null)
+        is EditorStatus.Editing -> stringResource(R.string.label_editor_mode_editing) to when {
+            status.placement -> stringResource(R.string.label_editor_state_placement)
+            status.zoomInToConnect -> stringResource(R.string.label_editor_state_zoom_in)
+            status.unsaved -> stringResource(R.string.label_editor_state_unsaved)
+            else -> null
+        }
+        is EditorStatus.Mapping -> stringResource(if (status.import) R.string.label_editor_mode_import else R.string.label_editor_mode_saving) to
+            stringResource(R.string.label_editor_state_map_fields)
+        is EditorStatus.Connecting -> error("handled above")
+    }
+    val copies = level?.usedCount?.takeIf { it > 1 }?.let { pluralStringResource(R.plurals.sg_copies, it, it) }
+    return name to buildAnnotatedString {
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(mode) }
+        if (copies != null) append(" ($copies)")
+        if (state != null) {
+            append(" – ")
+            withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(state) }
+        }
     }
 }
 
@@ -289,6 +402,11 @@ class EditorEditActions(
     val onRenameNode: (() -> Unit)? = null,
     val onEditNote: (() -> Unit)? = null,
     val onRenameGroup: (() -> Unit)? = null,
+    // Subgraphs (spec §19.4), each only when it applies: the selection made into one, the selected instance unpacked
+    // (an instance is renamed with Rename); inside a subgraph with nothing selected, renaming that one
+    val onMakeSubgraph: (() -> Unit)? = null,
+    val onUnpackSubgraph: (() -> Unit)? = null,
+    val onRenameThisSubgraph: (() -> Unit)? = null,
     val onSave: () -> Unit
 )
 
@@ -339,8 +457,9 @@ fun EditorToolbar(
                 }
                 if (edit.selectedItems == 0) {
                     TooltipIconButton(Icons.Rounded.Add, stringResource(R.string.workflow_editor_add_node), edit.onAddNode)
-                    TooltipIconButton(Icons.Rounded.StickyNote2, stringResource(R.string.workflow_editor_add_note), edit.onAddNote)
-                    EditMoreMenu(listOf(graphActions))
+                    TooltipIconButton(Icons.AutoMirrored.Rounded.StickyNote2, stringResource(R.string.workflow_editor_add_note), edit.onAddNote)
+                    val subgraph = listOfNotNull(edit.onRenameThisSubgraph?.let { MenuAction(R.string.sg_rename_this, Icons.Rounded.Edit, it) })
+                    EditMoreMenu(listOf(subgraph, graphActions).filter { it.isNotEmpty() })
                 } else {
                     val nodes = edit.selectedNodes > 0
                     TooltipIconButton(Icons.Rounded.ContentCopy, stringResource(R.string.workflow_editor_duplicate_node), edit.onDuplicate, enabled = nodes)
@@ -352,8 +471,12 @@ fun EditorToolbar(
                         edit.onRenameGroup?.let { MenuAction(R.string.title_workflow_editor_rename_group, Icons.Rounded.DriveFileRenameOutline, it) },
                         MenuAction(R.string.workflow_editor_ungroup, Icons.Rounded.ViewModule, edit.onUngroup).takeIf { edit.canUngroup }
                     )
-                    // The selection's actions first, then the graph's
-                    EditMoreMenu(listOf(more, graphActions).filter { it.isNotEmpty() })
+                    val subgraph = listOfNotNull(
+                        edit.onMakeSubgraph?.let { MenuAction(R.string.sg_make, Icons.Rounded.Layers, it) },
+                        edit.onUnpackSubgraph?.let { MenuAction(R.string.sg_unpack, Icons.Rounded.UnfoldMore, it) }
+                    )
+                    // Subgraphs first, then the selection's other actions, then the graph's
+                    EditMoreMenu(listOf(subgraph, more, graphActions).filter { it.isNotEmpty() })
                     TooltipIconButton(
                         Icons.Rounded.Delete,
                         stringResource(R.string.workflow_editor_delete_node),

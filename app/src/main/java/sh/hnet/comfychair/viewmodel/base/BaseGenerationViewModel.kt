@@ -238,7 +238,8 @@ abstract class BaseGenerationViewModel<UiState> : ViewModel() {
             saved = storage.loadValues(serverId, workflowId),
             defaults = WorkflowManager.getWorkflowDefaultsById(workflowId),
             options = { fieldKey -> WorkflowManager.getNodeSpecificOptionsForField(workflowId, fieldKey) },
-            fallback = fallback
+            fallback = fallback,
+            customFields = WorkflowManager.getWorkflowById(workflowId)?.customFields.orEmpty()
         )
     }
 
@@ -291,6 +292,16 @@ abstract class BaseGenerationViewModel<UiState> : ViewModel() {
     fun onLownoiseLoraChange(lora: String) = onModelChange(ModelSlot.LOWNOISE_LORA, lora)
 
     // Parameters with validation: an invalid value is shown with its error but not saved
+
+    /** A custom field's value (spec §18.6); [error] from the field's own check, kept until fixed (not saved meanwhile). */
+    fun onCustomFieldChange(fieldId: String, value: String, error: String?) {
+        updateParams(save = error == null) {
+            it.copy(
+                customValues = it.customValues + (fieldId to value),
+                customErrors = if (error == null) it.customErrors - fieldId else it.customErrors + (fieldId to error)
+            )
+        }
+    }
 
     fun onWidthChange(width: String) {
         val error = ValidationUtils.validateDimension(width, applicationContext)

@@ -27,6 +27,7 @@ import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Visibility
@@ -35,7 +36,9 @@ import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenuPopup
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -45,6 +48,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -58,21 +62,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import sh.hnet.comfychair.R
+import sh.hnet.comfychair.ui.components.shared.rememberMenuScrollModifier
 
 /*
  * One dialog pattern for the whole app (spec §11): the component's own container, 28 dp corners and scrim; a headline
@@ -158,7 +168,8 @@ fun ConfirmDialog(
 }
 
 /**
- * B · Form: up to three outlined fields under the task as headline. The verb stays disabled until the form is valid;
+ * B · Form: up to three outlined fields under the task as headline; optionally a destructive action of the form
+ * ([destructiveLabel], e.g. Delete field) before Cancel, in the error colour. The verb stays disabled until the form is valid;
  * while a request runs it shows a loading indicator and the dialog can't be dismissed.
  *
  * @param supportingText One line under the headline (e.g. the file being imported)
@@ -172,6 +183,8 @@ fun FormDialog(
     confirmEnabled: Boolean = true,
     busy: Boolean = false,
     supportingText: String? = null,
+    destructiveLabel: String? = null,
+    onDestructive: () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
     AlertDialog(
@@ -196,7 +209,19 @@ fun FormDialog(
             }
         },
         confirmButton = { ConfirmButton(confirmLabel, onConfirm, enabled = confirmEnabled, busy = busy) },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.button_cancel)) } },
+        dismissButton = {
+            // A destructive action of the form (e.g. Delete field) comes first, in the error colour
+            Row {
+                destructiveLabel?.let { label ->
+                    TextButton(
+                        onClick = onDestructive,
+                        enabled = !busy,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) { Text(label) }
+                }
+                TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.button_cancel)) }
+            }
+        },
         modifier = Modifier.semantics { paneTitle = title }
     )
 }
@@ -222,7 +247,9 @@ fun DialogTextField(
     supporting: String? = null,
     // An example value; an optional field says "Optional" instead
     placeholder: String? = null,
-    onDone: (() -> Unit)? = null
+    onDone: (() -> Unit)? = null,
+    // An action at the field's end (e.g. back to a built-in name); an error's icon takes its place
+    trailingAction: (@Composable () -> Unit)? = null
 ) {
     OutlinedTextField(
         value = value,
@@ -234,7 +261,8 @@ fun DialogTextField(
             else -> null
         },
         isError = error != null,
-        trailingIcon = error?.let { { Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) } },
+        trailingIcon = error?.let { { Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) } }
+            ?: trailingAction,
         supportingText = (error ?: supporting)?.let { { Text(it) } },
         singleLine = !multiLine,
         minLines = if (multiLine) 3 else 1,
@@ -249,7 +277,10 @@ fun DialogTextField(
     )
 }
 
-/** A choice inside a form, as an outlined exposed dropdown. */
+/**
+ * A choice inside a form: an outlined field like the form's other fields, opening the app's menu (M3 Expressive: one
+ * group, the chosen option checked, as wide as the field).
+ */
 @Composable
 fun <T> DialogDropdownField(
     label: String,
@@ -259,7 +290,13 @@ fun <T> DialogDropdownField(
     enabled: Boolean = true
 ) {
     var expanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { if (enabled) expanded = it }) {
+    val density = LocalDensity.current
+    var fieldWidth by remember { mutableStateOf<Dp?>(null) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { if (enabled) expanded = it },
+        modifier = Modifier.onSizeChanged { fieldWidth = with(density) { it.width.toDp() } }
+    ) {
         OutlinedTextField(
             value = options.firstOrNull { it.first == selected }?.second ?: "",
             onValueChange = {},
@@ -271,15 +308,29 @@ fun <T> DialogDropdownField(
                 .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                 .fillMaxWidth()
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { (value, text) ->
-                DropdownMenuItem(
-                    text = { Text(text) },
-                    onClick = {
-                        expanded = false
-                        onSelect(value)
-                    }
-                )
+        // The items carry the width (the group has no side padding of its own); the menu fits around them
+        val sized = fieldWidth?.let { Modifier.width(it) } ?: Modifier
+        DropdownMenuPopup(expanded = expanded, onDismissRequest = { expanded = false }, modifier = rememberMenuScrollModifier()) {
+            DropdownMenuGroup(shapes = MenuDefaults.groupShape(0, 1)) {
+                options.forEachIndexed { index, (value, text) ->
+                    val isSelected = value == selected
+                    DropdownMenuItem(
+                        text = { Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        shape = MenuDefaults.itemShape(index, options.size).shape,
+                        leadingIcon = {
+                            if (isSelected) Icon(Icons.Rounded.Check, contentDescription = null)
+                            else Spacer(Modifier.size(24.dp))
+                        },
+                        onClick = {
+                            expanded = false
+                            onSelect(value)
+                        },
+                        modifier = sized.semantics {
+                            role = Role.RadioButton
+                            this.selected = isSelected
+                        }
+                    )
+                }
             }
         }
     }
