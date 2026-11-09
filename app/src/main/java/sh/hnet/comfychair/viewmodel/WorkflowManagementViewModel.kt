@@ -477,7 +477,7 @@ class WorkflowManagementViewModel : ViewModel() {
                 }
 
                 // Conversion and its warnings were prepared before the confirmation dialog opened.
-                val jsonContent = state.pendingImportJsonContent
+                var jsonContent = state.pendingImportJsonContent
 
                 // Extract class types from workflow
                 val classTypesResult = WorkflowManager.extractClassTypes(jsonContent)

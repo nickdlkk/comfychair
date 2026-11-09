@@ -130,10 +130,9 @@ class LiteGraphConverter(
     fun convert(liteGraphJson: JSONObject): ConversionResult {
         // /object_info is loaded asynchronously. Never create an API workflow with
         // silently missing widget inputs while the registry is still empty.
-        val subgraphsForValidation = parseSubgraphDefinitions(liteGraphJson)
-        fun requireWidgetDefinitions(nodes: JSONArray) {
-            for (index in 0 until nodes.length()) {
-                val node = nodes.optJSONObject(index) ?: continue
+        val subgraphsForValidation = parseSubgraphs(liteGraphJson)
+        fun requireWidgetDefinitions(nodes: List<JSONObject>) {
+            for (node in nodes) {
                 val type = node.optString("type", "")
                 if (type in NOTE_NODE_TYPES || type in REROUTE_NODE_TYPES || type in subgraphsForValidation) continue
                 if ((node.optJSONArray("widgets_values")?.length() ?: 0) > 0 && getNodeDefinition(type) == null) {
@@ -141,7 +140,7 @@ class LiteGraphConverter(
                 }
             }
         }
-        requireWidgetDefinitions(liteGraphJson.optJSONArray("nodes") ?: JSONArray())
+        requireWidgetDefinitions(liteGraphJson.optJSONArray("nodes")?.objects().orEmpty())
         subgraphsForValidation.values.forEach { requireWidgetDefinitions(it.nodes) }
         val warnings = mutableListOf<String>()
         instances.clear()

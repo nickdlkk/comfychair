@@ -1,5 +1,7 @@
 package sh.hnet.comfychair.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -242,15 +244,10 @@ fun ImageToVideoScreen(
                                 )
                             }
                         } else {
-<<<<<<< HEAD
                             EmptySourcePicker(
-                                onPick = { imagePickerLauncher.launch("image/*") },
-                                onPickFromFiles = { documentPickerLauncher.launch(arrayOf("image/*")) },
-                                onPickFromServer = pickFromServer
+                                onPick = sourcePicker::open,
+                                onPickFromFiles = { documentPickerLauncher.launch(arrayOf("image/*")) }
                             )
-=======
-                            EmptySourcePicker(onPick = sourcePicker::open)
->>>>>>> origin/main
                         }
                     },
                     // The video surface can't follow the swap animation, so a still stands in meanwhile

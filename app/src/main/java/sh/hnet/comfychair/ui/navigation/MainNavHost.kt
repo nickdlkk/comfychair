@@ -405,8 +405,8 @@ fun MainNavHost(
                                                 popUpTo(SettingsRoute.WorkflowDetail.route) { inclusive = true }
                                             }
                                         }
+                                    )
                                 }
-                            }
                             // The app's and the data's topic pages
                             val back: () -> Unit = { navController.popBackStack() }
                             composable(SettingsRoute.Connection.route) { ConnectionSettingsPage(settingsViewModel, back) }
