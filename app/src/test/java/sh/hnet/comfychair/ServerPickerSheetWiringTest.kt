@@ -20,14 +20,13 @@ class ServerPickerSheetWiringTest {
     }
 
     @Test fun sourceToolbarOffersTheServerEntryInBothModes() {
+        // v0.9.5: the server source entry moved into the shared SourceSheet (spec §21); the source
+        // toolbar and the empty picker open it through pickSource / sourcePicker::open
         val tools = File("src/main/java/sh/hnet/comfychair/ui/components/generation/SourceTools.kt").readText()
-        // Both the plain and the inpainting toolbar carry the server entry, so a chosen source keeps it
-        assertEquals(2, tools.split("fromServer?.invoke()").size - 1)
-        assertTrue(tools.contains("val fromServer: (@Composable () -> Unit)? = onPickFromServer?.let"))
-        // And the screens pass it in
+        assertTrue(tools.contains("val fromMaterials: (@Composable () -> Unit)? = onPickFromMaterials?.let"))
         for (screen in listOf("ui/screens/ImageToImageScreen.kt", "ui/screens/ImageToVideoScreen.kt")) {
-            assertTrue(screen, File("src/main/java/sh/hnet/comfychair/$screen").readText()
-                .contains("onPickFromServer = pickFromServer"))
+            val text = File("src/main/java/sh/hnet/comfychair/$screen").readText()
+            assertTrue(screen, text.contains("sourcePicker::open") || text.contains("pickSource(0)"))
         }
     }
 

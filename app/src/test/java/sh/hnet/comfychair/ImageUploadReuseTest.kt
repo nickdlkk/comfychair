@@ -34,7 +34,8 @@ class ImageUploadReuseTest {
             assertEquals("input", head.requestUrl!!.queryParameter("type"))
             assertEquals("nested", head.requestUrl!!.queryParameter("subfolder"))
             val body = post.body.readUtf8()
-            assertTrue(body.contains("name=\"overwrite\"\r\nContent-Length: 5\r\n\r\nfalse"))
+            // OkHttp 5 multipart parts no longer carry a per-part Content-Length header
+            assertTrue(body.contains("name=\"overwrite\"\r\n\r\nfalse"))
             assertTrue(body.contains("comfychair_")); assertEquals(2, s.requestCount)
         }
     }

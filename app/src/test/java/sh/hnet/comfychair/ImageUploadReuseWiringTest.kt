@@ -29,10 +29,11 @@ class ImageUploadReuseWiringTest {
     @Test
     fun imageToImageUploadsAllGoThroughContentReuse() {
         val text = iti()
-        assertTrue(text.contains("uploadImageWithReuse(client, sourceBytes, \"png\")"))
-        assertTrue(text.contains("uploadImageWithReuse(client, ref1Bytes, \"png\")"))
-        assertTrue(text.contains("uploadImageWithReuse(client, ref2Bytes, \"png\")"))
+        // All four uploads (editing source, both references, inpainting mask) go through the
+        // content-addressed reuse wrapper; server-source picks short-circuit before uploading
+        assertEquals(4, Regex("uploadImageWithReuse\\(").findAll(text).count() - 1) // -1: the wrapper's own definition call
         assertTrue(text.contains("client.uploadImageReusing(bytes, extension)"))
+        assertTrue(text.contains("state.sourceServer.nameWhile(sourceImage)"))
         // The random-name upload path is fully replaced on this screen
         assertFalse(text.contains("client.uploadImage("))
         assertFalse(text.contains("UuidUtils.generateUniqueUploadFilename"))

@@ -107,10 +107,9 @@ dependencies {
     // Security (encrypted SharedPreferences)
     implementation(libs.androidx.security.crypto)
 
-    testImplementation(libs.junit)
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.5.1")
     testImplementation(libs.org.json)
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.5.1")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

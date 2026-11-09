@@ -134,7 +134,8 @@ class LiteGraphConverter(
         fun requireWidgetDefinitions(nodes: List<JSONObject>) {
             for (node in nodes) {
                 val type = node.optString("type", "")
-                if (type in NOTE_NODE_TYPES || type in REROUTE_NODE_TYPES || type in subgraphsForValidation) continue
+                if (type in NOTE_NODE_TYPES || type in REROUTE_NODE_TYPES || type == PRIMITIVE_NODE_TYPE ||
+                    type in subgraphsForValidation) continue
                 if ((node.optJSONArray("widgets_values")?.length() ?: 0) > 0 && getNodeDefinition(type) == null) {
                     throw IllegalStateException("Node $type requires /object_info before widget conversion")
                 }
